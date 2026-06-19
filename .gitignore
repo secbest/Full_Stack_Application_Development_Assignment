@@ -1,0 +1,23 @@
+.claude/*
+!.claude/settings.json
+
+# Environment files - never commit
+.env
+frontend/.env
+backend/.env
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+
+# Accidental root-level lockfile
+/package-lock.json
+
+# Logs
+*.log
+npm-debug.log*
