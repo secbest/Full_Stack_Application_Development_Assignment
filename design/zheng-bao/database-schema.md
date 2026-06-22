@@ -168,6 +168,8 @@ Stores confirmed service jobs. Created by Camilla when she approves an intake su
 | `destination` | `DataTypes.TEXT` | NOT NULL |
 | `status` | `DataTypes.ENUM('confirmed', 'in_progress', 'completed', 'invoiced')` | NOT NULL, Default: `'confirmed'` |
 | `notes` | `DataTypes.TEXT` | allowNull: true - internal notes added by Camilla |
+| `leakage_dismissed_at` | `DataTypes.DATE` | allowNull: true - set when Sarah dismisses a revenue leakage alert (Jasper's UC-09) |
+| `leakage_dismissed_reason` | `DataTypes.TEXT` | allowNull: true - Sarah's reason for dismissal (e.g. "job cancelled on site") |
 | `created_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
 | `updated_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
 
@@ -249,6 +251,14 @@ Booking.init({
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  leakage_dismissed_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  leakage_dismissed_reason: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
 }, { sequelize, modelName: 'Booking', tableName: 'bookings', underscored: true })
 ```
 
@@ -261,6 +271,101 @@ Booking.belongsTo(User, { foreignKey: 'created_by', as: 'createdBy' })
 Booking.belongsTo(User, { foreignKey: 'assigned_crew_id', as: 'assignedCrew' })
 Booking.hasOne(ServiceMemo, { foreignKey: 'booking_id' })   // Liang Yi
 Booking.hasOne(Invoice, { foreignKey: 'booking_id' })       // Jasper
+```
+
+---
+
+---
+
+## Table: `notifications`
+
+Stores in-app notification records for all four notification types (UC-09-A through UC-09-D). Records are inserted by the backend when trigger events occur across multiple feature areas. Each notification is linked to one recipient user. The `link` field holds the frontend route the user should navigate to when clicking the notification.
+
+Trigger sources by `type`:
+
+| Type | Trigger | Recipient role |
+|------|---------|----------------|
+| `new_intake_submission` | `POST /api/intake` completes (Zheng Bao's controller) | `quotations_specialist` |
+| `memo_submitted` | `POST /api/service-memos` completes (Liang Yi's controller) | `ar_specialist` |
+| `xero_sync_failed` | Xero push fails after retries (Jasper's or Kwan Hua's sync service) | `ar_specialist` / `ap_specialist` |
+| `ocr_low_confidence` | Gemini returns `extraction_confidence` below threshold (Kwan Hua's OCR service) | `ap_specialist` |
+
+All controllers call a shared `notificationService.create(userId, type, title, body, link)` helper to insert rows rather than writing directly to this table.
+
+| Field | Sequelize Type | Constraints |
+|-------|---------------|-------------|
+| `id` | `DataTypes.INTEGER` | Primary Key, Auto Increment |
+| `user_id` | `DataTypes.INTEGER` | NOT NULL, Foreign Key → `users.id` |
+| `type` | `DataTypes.ENUM('new_intake_submission', 'memo_submitted', 'xero_sync_failed', 'ocr_low_confidence')` | NOT NULL |
+| `title` | `DataTypes.STRING(255)` | NOT NULL |
+| `body` | `DataTypes.TEXT` | allowNull: true |
+| `link` | `DataTypes.STRING(255)` | allowNull: true - frontend route (e.g. `/intake/7`) |
+| `is_read` | `DataTypes.BOOLEAN` | NOT NULL, Default: `false` |
+| `created_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
+| `updated_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
+
+### Sequelize Model
+
+```js
+Notification.init({
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+  },
+  user_id: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: { model: 'users', key: 'id' },
+  },
+  type: {
+    type: DataTypes.ENUM(
+      'new_intake_submission',
+      'memo_submitted',
+      'xero_sync_failed',
+      'ocr_low_confidence'
+    ),
+    allowNull: false,
+  },
+  title: {
+    type: DataTypes.STRING(255),
+    allowNull: false,
+  },
+  body: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  link: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
+  is_read: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+}, { sequelize, modelName: 'Notification', tableName: 'notifications', underscored: true })
+```
+
+### Associations
+
+```js
+Notification.belongsTo(User, { foreignKey: 'user_id' })
+```
+
+### Shared Notification Service
+
+All teams that need to create notifications import and call:
+
+```js
+// backend/src/services/notificationService.js
+const { Notification, User } = require('../models')
+
+async function create(userId, type, title, body = null, link = null) {
+  return Notification.create({ user_id: userId, type, title, body, link })
+}
+
+module.exports = { create }
 ```
 
 ---

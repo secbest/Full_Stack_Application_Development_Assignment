@@ -280,7 +280,7 @@ Audit log for every Xero API sync attempt - covering both AR invoices (Jasper) a
 | Field | Sequelize Type | Constraints |
 |-------|---------------|-------------|
 | `id` | `DataTypes.INTEGER` | Primary Key, Auto Increment |
-| `entity_type` | `DataTypes.ENUM('ar_invoice', 'vendor_invoice')` | NOT NULL |
+| `entity_type` | `DataTypes.ENUM('ar_invoice', 'vendor_invoice', 'bank_feed')` | NOT NULL |
 | `entity_id` | `DataTypes.INTEGER` | NOT NULL |
 | `xero_record_id` | `DataTypes.STRING(255)` | allowNull: true |
 | `status` | `DataTypes.ENUM('pending', 'success', 'failed')` | NOT NULL, Default: `'pending'` |
@@ -300,7 +300,7 @@ XeroSyncLog.init({
     autoIncrement: true,
   },
   entity_type: {
-    type: DataTypes.ENUM('ar_invoice', 'vendor_invoice'),
+    type: DataTypes.ENUM('ar_invoice', 'vendor_invoice', 'bank_feed'),
     allowNull: false,
   },
   entity_id: {

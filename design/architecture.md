@@ -163,8 +163,27 @@ CLOUDINARY_API_SECRET=
 GEMINI_API_KEY=
 XERO_CLIENT_ID=
 XERO_CLIENT_SECRET=
-JWT_SECRET=
+XERO_REDIRECT_URI=        # OAuth2 callback URL (e.g. http://localhost:5000/api/xero/callback)
+XERO_ENCRYPTION_KEY=      # 32-byte hex key for AES-256-GCM encryption of stored Xero tokens
+JWT_SECRET=               # Production JWT signing secret
+DEV_JWT_SECRET=dev-secret-efar-2026  # Shared dev secret - all teammates use this value
 PORT=
 ```
 
 See `deployment.md` for the public URLs of all deployed services.
+
+---
+
+## 6. Scope Notes
+
+### Email Notifications - Out of Scope for PoC
+
+Zheng Bao's UC-03 and UC-04 reference sending booking confirmation and rejection emails to customers. Email delivery (via SendGrid, AWS SES, or Nodemailer) is **out of scope for this PoC**. The backend will log a "would send email" message to the console when these events occur. No email service credentials are required. If the team decides to add email support, add `EMAIL_API_KEY=` to the backend env.
+
+### Crew List Endpoint - Group Auth Responsibility
+
+Zheng Bao's crew assignment UI (UC-06) needs a dropdown of active field crew members. This endpoint - `GET /api/users?role=field_crew&is_active=true` - is part of the shared auth system, not owned by any individual team member. It must be implemented as part of the group auth routes and protected by JWT (`ar_specialist` and `quotations_specialist` roles can call it).
+
+### Xero Token Encryption
+
+Kwan Hua's `xero_connections` table stores Xero OAuth2 access and refresh tokens. These must be encrypted before writing to the database using AES-256-GCM (Node.js built-in `crypto` module). The `XERO_ENCRYPTION_KEY` env var holds a 32-byte hex string. Kwan Hua owns the encrypt/decrypt helper in `backend/src/services/xeroService.js`.

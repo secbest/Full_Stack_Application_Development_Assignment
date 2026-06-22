@@ -934,15 +934,28 @@ To verify or decode a token locally: `jwt.verify(token, process.env.DEV_JWT_SECR
 
 ```json
 {
-  "sub":  1,
-  "name": "Sarah Lim",
-  "role": "ar_specialist",
-  "iat":  1782114425,
-  "exp":  1813650425
+  "sub":   1,
+  "name":  "Sarah Tan",
+  "email": "sarah@efar.sg",
+  "role":  "ar_specialist",
+  "iat":   1782114425,
+  "exp":   1813650425
 }
 ```
 
 **`sub`** maps to `users.id` in the shared users table. Middleware reads `req.user.role` for access control and `req.user.sub` as the acting user id (e.g. for `approved_by`, `reviewed_by`).
+
+### Canonical User ID Map
+
+| `users.id` | Name | Role |
+|-----------|------|------|
+| 1 | Sarah Tan | `ar_specialist` |
+| 2 | Doris Ching | `managing_director` |
+| 3 | Ravi Kumar | `field_crew` |
+| 4 | Chloe Lim | `ap_specialist` |
+| 5 | Camilla Ng | `quotations_specialist` |
+
+This mapping is shared across all teammates. All seed files and JWT tokens use these IDs.
 
 ---
 
@@ -950,28 +963,28 @@ To verify or decode a token locally: `jwt.verify(token, process.env.DEV_JWT_SECR
 
 Copy the token for the role you are testing and paste it as the `Authorization: Bearer <token>` header.
 
-#### AR Specialist - Sarah Lim (`sub: 1`)
+#### AR Specialist - Sarah Tan (`sub: 1`)
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBMaW0iLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImV4cCI6MTgxMzY1MDQyNSwiaWF0IjoxNzgyMTE0NDI1fQ.dM8qVhZO5Q5i0XISOeHpzZKpggmCWOmzY7Z1o2Mrn1s
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.ESzmUh8-f6nRvC0MH0c3t13hSEfeapsAYD4ResqL4pM
 ```
 
-#### Managing Director - Doris Tan (`sub: 2`)
+#### Managing Director - Doris Ching (`sub: 2`)
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBUYW4iLCJyb2xlIjoibWFuYWdpbmdfZGlyZWN0b3IiLCJleHAiOjE4MTM2NTA0MjUsImlhdCI6MTc4MjExNDQyNX0.KoZThoGKT0dVBA9hl10xJE-p3gXuunzD_q7gI7T137M
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBDaGluZyIsImVtYWlsIjoiZG9yaXNAZWZhci5zZyIsInJvbGUiOiJtYW5hZ2luZ19kaXJlY3RvciIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.k452ZYTHp373ilcJKalsXLlKWQ7Df1c_kJ9F2JIsJzM
 ```
 
-#### AP Specialist - Chloe Ng (`sub: 4`)
+#### AP Specialist - Chloe Lim (`sub: 4`)
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBOZyIsInJvbGUiOiJhcF9zcGVjaWFsaXN0IiwiZXhwIjoxODEzNjUwNDI1LCJpYXQiOjE3ODIxMTQ0MjV9.77DpzoAdenAtp6hN3kuXz1Y5LbYY2hQwXmAtZA9HrW8
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWFpbCI6ImNobG9lQGVmYXIuc2ciLCJyb2xlIjoiYXBfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.hHKZGVrmB6jmPcm52HnUg5lbxkSPMZe7FhreLrE1eZI
 ```
 
-#### Quotations Specialist - Camilla Wong (`sub: 5`)
+#### Quotations Specialist - Camilla Ng (`sub: 5`)
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIFdvbmciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiZXhwIjoxODEzNjUwNDI1LCJpYXQiOjE3ODIxMTQ0MjV9.Rxdz5IhTmTDbowLeDFqE322qcSBAg2SpZPA57X_s8FI
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1haWwiOiJjYW1pbGxhQGVmYXIuc2ciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiaWF0IjoxNzgyMTE0NDI1LCJleHAiOjE4MTM2NTA0MjV9.tYNXbCvGiUFz-uu1a4Y5fE_GMzWEjLMkBO7KABeMi1w
 ```
 
 ---

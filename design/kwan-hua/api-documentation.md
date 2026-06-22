@@ -714,7 +714,7 @@ Redirects to `/settings/xero?connected=true`
 Add the following to your local `.env` file. All teammates must use this same value so test tokens work across every local setup.
 
 ```
-DEV_JWT_SECRET=dev-secret-efar
+DEV_JWT_SECRET=dev-secret-efar-2026
 ```
 
 ### JWT Payload Shape
@@ -723,27 +723,30 @@ All tokens use the following payload structure:
 
 ```json
 {
-  "sub": <integer - user ID>,
-  "name": "<display name>",
+  "sub":   <integer - user ID>,
+  "name":  "<display name>",
   "email": "<email>",
-  "role": "<role slug>",
-  "iat": <unix timestamp - issued at>,
-  "exp": <unix timestamp - expires at>
+  "role":  "<role slug>",
+  "iat":   <unix timestamp - issued at>,
+  "exp":   <unix timestamp - expires at>
 }
 ```
 
-Role slugs map to EFAR roles as follows:
+### Canonical User ID Map
 
-| Slug | EFAR Role |
-|------|-----------|
-| `managing_director` | Managing Director (Doris) |
-| `ar_specialist` | Accounts Receivable Specialist (Sarah) |
-| `ap_specialist` | Accounts Payable Specialist (Chloe) |
-| `quotations_specialist` | Quotations Specialist (Camilla) |
+| `users.id` | Name | Role |
+|-----------|------|------|
+| 1 | Sarah Tan | `ar_specialist` |
+| 2 | Doris Ching | `managing_director` |
+| 3 | Ravi Kumar | `field_crew` |
+| 4 | Chloe Lim | `ap_specialist` |
+| 5 | Camilla Ng | `quotations_specialist` |
+
+This mapping is shared across all teammates. All seed files and JWT tokens use these IDs.
 
 ### Pre-signed Test Tokens
 
-All tokens are signed with `HS256` using `DEV_JWT_SECRET=dev-secret-efar` and expire **2027-06-22**.
+All tokens are signed with `HS256` using `DEV_JWT_SECRET=dev-secret-efar-2026` and expire **2027-06-22**.
 
 ---
 
@@ -752,18 +755,18 @@ All tokens are signed with `HS256` using `DEV_JWT_SECRET=dev-secret-efar` and ex
 **Payload:**
 ```json
 {
-  "sub": 1,
+  "sub": 2,
   "name": "Doris Ching",
   "email": "doris@efar.sg",
   "role": "managing_director",
-  "iat": 1782114367,
-  "exp": 1813650367
+  "iat": 1782114425,
+  "exp": 1813650425
 }
 ```
 
 **Token:**
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJEb3JpcyBDaGluZyIsImVtYWlsIjoiZG9yaXNAZWZhci5zZyIsInJvbGUiOiJtYW5hZ2luZ19kaXJlY3RvciIsImlhdCI6MTc4MjExNDM2NywiZXhwIjoxODEzNjUwMzY3fQ.0bK9fK16b9rhJKQWYayH_KfLsOgz9xtGDt7XRCbXYGw
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBDaGluZyIsImVtYWlsIjoiZG9yaXNAZWZhci5zZyIsInJvbGUiOiJtYW5hZ2luZ19kaXJlY3RvciIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.k452ZYTHp373ilcJKalsXLlKWQ7Df1c_kJ9F2JIsJzM
 ```
 
 ---
@@ -773,18 +776,18 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJEb3JpcyBDaGluZyIsImV
 **Payload:**
 ```json
 {
-  "sub": 2,
+  "sub": 1,
   "name": "Sarah Tan",
   "email": "sarah@efar.sg",
   "role": "ar_specialist",
-  "iat": 1782114367,
-  "exp": 1813650367
+  "iat": 1782114425,
+  "exp": 1813650425
 }
 ```
 
 **Token:**
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDM2NywiZXhwIjoxODEzNjUwMzY3fQ.KNFVG33zuZCUtM3qX0b-LMLvv4F1_CD2GQfRLuuZJnA
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.ESzmUh8-f6nRvC0MH0c3t13hSEfeapsAYD4ResqL4pM
 ```
 
 ---
@@ -794,18 +797,18 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWF
 **Payload:**
 ```json
 {
-  "sub": 3,
+  "sub": 4,
   "name": "Chloe Lim",
   "email": "chloe@efar.sg",
   "role": "ap_specialist",
-  "iat": 1782114367,
-  "exp": 1813650367
+  "iat": 1782114425,
+  "exp": 1813650425
 }
 ```
 
 **Token:**
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWFpbCI6ImNobG9lQGVmYXIuc2ciLCJyb2xlIjoiYXBfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDM2NywiZXhwIjoxODEzNjUwMzY3fQ.KPOMNm46Y5asKvbWlgi2C4wSF8PdX6eGUZQ-UuDDriU
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWFpbCI6ImNobG9lQGVmYXIuc2ciLCJyb2xlIjoiYXBfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.hHKZGVrmB6jmPcm52HnUg5lbxkSPMZe7FhreLrE1eZI
 ```
 
 ---
@@ -815,16 +818,16 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWF
 **Payload:**
 ```json
 {
-  "sub": 4,
+  "sub": 5,
   "name": "Camilla Ng",
   "email": "camilla@efar.sg",
   "role": "quotations_specialist",
-  "iat": 1782114367,
-  "exp": 1813650367
+  "iat": 1782114425,
+  "exp": 1813650425
 }
 ```
 
 **Token:**
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1haWwiOiJjYW1pbGxhQGVmYXIuc2ciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiaWF0IjoxNzgyMTE0MzY3LCJleHAiOjE4MTM2NTAzNjd9.zSeUkOcn8JEBAdlWljou0uhtKvBtTS1Re23whSzqGns
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1haWwiOiJjYW1pbGxhQGVmYXIuc2ciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiaWF0IjoxNzgyMTE0NDI1LCJleHAiOjE4MTM2NTA0MjV9.tYNXbCvGiUFz-uu1a4Y5fE_GMzWEjLMkBO7KABeMi1w
 ```

@@ -676,11 +676,12 @@ jwt.verify(token, process.env.DEV_JWT_SECRET)
 
 ```json
 {
-  "sub":  5,
-  "name": "Camilla Wong",
-  "role": "quotations_specialist",
-  "iat":  1782114425,
-  "exp":  1813650425
+  "sub":   5,
+  "name":  "Camilla Ng",
+  "email": "camilla@efar.sg",
+  "role":  "quotations_specialist",
+  "iat":   1782114425,
+  "exp":   1813650425
 }
 ```
 
@@ -692,36 +693,44 @@ jwt.verify(token, process.env.DEV_JWT_SECRET)
 
 Copy the token for the role you are testing and paste it as the `Authorization: Bearer <token>` header in Postman, Insomnia, or curl.
 
-#### Quotations Specialist - Camilla Wong (`sub: 5`)
+#### Quotations Specialist - Camilla Ng (`sub: 5`)
 
 Use this for all intake and booking management endpoints.
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIFdvbmciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiZXhwIjoxODEzNjUwNDI1LCJpYXQiOjE3ODIxMTQ0MjV9.Rxdz5IhTmTDbowLeDFqE322qcSBAg2SpZPA57X_s8FI
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1haWwiOiJjYW1pbGxhQGVmYXIuc2ciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiaWF0IjoxNzgyMTE0NDI1LCJleHAiOjE4MTM2NTA0MjV9.tYNXbCvGiUFz-uu1a4Y5fE_GMzWEjLMkBO7KABeMi1w
 ```
 
-#### AR Specialist - Sarah Lim (`sub: 1`)
+#### AR Specialist - Sarah Tan (`sub: 1`)
 
 Use this to test `GET /api/bookings` and `GET /api/bookings/:id` (read-only access for AR), and to test the `PATCH /api/bookings/:id/status` `completed → invoiced` transition.
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBMaW0iLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImV4cCI6MTgxMzY1MDQyNSwiaWF0IjoxNzgyMTE0NDI1fQ.dM8qVhZO5Q5i0XISOeHpzZKpggmCWOmzY7Z1o2Mrn1s
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.ESzmUh8-f6nRvC0MH0c3t13hSEfeapsAYD4ResqL4pM
 ```
 
-#### Managing Director - Doris Tan (`sub: 2`)
+#### Managing Director - Doris Ching (`sub: 2`)
 
 Use this to test read-only booking list and detail views.
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBUYW4iLCJyb2xlIjoibWFuYWdpbmdfZGlyZWN0b3IiLCJleHAiOjE4MTM2NTA0MjUsImlhdCI6MTc4MjExNDQyNX0.KoZThoGKT0dVBA9hl10xJE-p3gXuunzD_q7gI7T137M
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBDaGluZyIsImVtYWlsIjoiZG9yaXNAZWZhci5zZyIsInJvbGUiOiJtYW5hZ2luZ19kaXJlY3RvciIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.k452ZYTHp373ilcJKalsXLlKWQ7Df1c_kJ9F2JIsJzM
 ```
 
-#### AP Specialist - Chloe Ng (`sub: 4`)
+#### AP Specialist - Chloe Lim (`sub: 4`)
 
 AP has no direct access to intake or bookings, but this token is provided for notification endpoint testing (all roles can read their own notifications).
 
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBOZyIsInJvbGUiOiJhcF9zcGVjaWFsaXN0IiwiZXhwIjoxODEzNjUwNDI1LCJpYXQiOjE3ODIxMTQ0MjV9.77DpzoAdenAtp6hN3kuXz1Y5LbYY2hQwXmAtZA9HrW8
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWFpbCI6ImNobG9lQGVmYXIuc2ciLCJyb2xlIjoiYXBfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.hHKZGVrmB6jmPcm52HnUg5lbxkSPMZe7FhreLrE1eZI
+```
+
+#### Field Crew - Ravi Kumar (`sub: 3`)
+
+Use this to test the `PATCH /api/bookings/:id/status` transitions (`confirmed → in_progress`, `in_progress → completed`) and the `GET /api/notifications` endpoint.
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsIm5hbWUiOiJSYXZpIEt1bWFyIiwiZW1haWwiOiJyYXZpQGVmYXIuc2ciLCJyb2xlIjoiZmllbGRfY3JldyIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.9Ot7uSJ_sLL-pGT_yaVkQwBGyVZkhmVjAQr7o6Nqx7g
 ```
 
 ---
