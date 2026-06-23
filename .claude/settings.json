@@ -1,5 +1,16 @@
 {
   "permissions": {
-    "allow": ["Bash(*)", "PowerShell(*)", "Read(*)", "Edit(*)", "Write(*)"]
+    "allow": [
+      "Bash(*)",
+      "PowerShell(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)"
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-dev": true,
+    "document-skills@anthropic-agent-skills": true,
+    "example-skills@anthropic-agent-skills": true
   }
 }
