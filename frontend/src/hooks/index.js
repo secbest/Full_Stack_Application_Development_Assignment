@@ -1,1 +1,1 @@
-// Custom React hooks - e.g. useAuth, useBookings, useDebounce
+export { useAuth } from '../context/AuthContext'

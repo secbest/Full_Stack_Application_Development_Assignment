@@ -38,5 +38,46 @@ npm install
 node src/index.js
 ```
 
+## Tech Stack
+
+### Frontend
+
+| Technology | Purpose |
+|---|---|
+| React 18 + Vite 5 | UI framework and build tool |
+| React Router DOM 6 | Client-side routing with protected routes |
+| Tailwind CSS 3 | Utility-first styling |
+| shadcn/ui | Accessible component primitives |
+| Formik 2 + Yup | Form state and validation |
+| Axios | HTTP client with JWT interceptors |
+| Lucide React | Icon set |
+| clsx + tailwind-merge | Conditional class merging (cn() helper) |
+
+### Backend
+
+| Technology | Purpose |
+|---|---|
+| Node.js + Express 4 | API server |
+| Sequelize ORM | PostgreSQL object-relational mapping |
+| jsonwebtoken | JWT issuance and verification |
+| bcryptjs | Password hashing |
+| multer | Multipart file upload handling |
+| dotenv | Environment variable loading |
+| cors | Cross-origin request handling |
+
+### Database & Infrastructure
+
+| Service | Purpose |
+|---|---|
+| PostgreSQL (Supabase) | Primary relational database |
+| Cloudinary | Binary file storage (vendor PDFs, hospital stamp images) |
+
+### Third-Party APIs
+
+| Service | Purpose |
+|---|---|
+| Xero API (OAuth 2.0) | Draft invoice creation, bank feed ingestion |
+| Google Gemini API | OCR extraction from vendor invoice PDFs |
+
 ## Session Logs
 C:\Users\<your-username>\.claude\projects\<code-folder>\
