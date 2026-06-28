@@ -108,3 +108,194 @@ Use a hyphen (`-`) instead of an em dash (`—`) in all generated documents (mar
 - Git history is part of the submission - commit regularly with meaningful messages so individual contributions are traceable.
 - All tests must pass before submission (`npm run build` for frontend, `node src/index.js` must start without errors for backend).
 - AI usage logs (`.jsonl` from Claude Code) are submitted separately in `your-project-ai/<student-name>/` - keep them updated throughout all phases, not just the final sprint.
+
+---
+
+## Figma Make Prototype Reference
+
+The folder `Design login screen for EFAR/` in the repo root is the Figma Make export used as the visual and structural reference for frontend implementation. Do not delete it. When implementing UI, match this prototype's layout, colors, and component patterns exactly.
+
+Full screen prompts and navigation map are in `design/figma-make-prompts.md`.
+
+### Prototype File Map
+
+| File | Role covered |
+|---|---|
+| `src/app/App.tsx` | Login screen + role-based routing entry point |
+| `src/app/shared.tsx` | Shared components (ToastContainer, XeroSyncTable, mock data arrays) |
+| `src/app/APApp.tsx` | AP Specialist (Chloe Tan) - Xero settings, sync status |
+| `src/app/ARApp.tsx` | AR Specialist (Sarah Lim) - memo review, invoices, pricing contracts, AR dashboard |
+| `src/app/FieldApp.tsx` | Field Crew (Ravi Kumar) - My Jobs, memo wizard |
+| `src/app/MDApp.tsx` | Managing Director (Doris Tan) - executive dashboard |
+
+### Role Routing (Login)
+
+After login, role is detected from the email and the app renders the matching component:
+
+| Email keyword | Role | User | Landing screen |
+|---|---|---|---|
+| `ravi` | field | Ravi Kumar | My Jobs |
+| `chloe` | ap | Chloe Tan | AP Dashboard |
+| `sarah` | ar | Sarah Lim | AR Dashboard |
+| `doris` | md | Doris Tan | Executive Dashboard |
+| anything else | quotations | Camilla Wong | Intake Queue |
+
+### Design Tokens
+
+These exact values must be used across all frontend screens:
+
+**Colors**
+```
+Background:        #F8FAFC
+Card/panel:        #FFFFFF
+Sidebar bg:        #1E293B
+Sidebar hover:     #0F172A
+Primary button:    #1E293B (bg), #FFFFFF (text)
+Destructive:       #EF4444 (bg), #FFFFFF (text)
+Success:           #22C55E
+Warning:           #F59E0B
+Error:             #EF4444
+Info/accent:       #3B82F6
+Muted text:        #64748B
+Placeholder text:  #94A3B8
+Border/divider:    #E2E8F0
+Row hover:         #F1F5F9
+Alt row bg:        #F8FAFC
+Risk row bg:       #FEF2F2
+```
+
+**Typography (Inter font)**
+```
+Page title:        24px Bold   #1E293B
+Card header:       16px 600    #1E293B
+Body/form text:    14px 400    #1E293B
+Labels:            12px 500    #64748B  uppercase where used as table headers
+Timestamps/micro:  12px 500    #64748B
+```
+
+**Layout**
+```
+Sidebar width:     240px fixed left
+Header height:     64px fixed top
+Content padding:   32px
+Card radius:       12px
+Card border:       1px #E2E8F0
+Card shadow:       0 1px 3px rgba(0,0,0,0.08)
+Button height:     44-48px (primary), 32px (inline table actions)
+Input height:      44px
+Input radius:      8px
+Input border:      #E2E8F0, focused: #3B82F6
+```
+
+**Status badge pattern** - pill shape, 6px radius, 15% opacity background with matching text:
+```
+Pending/In Progress/Warning:  #F59E0B
+Confirmed/Info/Matched:       #3B82F6
+Approved/Synced/Success:      #22C55E
+Rejected/Failed/Error:        #EF4444
+Expired/Neutral:              #94A3B8
+```
+
+### Screen Inventory
+
+#### Quotations Specialist (Camilla Wong)
+1. **Intake Queue** - stat cards (Pending/Confirmed/Rejected counts), filterable table, time-in-queue coloring (amber >2h, red >4h), [Review] action
+2. **Intake Detail** - 60/40 layout, read-only submission fields left, confirm+reject actions right; creates booking on confirm
+3. **Booking Created** - success confirmation with booking reference
+4. **Booking List** - 4 stat cards, table with risk rows (#FEF2F2) for missing memos, memo status column
+5. **Booking Detail** - 3-column layout (details / status timeline / crew assignment + linked records)
+
+#### AR Specialist (Sarah Lim)
+6. **AR Dashboard** - KPI cards, invoice status breakdown chart, revenue leakage alerts, Xero bank feed
+7. **Memo Review Queue** - table of submitted memos awaiting review, overdue rows in red
+8. **Memo Review Detail** - 60/40 layout, all memo fields with pricing engine section highlighted blue, approve/return actions
+9. **Invoice List** - 6 status types (Matched/Adjusted/Approved/Synced/Failed/Unmatched), batch approve button
+10. **Invoice Detail** - line items table with auto (blue) vs manual (amber) badges, approve/sync/reject actions
+11. **Pricing Contracts List** - active/expired filter, expired rows at 50% opacity
+12. **Contract Detail** - rates table with inline add/edit/delete, surcharge schedule with edit mode
+13. **Create/Edit Contract Form** - contract details + initial rates section, sticky save footer
+14. **Xero Sync Status** - shared with AP, stat cards, retry logic, max-retry warning (3 attempts)
+
+#### AP Specialist (Chloe Tan)
+15. **AP Dashboard** - 4 stat cards (Pending/Low Confidence/Synced/Failed), recent activity list, quick actions
+16. **Vendor Invoice List** - upload modal (PDF drag-drop), OCR confidence column, color-coded confidence %
+17. **AP Invoice Review** - two equal panels: PDF viewer left, AI-extracted editable fields right; rebate auto-calculation
+18. **Xero Integration Settings** - connected/disconnected states, token expiry warning, sync overview
+19. **Xero Sync Status** - shared with AR (see item 14)
+
+#### Field Crew (Ravi Kumar)
+20. **My Jobs** - job cards with left accent bar (color by status), date filter tabs (Today/Tomorrow/This Week), status-specific action buttons
+21. **Memo Wizard Step 1 - Job Details** - pre-filled booking info (locked), job times, patient details, overtime hours, evacuation floors
+22. **Memo Wizard Step 2 - Service & Charges** - service type/transfer type dropdowns, office hours toggle, 9 surcharge toggles
+23. **Memo Wizard Step 3 - Signature** - signature canvas, signer name/role, waiver collapsible section
+24. **Memo Wizard Step 4 - Stamp & Submit** - hospital stamp upload, full memo summary, submit button
+25. **Memo Submitted** - success confirmation with memo reference, two navigation buttons
+26. **Memo History** - table with inline accordion expand (no separate detail screen), returned memos show correction note
+
+#### Managing Director (Doris Tan)
+27. **Executive Dashboard - Fleet tab** - 4 KPI cards, doughnut chart (booking status), revenue leakage alert panel
+28. **Executive Dashboard - Expense tab** - 3 KPI cards, vendor bar chart (interactive), vendor invoice table (read-only)
+29. **Reports** - 4 tab types (Revenue/Billing Cycle/Leakage History/Vendor Expenditure), period selector, export CSV/PDF
+
+### Logic Corrections (Must Follow in Implementation)
+
+These override the use case documents where they conflict:
+
+1. **Pricing engine fields on memo** - The memo review screen must show ALL 9 surcharge fields: `oxygen_litres_used`, `has_inconvenience_fee`, `disposables_used`, `has_resuscitation_fee`, `has_suction_fee`, `has_jurong_island_fee`, `waiting_time_minutes`, `patient_weight_kg`, `has_heavy_lifting_fee`. Do not abbreviate.
+
+2. **Field crew landing screen** - "My Jobs" is always the first screen after field crew login. There is no separate dashboard for this role.
+
+3. **Intake form fields** - `service_type` (EAS/MTS/Event Standby/Workplace Standby) and `service_tier` (Basic/Advanced/Critical) are two separate dropdowns. Never merge them into one.
+
+4. **Evacuation vs inconvenience** - The memo wizard must show BOTH: a numeric `evacuation_floors` field (documentation only, does not affect billing) AND a separate boolean toggle "Were stairs or elevator access required?" that maps to `has_inconvenience_fee` (flat $50 surcharge). One does not replace the other.
+
+5. **No email confirmations** - There is no email service in the stack. All confirmations use in-app toast notifications (bottom-right, 3s auto-dismiss, green success / red error). Never show "confirmation email sent" language.
+
+### Navigation Map Summary
+
+```
+Login
+  → quotations  → Intake Queue
+  → ar          → AR Dashboard
+  → ap          → AP Dashboard
+  → field       → My Jobs
+  → md          → Executive Dashboard
+
+Intake Queue → [Review] → Intake Detail
+Intake Detail → [Confirm] → Booking Created → Booking List
+Intake Detail → [Reject]  → toast + Intake Queue
+
+Booking List → [View] → Booking Detail
+Booking Detail → "Linked Intake" link → Intake Detail (read-only)
+Booking Detail → "Service Memo" link  → Memo Review Detail (read-only)
+Booking Detail → "Invoice" link       → Invoice Detail (read-only)
+
+My Jobs → [Start Job & Create Memo] → Memo Wizard (Step 1-4)
+Memo Wizard Step 4 → [Submit] → Memo Submitted → My Jobs or Memo History
+
+Memo Review Queue → [Review] → Memo Review Detail
+Memo Review Detail → [Approve & Match] → Invoice Detail (new invoice)
+Memo Review Detail → [Return]          → toast + Memo Review Queue
+
+Invoice List → [Review/View] → Invoice Detail
+Invoice Detail → [Approve]     → status updates in-place, Sync button appears
+Invoice Detail → [Sync to Xero] → status updates in-place
+Invoice Detail → [Reject Match] → confirmation modal → Memo Review Queue
+
+Vendor Invoice List → [Review] → AP Invoice Review
+AP Invoice Review → [Approve] → toast + Vendor Invoice List
+AP Invoice Review → [Reject]  → confirmation modal + Vendor Invoice List
+
+Executive Dashboard Fleet tab ↔ Expense tab (secondary tabs, no route change)
+Executive Dashboard → sidebar Reports → Reports screen
+```
+
+### Public Intake Form Note
+
+The public-facing intake form (Wave 1A Steps 1-2) was **not designed in Figma Make** and is **not in the frontend prototype**. The intake queue is seeded with sample `intake_submissions` records to simulate arriving requests.
+
+This does NOT mean the feature is dropped. The following must still be implemented:
+- **Backend:** `POST /api/intake` endpoint (no auth required) and the `intake_submissions` table - see `design/zheng-bao/api-documentation.md` and `design/zheng-bao/database-schema.md`
+- **Frontend:** A public route (no login required) with the intake form, submitting to the above endpoint
+
+The Quotations Specialist workflow (intake queue, booking confirmation, booking management - Steps 3-6) is fully prototyped and unchanged.

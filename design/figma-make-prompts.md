@@ -33,11 +33,8 @@ Login
   → (managing_director)     → 4-Step 1:  Executive Dashboard
 
 [Wave 1A - Zheng Bao]
-1A-Step 1: Public Intake Form
-  → submit → 1A-Step 2: Submission Confirmed
-
-1A-Step 2: Submission Confirmed
-  → "Submit Another Request" → 1A-Step 1
+1A-Step 1: Public Intake Form        [NOT PROTOTYPED - seeded sample data used instead]
+1A-Step 2: Submission Confirmed      [NOT PROTOTYPED - seeded sample data used instead]
 
 1A-Step 3: Intake Queue
   → row [Review] → 1A-Step 4: Intake Submission Detail
@@ -141,10 +138,17 @@ Login
 4-Step 1: Executive Dashboard (Fleet tab)
   → secondary tab "Expense Summary" → 4-Step 2
   → Revenue Leakage [View] → 1A-Step 6: Booking Detail (cross-wave, read-only)
+  → sidebar "Reports" → 4-Step 3: Reports
 
 4-Step 2: Executive Dashboard (Expense tab)
   → secondary tab "Fleet Overview" → 4-Step 1
   → "View All" in vendor panel → 3B-Step 1: Vendor Invoice List (read-only for Doris)
+  → sidebar "Reports" → 4-Step 3: Reports
+
+4-Step 3: Reports
+  → report type tabs → update content in-place
+  → "Export CSV" / "Export PDF" → triggers file download
+  → sidebar "Dashboard" → 4-Step 1
 ```
 
 ---
@@ -227,7 +231,11 @@ Design these screens in order. Each builds on the previous.
 
 **Sidebar for Camilla (Quotations Specialist):** Intake Queue, Bookings, Settings. User avatar and name "Camilla Wong · Quotations Specialist" at sidebar bottom. "Intake Queue" is the home screen — there is no separate Dashboard item.
 
+> **Prototype scope note:** Steps 1 and 2 (public intake form and submission confirmation) were **not designed in Figma Make** and are **not implemented in the frontend prototype**. The intake queue (Step 3 onward) is seeded with sample `intake_submissions` records to simulate what would arrive from the public form. The backend `POST /api/intake` endpoint and `intake_submissions` table are still required and must be implemented. The quotations specialist workflow (Steps 3-6) is fully designed and unchanged.
+
 ### Step 1: Public Intake Form
+
+> **NOT PROTOTYPED.** The Figma Make prototype does not include this screen. Sample data seeds the intake queue directly. The backend endpoint `POST /api/intake` and the `intake_submissions` table must still be implemented. The prompt below is kept for reference if the public form is built later.
 
 ```
 Design a public-facing customer intake form for EFAR ambulance services. This is the only screen in the app that requires no login.
@@ -261,6 +269,8 @@ Apply GLOBAL UI SYSTEM rules. No sidebar, no nav.
 ```
 
 ### Step 2: Intake Submission Confirmed Page
+
+> **NOT PROTOTYPED.** This screen is the customer-facing confirmation shown after the public intake form submits. Not included in the Figma Make prototype. Kept for reference only.
 
 ```
 Design a submission confirmation page shown to the customer immediately after the public intake form is submitted successfully.
@@ -1215,6 +1225,73 @@ RIGHT (45%) — "Vendor Invoice List" card (white):
 Row 3 — "Vendor Spend Trend" card (white, full width):
 - Title: "Vendor Spend by Month — FY2026" (16px Semi-Bold)
 - Line chart (MUI X Charts): 12 months on X-axis, SGD on Y-axis. Single #1E293B line with filled dot at current month. Future months shown as dashed line.
+
+Apply GLOBAL UI SYSTEM rules.
+```
+
+### Step 3: Reports - Revenue & Operations
+
+```
+Design a Reports screen for Doris (Managing Director) at EFAR — a historical analysis and export center, separate from the live Executive Dashboard.
+
+Layout: Full app layout. Sidebar active: "Reports". Sidebar items: Dashboard, Reports (active). User: "Doris Tan · Managing Director".
+
+Top header: "Reports" as page title (24px Bold).
+
+Report type tab bar (horizontal, below the page title, underline style like the dashboard tabs):
+"Revenue | Billing Cycle | Leakage History | Vendor Expenditure"
+"Revenue" tab is active by default. Clicking each tab replaces the content below without navigating away.
+
+Period selector row (below tab bar, full width, #F8FAFC background strip, 48px height, 16px horizontal padding):
+- "Period:" label in 12px Medium #64748B
+- Pill tabs: "This Month | Last Month | This Quarter | This Year | Custom" — "This Quarter" active
+- If "Custom": show a date range picker (From / To) inline, right of the pills
+- Right side of the row: "Export CSV" ghost button + "Export PDF" primary button (#1E293B). Both trigger a file download of the currently active report and selected period.
+
+--- REVENUE TAB CONTENT (shown by default) ---
+
+Row 1 — 3 KPI stat cards (white, 12px radius):
+- "Total Revenue (This Quarter)" — "$54,210.00" in 28px Bold #1E293B. Below: "Across 38 invoices." Trend: "+8% vs last quarter" in 12px #22C55E.
+- "Average Invoice Value" — "$1,426.58" in 28px Bold #1E293B. Below: "Based on synced invoices only."
+- "Largest Client This Period" — "Tan Tock Seng Hospital" in 20px Bold #1E293B. Below: "$22,400.00 · 14 invoices" in 12px #64748B.
+
+Row 2 — 2 columns:
+
+LEFT (60%) — "Revenue by Client" card (white):
+- Title: "Revenue by Client" (16px Semi-Bold)
+- Horizontal bar chart (MUI X Charts): one bar per client, sorted descending by revenue. Bars in #1E293B at varying opacity by rank.
+  - Tan Tock Seng Hospital: $22,400 (100% opacity)
+  - Changi General Hospital: $18,350 (80% opacity)
+  - ABC Corporation: $9,100 (60% opacity)
+  - SingHealth Group: $4,360 (40% opacity)
+- X-axis: SGD amounts. Y-axis: client names.
+- Clicking a bar filters the table in Row 3 to that client only (highlighted bar, others dim to 30% opacity).
+
+RIGHT (40%) — "Revenue by Service Type" card (white):
+- Title: "Revenue by Service Type" (16px Semi-Bold)
+- Doughnut chart (MUI X Charts): segments per service type.
+  - EAS: $38,940 (#1E293B)
+  - MTS: $10,820 (#3B82F6)
+  - Event Standby: $3,100 (#F59E0B)
+  - Workplace Standby: $1,350 (#22C55E)
+- Legend below: colored dot + label + amount + percentage of total.
+
+Row 3 — "Invoice Breakdown" card (white, full width):
+- Title: "Invoice Breakdown" (16px Semi-Bold). Subtitle: "Read-only. Invoice actions require Sarah's login." in 12px italic #64748B.
+- Data table columns: Invoice ID, Booking Ref, Client, Service Type, Total Amount, Status, Synced At.
+  - INV-004 | BKG-004 | TTSH | MTS | $1,200.00 | Synced ✓ (green badge) | 14 Jun 2026
+  - INV-003 | BKG-003 | TTSH | EAS | $1,570.00 | Synced ✓ | 13 Jun 2026
+  - INV-001 | BKG-001 | TTSH | EAS | $850.00 | Synced ✓ | 10 Jun 2026
+- All rows are read-only — no action buttons. Status badge only, no [Review] or [Sync] buttons.
+- Footer: "Showing 10 of 38 invoices · Total: $54,210.00". Pagination controls.
+
+--- OTHER TAB CONTENT (described for design reference, not separate screens) ---
+
+BILLING CYCLE TAB: Show a table with columns: Booking Ref, Job Date, Memo Submitted At, Invoice Approved At, Synced At, Total Days. Summary card at top: "Average days from job to Xero sync: 1.8 days". Highlight rows where Total Days > 3 in light amber.
+
+LEAKAGE HISTORY TAB: Show a table of past leakage incidents: Booking Ref, Client, Completion Date, Days Until Memo, Crew Member, Resolution (Memo Submitted / Dismissed / Still Missing). Summary card: "This quarter: 3 jobs billed late, 1 job never billed." Late rows tinted amber, missing rows tinted red.
+
+VENDOR EXPENDITURE TAB: Same content as the Expense Summary tab on the Executive Dashboard but with the full invoice list table expanded by default and the export buttons prominent.
 
 Apply GLOBAL UI SYSTEM rules.
 ```
