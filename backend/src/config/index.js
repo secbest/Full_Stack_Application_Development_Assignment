@@ -4,16 +4,32 @@ if (!process.env.DATABASE_URL) {
   console.warn('[DB] Warning: DATABASE_URL is not set. Database features will not work.')
 }
 
-const sequelize = new Sequelize(process.env.DATABASE_URL || '', {
-  dialect: 'postgres',
-  dialectOptions: {
-    // Required for Supabase - all connections are SSL-only
-    ssl: { require: true, rejectUnauthorized: false },
-  },
-  logging: false,
-})
+// Parse the URL manually so dialectOptions.ssl is always applied.
+// When Sequelize receives a raw URI string, pg v8 can silently ignore ssl options
+// and produce "read ECONNRESET" from Supabase, which requires SSL on every connection.
+function buildSequelize(rawUrl) {
+  if (!rawUrl) {
+    return new Sequelize({ dialect: 'postgres', logging: false })
+  }
 
-// Call testConnection() in src/index.js on startup to verify Supabase is reachable.
+  const url = new URL(rawUrl)
+  return new Sequelize({
+    dialect: 'postgres',
+    host: url.hostname,
+    port: Number(url.port) || 5432,
+    username: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ''),
+    dialectOptions: {
+      ssl: { require: true, rejectUnauthorized: false },
+    },
+    pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
+    logging: false,
+  })
+}
+
+const sequelize = buildSequelize(process.env.DATABASE_URL)
+
 async function testConnection() {
   try {
     await sequelize.authenticate()

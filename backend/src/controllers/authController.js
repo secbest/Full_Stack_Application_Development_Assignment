@@ -48,7 +48,7 @@ async function login(req, res) {
     })
   } catch (err) {
     if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 422)
-    return error(res, err.message, 'INTERNAL_ERROR', 500)
+    return error(res, 'Invalid email or password.', 'INVALID_CREDENTIALS', 401)
   }
 }
 
