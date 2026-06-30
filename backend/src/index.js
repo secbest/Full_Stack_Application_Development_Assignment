@@ -34,10 +34,15 @@ app.use((err, req, res, next) => {
 })
 
 const PORT = process.env.PORT || 3000
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`EFAR API running on port ${PORT}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
-  await testConnection()
+  // Verify the DB is reachable but never crash the process if it isn't.
+  // In Node 15+ an unhandled rejection inside an async listen callback kills the process.
+  testConnection().catch((err) => {
+    console.error('[DB] Startup connection check failed:', err.message)
+    console.error('[DB] Check DATABASE_URL in backend/.env')
+  })
 })
 
 module.exports = app
