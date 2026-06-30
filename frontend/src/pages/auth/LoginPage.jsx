@@ -54,7 +54,6 @@ export default function LoginPage() {
     if (eErr || pErr) return
 
     setLoading(true)
-    setErrorMsg('')
     try {
       const decoded = await login(email, password)
       navigate(getRoleHome(decoded.role), { replace: true })

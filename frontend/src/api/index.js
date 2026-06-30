@@ -11,11 +11,14 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Redirect to /login when the server returns 401
+// Redirect to /login when the server returns 401 for authenticated requests.
+// Skip the redirect for the login endpoint itself - a 401 there means wrong credentials,
+// not an expired session, so the login page handles it with an inline error message.
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const isLoginRequest = err.config?.url?.includes('/auth/login')
+    if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('efar_token')
       localStorage.removeItem('efar_user')
       window.location.href = '/login'
