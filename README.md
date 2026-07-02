@@ -31,8 +31,10 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 
 ```bash
 cd backend
-npm run db:sync   # creates all tables
-npm run db:seed   # inserts demo user accounts
+npm run db:sync           # creates all tables
+npm run db:seed           # inserts demo user accounts
+npm run db:seed:clients   # inserts demo client records
+npm run db:seed:intakes   # inserts demo intake_submissions (requires db:seed first)
 ```
 
 Demo accounts (password: `Efar@2026`):
@@ -117,6 +119,11 @@ node src/index.js  # single run
 - **Auth error masking** (`backend/src/controllers/authController.js`) - The login endpoint now returns "Invalid email or password." for all failures, including internal DB errors, instead of leaking the raw exception message (e.g. `ENOTFOUND`).
 - **DB scripts** (`backend/package.json`) - Added `npm run db:sync` (creates tables via Sequelize sync) and `npm run db:seed` (inserts the five demo user accounts).
 - **Deployment docs** (`deployment.md`) - Documented the full local dev setup: prerequisites, install steps, env file configuration, DB sync/seed instructions, and demo account credentials.
+
+### 2026-07-01 - Demo Data Seeding (Kwan Hua)
+
+- **Client seed script** (`backend/src/scripts/seed-clients.js`) - Inserts five demo client records (Raffles Medical Group, Marina Bay Sands Expo, ST Engineering, Jurong Island Industrial Corp, Singapore Sports Hub) used as pricing-contract counterparties. Uses `findOrCreate` on `contact_email` so it is safe to re-run without creating duplicates.
+- **Intake submission seed script** (`backend/src/scripts/seed-intakes.js`) - Populates the Quotations Specialist's intake queue with sample `intake_submissions` so the booking workflow has data to test against: 2 pending, 4 confirmed, and 2 rejected records with realistic Singapore hospital/venue details. Looks up Camilla's user ID at runtime (`reviewed_by` FK) instead of hardcoding it, and requires `seed-users.js` to have run first. Uses `findOrCreate` on `reference_number` so it is safe to re-run.
 
 ## Session Logs
 C:\Users\<your-username>\.claude\projects\<code-folder>\
