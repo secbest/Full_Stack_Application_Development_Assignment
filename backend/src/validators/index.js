@@ -14,4 +14,20 @@ const loginSchema = Yup.object({
   password: Yup.string().required('Password is required'),
 })
 
-module.exports = { registerSchema, loginSchema }
+// Liang Yi - Field Operations & Executive Dashboard
+const {
+  createServiceMemoSchema,
+  memoIdParamSchema,
+  listServiceMemosQuerySchema,
+} = require('./serviceMemoValidators')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashboardValidators')
+
+module.exports = {
+  registerSchema,
+  loginSchema,
+  createServiceMemoSchema,
+  memoIdParamSchema,
+  listServiceMemosQuerySchema,
+  fleetOverviewQuerySchema,
+  vendorExpensesQuerySchema,
+}

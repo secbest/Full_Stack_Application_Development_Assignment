@@ -1,8 +1,9 @@
 import { LayoutDashboard } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import FleetOverviewTab from './FleetOverviewTab'
+import ExpenseSummaryTab from './ExpenseSummaryTab'
 
-// Owner: Managing Director
-// Features: Executive KPI tiles, overhead cost summary, vendor expense chart
+// Owner: Managing Director. Implemented by Jasper as part of Liang Yi's Wave 2A scope - see README.
 export default function DashboardPage() {
   return (
     <div className="p-6 space-y-4">
@@ -10,15 +11,19 @@ export default function DashboardPage() {
         <LayoutDashboard className="w-5 h-5 text-muted-foreground" />
         <h1 className="text-2xl font-semibold text-foreground">Executive Dashboard</h1>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Overview</CardTitle>
-          <CardDescription>Macro expense analytics and revenue summary - Managing Director view</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Implementation placeholder - Liang Yi to build.</p>
-        </CardContent>
-      </Card>
+
+      <Tabs defaultValue="fleet">
+        <TabsList>
+          <TabsTrigger value="fleet">Fleet</TabsTrigger>
+          <TabsTrigger value="expense">Expense</TabsTrigger>
+        </TabsList>
+        <TabsContent value="fleet" className="mt-4">
+          <FleetOverviewTab />
+        </TabsContent>
+        <TabsContent value="expense" className="mt-4">
+          <ExpenseSummaryTab />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

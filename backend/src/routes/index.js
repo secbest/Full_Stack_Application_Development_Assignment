@@ -11,15 +11,18 @@ router.use('/auth', authRoutes)
 // const intakeRoutes = require('./intakeRoutes')
 // router.use('/intake-submissions', intakeRoutes)
 
-// const bookingRoutes = require('./bookingRoutes')
-// router.use('/bookings', bookingRoutes)
+// TEMPORARY (Jasper, 2026-07-02): read-only GET /my-jobs and GET /:id only, to unblock
+// Liang Yi's "My Jobs" screen. Zheng Bao owns this file - reconcile/replace when his
+// full booking management routes (POST /, PATCH /:id/status, crew assignment) land.
+const bookingRoutes = require('./bookingRoutes')
+router.use('/bookings', bookingRoutes)
 
-// ─── Liang Yi: Field Operations & Executive Dashboard ─────────────────────────
-// const memoRoutes = require('./memoRoutes')
-// router.use('/service-memos', memoRoutes)
+// ─── Liang Yi: Field Operations & Executive Dashboard (implemented by Jasper - see README) ────
+const serviceMemoRoutes = require('./serviceMemoRoutes')
+router.use('/service-memos', serviceMemoRoutes)
 
-// const dashboardRoutes = require('./dashboardRoutes')
-// router.use('/dashboard', dashboardRoutes)
+const dashboardRoutes = require('./dashboardRoutes')
+router.use('/dashboard', dashboardRoutes)
 
 // ─── Jasper: AR Billing, Pricing Engine & Invoice Sync ────────────────────────
 // const pricingContractRoutes = require('./pricingContractRoutes')
