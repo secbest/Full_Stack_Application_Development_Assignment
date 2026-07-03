@@ -18,7 +18,9 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 | Liang Yi | Field Operations & Executive Dashboard | Field memo form, Digital signature capture, Fleet and job status overview, Overhead cost and vendor expense summary, Mandatory revenue field validation, Hospital stamp image upload, Memo submission and AR notification trigger |
 | Group | Shared Infrastructure | Auth (register, login, logout), JWT middleware and role-based route protection, Database setup and Sequelize config, Deployment (Vercel, Render, Supabase) |
 
-> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) is being implemented by Jasper, as Liang Yi had not yet started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). See `my-project-ai/Jasper/handoff-2026-07-02.md` for details.
+> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) was implemented by Jasper, as Liang Yi had not started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). Delivered: `POST/GET /api/service-memos*`, `GET /api/dashboard/*`, the field crew "My Jobs" -> 4-step memo wizard -> "Memo History" flow, and the Managing Director's Fleet/Expense dashboard. See `my-project-ai/Jasper/handoff-2026-07-02.md` for the full session log.
+>
+> **Cross-team note for Zheng Bao:** `backend/src/routes/bookingRoutes.js` currently has two temporary read-only routes (`GET /my-jobs`, `GET /:id`) added only to unblock the Field Crew screens above. Please reconcile or replace them once your full booking-management routes (create, confirm/reject, `PATCH /:id/status`, crew assignment) are ready.
 
 ## How to Run Locally
 
@@ -37,6 +39,7 @@ npm run db:sync           # creates all tables
 npm run db:seed           # inserts demo user accounts
 npm run db:seed:clients   # inserts demo client records
 npm run db:seed:intakes   # inserts demo intake_submissions (requires db:seed first)
+npm run db:seed:bookings  # inserts demo bookings for Ravi Kumar (requires db:seed + db:seed:clients first)
 ```
 
 Demo accounts (password: `Efar@2026`):
@@ -81,6 +84,7 @@ node src/index.js  # single run
 | Axios | HTTP client with JWT interceptors |
 | Lucide React | Icon set |
 | clsx + tailwind-merge | Conditional class merging (cn() helper) |
+| MUI X Charts | Executive dashboard charts (booking status doughnut, vendor bar/line charts) |
 
 ### Backend
 
