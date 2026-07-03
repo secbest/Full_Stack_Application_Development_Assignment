@@ -31,8 +31,10 @@ import XeroConnectPage from './pages/vendor/XeroConnectPage'
 // Quotations Specialist (Zheng Bao)
 import BookingListPage from './pages/bookings/BookingListPage'
 
-// Field Crew (Liang Yi)
-import ServiceMemoFormPage from './pages/memos/ServiceMemoFormPage'
+// Field Crew (Liang Yi, implemented by Jasper - see README)
+import MyJobsPage from './pages/jobs/MyJobsPage'
+import MemoWizardPage from './pages/jobs/memo-wizard/MemoWizardPage'
+import MemoHistoryPage from './pages/memos/MemoHistoryPage'
 
 // Dev only - remove before submission
 import UITestPage from './pages/UITestPage'
@@ -87,9 +89,11 @@ export default function App() {
             <Route path="/bookings" element={<BookingListPage />} />
           </Route>
 
-          {/* ── Field Crew (Liang Yi) ──────────────────────────────────────── */}
+          {/* ── Field Crew (Liang Yi, implemented by Jasper) ────────────────── */}
           <Route element={<RoleRoute roles={['field_crew']} />}>
-            <Route path="/service-memos/new" element={<ServiceMemoFormPage />} />
+            <Route path="/jobs" element={<MyJobsPage />} />
+            <Route path="/jobs/:bookingId/memo" element={<MemoWizardPage />} />
+            <Route path="/memos/history" element={<MemoHistoryPage />} />
           </Route>
 
         </Route>

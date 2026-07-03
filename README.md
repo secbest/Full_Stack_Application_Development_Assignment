@@ -18,6 +18,8 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 | Liang Yi | Field Operations & Executive Dashboard | Field memo form, Digital signature capture, Fleet and job status overview, Overhead cost and vendor expense summary, Mandatory revenue field validation, Hospital stamp image upload, Memo submission and AR notification trigger |
 | Group | Shared Infrastructure | Auth (register, login, logout), JWT middleware and role-based route protection, Database setup and Sequelize config, Deployment (Vercel, Render, Supabase) |
 
+> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) is being implemented by Jasper, as Liang Yi had not yet started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). See `my-project-ai/Jasper/handoff-2026-07-02.md` for details.
+
 ## How to Run Locally
 
 ### Prerequisites
