@@ -108,31 +108,5 @@ node src/index.js  # single run
 | Xero API (OAuth 2.0) | Draft invoice creation, bank feed ingestion |
 | Google Gemini API | OCR extraction from vendor invoice PDFs |
 
-## Progress Log
-
-### 2026-06-29 - Wave 0: Auth Foundation & Login UI (Kwan Hua)
-
-**Shared infrastructure (group scope)**
-
-- **Login page** (`frontend/src/pages/auth/LoginPage.jsx`) - Full two-panel login screen matching the Figma design: branding panel left, form right. Includes show/hide password toggle, role-based redirect after login (email keyword maps to role home screen), loading spinner, and inline error display.
-- **Client-side form validation** - Email format check and minimum password length (6 characters) validated on blur and on submit. Field-level error messages appear below each input with a red border; errors clear as the user corrects their input.
-- **Backend DB connection fix** (`backend/src/config/index.js`) - Sequelize was silently ignoring SSL options when given a raw connection URI, causing `ECONNRESET` errors against Supabase. Refactored to parse the URL manually and pass host, port, username, password, and database as discrete options so SSL is always applied. Added connection pooling.
-- **Non-fatal DB startup** (`backend/src/index.js`) - The server no longer crashes if the database is unreachable at startup. The connection check runs in the background and logs a warning instead of throwing an unhandled rejection.
-- **Auth error masking** (`backend/src/controllers/authController.js`) - The login endpoint now returns "Invalid email or password." for all failures, including internal DB errors, instead of leaking the raw exception message (e.g. `ENOTFOUND`).
-- **DB scripts** (`backend/package.json`) - Added `npm run db:sync` (creates tables via Sequelize sync) and `npm run db:seed` (inserts the five demo user accounts).
-- **Deployment docs** (`deployment.md`) - Documented the full local dev setup: prerequisites, install steps, env file configuration, DB sync/seed instructions, and demo account credentials.
-
-### 2026-07-01 - Demo Data Seeding (Kwan Hua)
-
-- **Client seed script** (`backend/src/scripts/seed-clients.js`) - Inserts five demo client records (Raffles Medical Group, Marina Bay Sands Expo, ST Engineering, Jurong Island Industrial Corp, Singapore Sports Hub) used as pricing-contract counterparties. Uses `findOrCreate` on `contact_email` so it is safe to re-run without creating duplicates.
-- **Intake submission seed script** (`backend/src/scripts/seed-intakes.js`) - Populates the Quotations Specialist's intake queue with sample `intake_submissions` so the booking workflow has data to test against: 2 pending, 4 confirmed, and 2 rejected records with realistic Singapore hospital/venue details. Looks up Camilla's user ID at runtime (`reviewed_by` FK) instead of hardcoding it, and requires `seed-users.js` to have run first. Uses `findOrCreate` on `reference_number` so it is safe to re-run.
-
-### 2026-07-02 - Wave 2A Handover: Field Operations & Executive Dashboard (Jasper covering Liang Yi's scope)
-
-- **Status check before starting:** Confirmed via git branches and `backend/src/routes/index.js` that only Wave 0 (auth) is actually implemented in the backend. Zheng Bao's Wave 1 routes (`bookingRoutes`, `intakeRoutes`) and the `PATCH /api/bookings/:id/status` endpoint are not yet built - only the model layer and an in-memory stub (`backend/src/stubs/intake-booking.js`) exist. Only one migration (`create-users`) has been run; `bookings`/`clients` tables do not yet exist in the actual database.
-- **Decision:** Proceed with Wave 2A now, building against the existing stub data (`backend/src/stubs/intake-booking.js`, which already mirrors the planned `PATCH /api/bookings/:id/status` transition rules) rather than waiting on Zheng Bao's real tables, per the "Can Mock?" column in `design/feature-dependencies.md`.
-- **Known risk (resolved 2026-07-02):** Confirmed the project doesn't use migrations for schema deployment - `npm run db:sync` (`sequelize.sync({ alter: true })`) creates every registered model together in one pass, so `bookings` and `service_memos` land in the same sync with no FK-ordering problem. Ran `db:sync` against the shared Supabase DB and seeded test bookings (`db:seed:bookings`) for Ravi Kumar so the memo wizard can be tested end-to-end without waiting on Zheng Bao's intake/booking confirmation flow.
-- **Attribution:** Design docs in `design/liang-yi/` remain authored by Liang Yi. Code, migrations, and tests for this wave are being committed under Jasper to keep Git history traceable to the actual author.
-
 ## Session Logs
 C:\Users\<your-username>\.claude\projects\<code-folder>\
