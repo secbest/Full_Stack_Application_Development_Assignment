@@ -112,6 +112,8 @@ No hard circular dependencies exist. The pipeline runs in one direction: intake 
 
 ## Suggested Build Order
 
+> **Status update (2026-07-02):** Wave 0/1 backend routes are not yet implemented beyond auth (see `backend/src/routes/index.js`) - only models, seeders, and the `backend/src/stubs/` mocks exist. Jasper is starting Wave 2A (Liang Yi's Field Operations scope) now against the stub data rather than waiting, since every Liang Yi dependency below is marked mockable. The `service_memos` migration will avoid a hard FK constraint to `bookings` until Zheng Bao's Wave 1 migration is merged.
+
 ```
 Wave 0 - Group (all members blocked until this is done)
   ├── users + roles table, migration, seed

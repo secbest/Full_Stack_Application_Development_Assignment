@@ -18,6 +18,8 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 | Liang Yi | Field Operations & Executive Dashboard | Field memo form, Digital signature capture, Fleet and job status overview, Overhead cost and vendor expense summary, Mandatory revenue field validation, Hospital stamp image upload, Memo submission and AR notification trigger |
 | Group | Shared Infrastructure | Auth (register, login, logout), JWT middleware and role-based route protection, Database setup and Sequelize config, Deployment (Vercel, Render, Supabase) |
 
+> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) is being implemented by Jasper, as Liang Yi had not yet started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). See `my-project-ai/Jasper/handoff-2026-07-02.md` for details.
+
 ## How to Run Locally
 
 ### Prerequisites
@@ -124,6 +126,13 @@ node src/index.js  # single run
 
 - **Client seed script** (`backend/src/scripts/seed-clients.js`) - Inserts five demo client records (Raffles Medical Group, Marina Bay Sands Expo, ST Engineering, Jurong Island Industrial Corp, Singapore Sports Hub) used as pricing-contract counterparties. Uses `findOrCreate` on `contact_email` so it is safe to re-run without creating duplicates.
 - **Intake submission seed script** (`backend/src/scripts/seed-intakes.js`) - Populates the Quotations Specialist's intake queue with sample `intake_submissions` so the booking workflow has data to test against: 2 pending, 4 confirmed, and 2 rejected records with realistic Singapore hospital/venue details. Looks up Camilla's user ID at runtime (`reviewed_by` FK) instead of hardcoding it, and requires `seed-users.js` to have run first. Uses `findOrCreate` on `reference_number` so it is safe to re-run.
+
+### 2026-07-02 - Wave 2A Handover: Field Operations & Executive Dashboard (Jasper covering Liang Yi's scope)
+
+- **Status check before starting:** Confirmed via git branches and `backend/src/routes/index.js` that only Wave 0 (auth) is actually implemented in the backend. Zheng Bao's Wave 1 routes (`bookingRoutes`, `intakeRoutes`) and the `PATCH /api/bookings/:id/status` endpoint are not yet built - only the model layer and an in-memory stub (`backend/src/stubs/intake-booking.js`) exist. Only one migration (`create-users`) has been run; `bookings`/`clients` tables do not yet exist in the actual database.
+- **Decision:** Proceed with Wave 2A now, building against the existing stub data (`backend/src/stubs/intake-booking.js`, which already mirrors the planned `PATCH /api/bookings/:id/status` transition rules) rather than waiting on Zheng Bao's real tables, per the "Can Mock?" column in `design/feature-dependencies.md`.
+- **Known risk (resolved 2026-07-02):** Confirmed the project doesn't use migrations for schema deployment - `npm run db:sync` (`sequelize.sync({ alter: true })`) creates every registered model together in one pass, so `bookings` and `service_memos` land in the same sync with no FK-ordering problem. Ran `db:sync` against the shared Supabase DB and seeded test bookings (`db:seed:bookings`) for Ravi Kumar so the memo wizard can be tested end-to-end without waiting on Zheng Bao's intake/booking confirmation flow.
+- **Attribution:** Design docs in `design/liang-yi/` remain authored by Liang Yi. Code, migrations, and tests for this wave are being committed under Jasper to keep Git history traceable to the actual author.
 
 ## Session Logs
 C:\Users\<your-username>\.claude\projects\<code-folder>\
