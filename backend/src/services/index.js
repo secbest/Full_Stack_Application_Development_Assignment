@@ -1,2 +1,7 @@
 // Business logic layer - no req/res objects here, making services independently testable
-// Key services: pricingService.js, ocrService.js, xeroService.js, cloudinaryService.js
+
+const xeroService = require('./xeroService')
+const cloudinaryService = require('./cloudinaryService')
+const ocrService = require('./ocrService')
+
+module.exports = { xeroService, cloudinaryService, ocrService }

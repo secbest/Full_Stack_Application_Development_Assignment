@@ -14,4 +14,8 @@ const loginSchema = Yup.object({
   password: Yup.string().required('Password is required'),
 })
 
-module.exports = { registerSchema, loginSchema }
+const vendorInvoiceUploadSchema = Yup.object({
+  rebate_percentage: Yup.number().min(0).max(100).default(1.00),
+})
+
+module.exports = { registerSchema, loginSchema, vendorInvoiceUploadSchema }
