@@ -60,7 +60,7 @@ export default function IntakeQueuePage() {
     setLoading(true)
     try {
       const { data } = await api.get('/intake', { params: { status: 'pending', limit: 50 } })
-      setIntakes(data.data.map((item) => ({
+      setIntakes(data.data.data.map((item) => ({
         ref: item.reference_number,
         submitted: new Date(item.created_at).toLocaleString('en-SG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
         name: item.customer_name,

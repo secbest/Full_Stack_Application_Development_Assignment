@@ -88,11 +88,11 @@ export default function BookingListPage() {
     setLoading(true)
     try {
       const { data } = await api.get('/bookings', { params: { limit: 50 } })
-      setBookings(data.data.map((booking) => ({
+      setBookings(data.data.data.map((booking) => ({
         ref: booking.reference_number,
         id: booking.id,
         created: new Date(booking.created_at).toLocaleString('en-SG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-        createdBy: booking.created_by,
+        createdBy: booking.created_by_name || booking.created_by,
         linkedIntake: booking.intake_reference || booking.intake_submission_id,
         client: booking.client_name || 'Unknown client',
         serviceType: booking.service_type,

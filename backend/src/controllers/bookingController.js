@@ -1,5 +1,5 @@
 const { Op } = require('sequelize')
-const { Booking, Client, User } = require('../models')
+const { Booking, Client, User, IntakeSubmission } = require('../models')
 const { success, error, notFound } = require('../utils')
 const { bookingCrewSchema } = require('../validators')
 
@@ -25,7 +25,12 @@ async function listBookings(req, res) {
     const offset = (Number(page) - 1) * Number(limit)
     const { rows, count } = await Booking.findAndCountAll({
       where,
-      include: [{ model: Client, attributes: ['name'] }, { model: User, as: 'assignedCrew', attributes: ['id', 'name'] }],
+      include: [
+        { model: Client, attributes: ['name'] },
+        { model: User, as: 'assignedCrew', attributes: ['id', 'name'] },
+        { model: User, as: 'createdBy', attributes: ['id', 'name'] },
+        { model: IntakeSubmission, attributes: ['reference_number'] },
+      ],
       order: [['created_at', 'DESC']],
       limit: Number(limit),
       offset,
@@ -36,12 +41,20 @@ async function listBookings(req, res) {
       data: rows.map((booking) => ({
         id: booking.id,
         reference_number: booking.reference_number,
+        intake_submission_id: booking.intake_submission_id,
+        intake_reference: booking.IntakeSubmission?.reference_number || null,
         client_name: booking.Client?.name || null,
         service_type: booking.service_type,
         service_tier: booking.service_tier,
+        original_service_tier: booking.original_service_tier,
         scheduled_date: booking.scheduled_date,
         scheduled_time: booking.scheduled_time,
+        pickup_location: booking.pickup_location,
+        destination: booking.destination,
+        notes: booking.notes,
         assigned_crew_name: booking.assignedCrew?.name || null,
+        created_by: booking.created_by,
+        created_by_name: booking.createdBy?.name || null,
         status: booking.status,
         has_memo: false,
         has_invoice: false,
