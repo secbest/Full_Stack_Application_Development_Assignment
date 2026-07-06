@@ -8,11 +8,11 @@ router.use('/auth', authRoutes)
 // router.use('/users', userRoutes)
 
 // ─── Zheng Bao: Customer Intake & Booking Management ──────────────────────────
-// const intakeRoutes = require('./intakeRoutes')
-// router.use('/intake-submissions', intakeRoutes)
+const intakeRoutes = require('./intakeRoutes')
+router.use('/intake', intakeRoutes)
 
-// const bookingRoutes = require('./bookingRoutes')
-// router.use('/bookings', bookingRoutes)
+const bookingRoutes = require('./bookingRoutes')
+router.use('/bookings', bookingRoutes)
 
 // ─── Liang Yi: Field Operations & Executive Dashboard ─────────────────────────
 // const memoRoutes = require('./memoRoutes')

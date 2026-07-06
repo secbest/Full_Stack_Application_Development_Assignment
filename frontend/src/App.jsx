@@ -30,6 +30,7 @@ import XeroConnectPage from './pages/vendor/XeroConnectPage'
 
 // Quotations Specialist (Zheng Bao)
 import BookingListPage from './pages/bookings/BookingListPage'
+import IntakeQueuePage from './pages/bookings/IntakeQueuePage'
 
 // Field Crew (Liang Yi)
 import ServiceMemoFormPage from './pages/memos/ServiceMemoFormPage'
@@ -85,6 +86,7 @@ export default function App() {
           {/* ── Quotations Specialist (Zheng Bao) ─────────────────────────── */}
           <Route element={<RoleRoute roles={['quotations_specialist']} />}>
             <Route path="/bookings" element={<BookingListPage />} />
+            <Route path="/intake-queue" element={<IntakeQueuePage />} />
           </Route>
 
           {/* ── Field Crew (Liang Yi) ──────────────────────────────────────── */}

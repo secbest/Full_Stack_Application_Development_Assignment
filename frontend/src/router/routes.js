@@ -56,6 +56,12 @@ export const NAV_ROUTES = [
 
   // ── Quotations Specialist (Zheng Bao) ────────────────────────────────────────
   {
+    path: '/intake-queue',
+    label: 'Intake Queue',
+    Icon: CalendarDays,
+    roles: ['quotations_specialist'],
+  },
+  {
     path: '/bookings',
     label: 'Bookings',
     Icon: CalendarDays,
@@ -76,7 +82,7 @@ export const ROLE_HOMES = {
   managing_director:     '/dashboard',
   ar_specialist:         '/invoices',
   ap_specialist:         '/vendor-invoices',
-  quotations_specialist: '/bookings',
+  quotations_specialist: '/intake-queue',
   field_crew:            '/service-memos/new',
 }
 
