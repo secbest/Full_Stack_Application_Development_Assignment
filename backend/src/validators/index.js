@@ -55,6 +55,14 @@ const bookingCrewSchema = Yup.object({
   assigned_crew_id: Yup.number().integer().positive().nullable(true).required('assigned_crew_id is required'),
 })
 
+// Liang Yi - Field Operations & Executive Dashboard
+const {
+  createServiceMemoSchema,
+  memoIdParamSchema,
+  listServiceMemosQuerySchema,
+} = require('./serviceMemoValidators')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashboardValidators')
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -62,4 +70,9 @@ module.exports = {
   intakeConfirmSchema,
   intakeRejectSchema,
   bookingCrewSchema,
+  createServiceMemoSchema,
+  memoIdParamSchema,
+  listServiceMemosQuerySchema,
+  fleetOverviewQuerySchema,
+  vendorExpensesQuerySchema,
 }

@@ -2,6 +2,8 @@
 
 **Feature Area:** Field Operations & Executive Dashboard
 
+> **Implementation note (2026-07-02):** Design below is authored by Liang Yi. Wave 2A code implementation (`service_memos`, `memo_signatures`, memo wizard, executive dashboard) is being carried out by Jasper - see `README.md` Task Allocation and `my-project-ai/Jasper/handoff-2026-07-02.md` for context.
+
 ---
 
 ## UC-01: Fill In Digital Field Memo

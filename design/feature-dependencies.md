@@ -112,6 +112,8 @@ No hard circular dependencies exist. The pipeline runs in one direction: intake 
 
 ## Suggested Build Order
 
+> **Status update (2026-07-02, In Progress):** Wave 2A (Liang Yi's Field Operations & Executive Dashboard scope) has been implemented by Jasper - `service_memos`/`memo_signatures` tables, the full `/api/service-memos/*` and `/api/dashboard/*` endpoints, and the frontend My Jobs -> Memo Wizard -> Memo History flow plus the Fleet/Expense dashboard. Built directly against the real `Booking`/`User` Sequelize models (not the stub) once `npm run db:sync` confirmed table creation doesn't depend on migrations in this project - see `backend/src/scripts/sync-db.js`. Two temporary read-only routes (`GET /api/bookings/my-jobs`, `GET /api/bookings/:id`) were added to `backend/src/routes/bookingRoutes.js` to unblock this work; Zheng Bao should reconcile these with his full booking-management implementation.
+
 ```
 Wave 0 - Group (all members blocked until this is done)
   ├── users + roles table, migration, seed

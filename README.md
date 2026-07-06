@@ -18,6 +18,10 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 | Liang Yi | Field Operations & Executive Dashboard | Field memo form, Digital signature capture, Fleet and job status overview, Overhead cost and vendor expense summary, Mandatory revenue field validation, Hospital stamp image upload, Memo submission and AR notification trigger |
 | Group | Shared Infrastructure | Auth (register, login, logout), JWT middleware and role-based route protection, Database setup and Sequelize config, Deployment (Vercel, Render, Supabase) |
 
+> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) was implemented by Jasper, as Liang Yi had not started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). Delivered: `POST/GET /api/service-memos*`, `GET /api/dashboard/*`, the field crew "My Jobs" -> 4-step memo wizard -> "Memo History" flow, and the Managing Director's Fleet/Expense dashboard. See `my-project-ai/Jasper/handoff-2026-07-02.md` for the full session log.
+>
+> **Cross-team note for Zheng Bao:** `backend/src/routes/bookingRoutes.js` currently has two temporary read-only routes (`GET /my-jobs`, `GET /:id`) added only to unblock the Field Crew screens above. Please reconcile or replace them once your full booking-management routes (create, confirm/reject, `PATCH /:id/status`, crew assignment) are ready.
+
 ## How to Run Locally
 
 ### Prerequisites
@@ -31,8 +35,11 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 
 ```bash
 cd backend
-npm run db:sync   # creates all tables
-npm run db:seed   # inserts demo user accounts
+npm run db:sync           # creates all tables
+npm run db:seed           # inserts demo user accounts
+npm run db:seed:clients   # inserts demo client records
+npm run db:seed:intakes   # inserts demo intake_submissions (requires db:seed first)
+npm run db:seed:bookings  # inserts demo bookings for Ravi Kumar (requires db:seed + db:seed:clients first)
 ```
 
 Demo accounts (password: `Efar@2026`):
@@ -77,6 +84,7 @@ node src/index.js  # single run
 | Axios | HTTP client with JWT interceptors |
 | Lucide React | Icon set |
 | clsx + tailwind-merge | Conditional class merging (cn() helper) |
+| MUI X Charts | Executive dashboard charts (booking status doughnut, vendor bar/line charts) |
 
 ### Backend
 
@@ -103,20 +111,6 @@ node src/index.js  # single run
 |---|---|
 | Xero API (OAuth 2.0) | Draft invoice creation, bank feed ingestion |
 | Google Gemini API | OCR extraction from vendor invoice PDFs |
-
-## Progress Log
-
-### 2026-06-29 - Wave 0: Auth Foundation & Login UI (Kwan Hua)
-
-**Shared infrastructure (group scope)**
-
-- **Login page** (`frontend/src/pages/auth/LoginPage.jsx`) - Full two-panel login screen matching the Figma design: branding panel left, form right. Includes show/hide password toggle, role-based redirect after login (email keyword maps to role home screen), loading spinner, and inline error display.
-- **Client-side form validation** - Email format check and minimum password length (6 characters) validated on blur and on submit. Field-level error messages appear below each input with a red border; errors clear as the user corrects their input.
-- **Backend DB connection fix** (`backend/src/config/index.js`) - Sequelize was silently ignoring SSL options when given a raw connection URI, causing `ECONNRESET` errors against Supabase. Refactored to parse the URL manually and pass host, port, username, password, and database as discrete options so SSL is always applied. Added connection pooling.
-- **Non-fatal DB startup** (`backend/src/index.js`) - The server no longer crashes if the database is unreachable at startup. The connection check runs in the background and logs a warning instead of throwing an unhandled rejection.
-- **Auth error masking** (`backend/src/controllers/authController.js`) - The login endpoint now returns "Invalid email or password." for all failures, including internal DB errors, instead of leaking the raw exception message (e.g. `ENOTFOUND`).
-- **DB scripts** (`backend/package.json`) - Added `npm run db:sync` (creates tables via Sequelize sync) and `npm run db:seed` (inserts the five demo user accounts).
-- **Deployment docs** (`deployment.md`) - Documented the full local dev setup: prerequisites, install steps, env file configuration, DB sync/seed instructions, and demo account credentials.
 
 ## Session Logs
 C:\Users\<your-username>\.claude\projects\<code-folder>\

@@ -27,9 +27,13 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
-      <aside className="w-60 flex-shrink-0 flex flex-col bg-[#1B2336] border-r border-border">
+      {/* Full-panel dark background per CLAUDE.md ("Sidebar bg: #1E293B") and every
+          Figma Make screen (shared.tsx's <Sidebar> sets this on the whole <aside>, not
+          just a header strip) - previously only the header row was dark, and at the
+          wrong hex (#1B2336). */}
+      <aside className="w-60 flex-shrink-0 flex flex-col bg-[#1E293B]">
         {/* Brand header */}
-        <div className="flex items-center gap-2.5 px-5 py-[18px] bg-[#1B2336]">
+        <div className="flex items-center gap-2.5 px-5 py-[18px] border-b border-white/10">
           <Activity className="w-4 h-4 text-teal-400 flex-shrink-0" />
           <span className="text-sm font-semibold tracking-wide text-white">EFAR Platform</span>
         </div>
@@ -43,8 +47,8 @@ export default function AppLayout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-white hover:bg-white/10 hover:text-white'
+                    ? 'bg-[#0F172A] text-white'
+                    : 'text-slate-300 hover:bg-[#0F172A] hover:text-white'
                 }`
               }
             >
@@ -55,10 +59,10 @@ export default function AppLayout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-3 py-3 border-t border-border space-y-2">
+        <div className="px-3 py-3 border-t border-white/10 space-y-2">
           <div className="px-3 py-1">
             <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-            <p className="text-xs text-slate-300 truncate">{user?.email}</p>
+            <p className="text-xs text-slate-400 truncate">{user?.email}</p>
             <span className={`inline-block mt-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${roleMeta.badge}`}>
               {roleMeta.label}
             </span>
@@ -67,7 +71,7 @@ export default function AppLayout() {
             variant="ghost"
             size="sm"
             onClick={handleLogout}
-            className="w-full justify-start gap-2 text-white hover:bg-white/10 hover:text-white"
+            className="w-full justify-start gap-2 text-slate-300 hover:bg-[#0F172A] hover:text-white"
           >
             <LogOut className="w-4 h-4" />
             Sign out

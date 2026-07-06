@@ -6,7 +6,8 @@ import {
   Building2,
   Plug,
   CalendarDays,
-  FilePlus,
+  Briefcase,
+  History,
 } from 'lucide-react'
 
 // NAV_ROUTES drives both the sidebar nav in AppLayout and the route tree in App.jsx.
@@ -68,22 +69,30 @@ export const NAV_ROUTES = [
     roles: ['quotations_specialist'],
   },
 
-  // ── Field Crew (Liang Yi) ────────────────────────────────────────────────────
+  // ── Field Crew (Liang Yi, implemented by Jasper) ──────────────────────────────
   {
-    path: '/service-memos/new',
-    label: 'New Memo',
-    Icon: FilePlus,
+    path: '/jobs',
+    label: 'My Jobs',
+    Icon: Briefcase,
+    roles: ['field_crew'],
+  },
+  {
+    path: '/memos/history',
+    label: 'Memo History',
+    Icon: History,
     roles: ['field_crew'],
   },
 ]
 
-// Default landing page per role after login
+// Default landing page per role after login.
+// CLAUDE.md: "My Jobs" is always the first screen for field crew - there is no separate
+// dashboard for this role, and no standalone "create memo" entry point outside a job card.
 export const ROLE_HOMES = {
   managing_director:     '/dashboard',
   ar_specialist:         '/invoices',
   ap_specialist:         '/vendor-invoices',
   quotations_specialist: '/intake-queue',
-  field_crew:            '/service-memos/new',
+  field_crew:            '/jobs',
 }
 
 export function getRoleHome(role) {

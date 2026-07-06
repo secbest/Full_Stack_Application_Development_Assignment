@@ -7,7 +7,10 @@
     "dev": "nodemon src/index.js",
     "test": "jest",
     "db:sync": "node src/scripts/sync-db.js",
-    "db:seed": "node src/scripts/seed-users.js"
+    "db:seed": "node src/scripts/seed-users.js",
+    "db:seed:clients": "node src/scripts/seed-clients.js",
+    "db:seed:intakes": "node src/scripts/seed-intakes.js",
+    "db:seed:bookings": "node src/scripts/seed-bookings.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.17.1",

@@ -1,0 +1,74 @@
+commit d67241e0723c450cc632943026f2065c59ff63e4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 1 10:19:31 2026 +0800
+
+    seed-intake for bookings
+
+commit d7dcfb289a993ed2e68119b722b61e410e92a6b6
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 14:27:25 2026 +0800
+
+    client seed to test
+
+commit bcb0f84ed0ffc2732406b58e916ce1942a79901c
+Merge: 35a1615 0dad513
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 13:40:44 2026 +0800
+
+    Merge wave-0-login: auth foundation and login UI
+    
+    - Full login page with Figma-matching two-panel layout, role-based
+      routing, field validation, and persistent error messaging
+    - Supabase SSL connection fix (parse URL manually so pg v8 respects
+      dialectOptions.ssl and avoids ECONNRESET)
+    - Non-fatal DB startup check so the server does not crash when the
+      database is temporarily unreachable
+    - Auth error masking: login endpoint returns a generic message instead
+      of leaking the raw DB exception (ENOTFOUND etc.)
+    - db:sync and db:seed npm scripts with five seeded demo accounts
+    - Updated README (prerequisites, demo accounts table) and deployment.md
+      (full local dev setup guide)
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+commit 0dad51343d4f1a28d4c1511bc43cce33ce1e30c0
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 13:40:32 2026 +0800
+
+    Fix login error persistence and 401 intercept loop
+    
+    - Remove setErrorMsg('') from handleSubmit so the error box stays
+      visible between submit attempts instead of briefly disappearing
+    - Skip the global 401 redirect in the Axios interceptor when the
+      request is to /auth/login; a wrong-password 401 should show an
+      inline error, not trigger a full page reload that wipes React state
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+commit c8f8e45ecb8383ab31b8ef1723b690078dcde1b8
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 00:02:58 2026 +0800
+
+    Login page + Readme
+    
+    Added and fix primary relational database as well as add data validation for login page
+
+commit 289aaafecfebf04f5a8628760033fe2746550d8d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jun 25 00:34:01 2026 +0800
+
+    Stage 3: Coding(Group part Step 1 - 4)
+
+commit fd1ef3cea727f98f600ea6eb502b7c7c5ebe5fe9
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jun 22 15:57:17 2026 +0800
+
+    Stage 2:Design (Part 4.1)
+
+commit 998071e9d900b567f33e7920644eaf236a4b174d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri May 15 13:17:24 2026 +0800
+
+    Update README.md
+    
+    Test
