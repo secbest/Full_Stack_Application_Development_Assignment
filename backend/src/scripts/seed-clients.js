@@ -8,6 +8,20 @@ const Client = require('../models/Client')
 
 const DEMO_CLIENTS = [
   {
+    // Matches the organisation on the seeded intake submissions (see seed-intakes.js)
+    // so seed-bookings.js can link confirmed bookings to a real client record.
+    name: 'Tan Tock Seng Hospital',
+    contact_email: 'ops@ttsh.com.sg',
+    contact_phone: '+65 6357 7000',
+    billing_address: '11 Jalan Tan Tock Seng, Singapore 308433',
+  },
+  {
+    name: 'ABC Corporation',
+    contact_email: 'admin@abc-corp.com.sg',
+    contact_phone: '+65 6224 1000',
+    billing_address: '10 Anson Road, Singapore 079903',
+  },
+  {
     name: 'Raffles Medical Group',
     contact_email: 'ops@rafflesmedical.com.sg',
     contact_phone: '+65 6311 1111',

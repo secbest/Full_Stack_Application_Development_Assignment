@@ -6,6 +6,19 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
+// Uploads an in-memory buffer (from multer's memoryStorage) to Cloudinary and resolves
+// with the upload result. Wraps the SDK's stream-based API in a Promise so controllers
+// can just `await` it instead of dealing with callbacks.
+function uploadBuffer(buffer, { folder }) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream({ folder, resource_type: 'image' }, (err, result) => {
+      if (err) return reject(err)
+      resolve(result)
+    })
+    stream.end(buffer)
+  })
+}
+
 // Uploads a vendor invoice PDF as a raw asset and returns its public URL.
 // resource_type 'raw' is required for non-image files like PDFs.
 function uploadPdf(buffer, originalName) {
@@ -26,4 +39,4 @@ function uploadPdf(buffer, originalName) {
   })
 }
 
-module.exports = { uploadPdf }
+module.exports = { uploadBuffer, uploadPdf }

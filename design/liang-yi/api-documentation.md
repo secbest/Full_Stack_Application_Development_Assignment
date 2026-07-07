@@ -2,6 +2,8 @@
 
 **Feature Area:** Field Operations & Executive Dashboard
 
+> **Implementation note (2026-07-02):** Design below is authored by Liang Yi. Wave 2A code implementation is being carried out by Jasper - see `README.md` Task Allocation and `my-project-ai/Jasper/handoff-2026-07-02.md` for context.
+
 All endpoints are prefixed with `/api`. Authentication uses JWT Bearer tokens unless stated otherwise. The `Authorization` header format is:
 
 ```

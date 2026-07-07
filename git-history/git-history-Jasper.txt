@@ -1,0 +1,260 @@
+commit 9e675c737b08c2d98f111ac2ffcf49b8c8aa252a
+Merge: 3d769ce 1dfacf0
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:27:57 2026 +0800
+
+    Merge main into wave-2-2A-field-operations
+    
+    Resolves the README.md Progress Log conflict by following Kwan Hua's
+    restructuring on main (per-student handoff files instead of a shared README
+    section) - Jasper's Wave 2A summary already lives in
+    my-project-ai/Jasper/handoff-2026-07-02.md, so nothing is lost.
+
+commit 3d769ceea733a01ce0bc872e3b11e019430f6e1b
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:26:13 2026 +0800
+
+    Implement Wave 2A: Field Operations & Executive Dashboard
+    
+    Delivers the field crew flow (My Jobs, 4-step memo wizard, memo history) and
+    managing director dashboard (Fleet/Expense tabs), backed by new
+    service-memo/dashboard/booking-read API endpoints, plus the shadcn primitives,
+    toast system, and UI fixes (sidebar theme color, popover background,
+    jsconfig deprecation) needed to support them.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 03844b2810f985e48e14fb9dd7d14138fc37a522
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:25:54 2026 +0800
+
+    Record Wave 2A ownership handover and restore .env.example placeholders
+    
+    Liang Yi had not started Wave 2A (Field Operations & Executive Dashboard) by
+    the time it was next in the build order, so Jasper is implementing it instead
+    - documented in README, design docs, and Jasper's handoff log for grading
+    traceability. Also found and restored a real Supabase connection string that
+    had been committed to backend/.env.example instead of a placeholder.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 1dfacf0caaf192f0aad4eeb86c4593a161403ee4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:19:41 2026 +0800
+
+    Update READ.me/Handoff.md
+
+commit c4b489fe4f90310a8f6b16633ba9b6dc19d49901
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 2 15:59:01 2026 +0800
+
+    Handoff Summary
+    
+    Handoff Summary on 2/7/2026
+
+commit 79dfe0c577e99f2eebd9a8f1e3598afc5466bb75
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:52:32 2026 +0800
+
+    Update file directory
+
+commit 62bccbab06eae1e9c95a7baa4f626431c31b8929
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:47:24 2026 +0800
+
+    Update: Ai Logs/Git-History
+
+commit e4c26658ad5f29d07d01933ae54836c24f239a08
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 2 15:34:20 2026 +0800
+
+    Git history
+    
+    Git history setted up for team and individual
+
+commit d67241e0723c450cc632943026f2065c59ff63e4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 1 10:19:31 2026 +0800
+
+    seed-intake for bookings
+
+commit d7dcfb289a993ed2e68119b722b61e410e92a6b6
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 14:27:25 2026 +0800
+
+    client seed to test
+
+commit f288c2cf5e12f8a50247d7c59c0031bc821d116c
+Author: secbest <jastkc8@gmail.com>
+Date:   Tue Jun 30 14:11:16 2026 +0800
+
+    Updated package-lock.json
+    
+    package-lock.json frontend and backend updated
+
+commit bcb0f84ed0ffc2732406b58e916ce1942a79901c
+Merge: 35a1615 0dad513
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 13:40:44 2026 +0800
+
+    Merge wave-0-login: auth foundation and login UI
+    
+    - Full login page with Figma-matching two-panel layout, role-based
+      routing, field validation, and persistent error messaging
+    - Supabase SSL connection fix (parse URL manually so pg v8 respects
+      dialectOptions.ssl and avoids ECONNRESET)
+    - Non-fatal DB startup check so the server does not crash when the
+      database is temporarily unreachable
+    - Auth error masking: login endpoint returns a generic message instead
+      of leaking the raw DB exception (ENOTFOUND etc.)
+    - db:sync and db:seed npm scripts with five seeded demo accounts
+    - Updated README (prerequisites, demo accounts table) and deployment.md
+      (full local dev setup guide)
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+commit 0dad51343d4f1a28d4c1511bc43cce33ce1e30c0
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 13:40:32 2026 +0800
+
+    Fix login error persistence and 401 intercept loop
+    
+    - Remove setErrorMsg('') from handleSubmit so the error box stays
+      visible between submit attempts instead of briefly disappearing
+    - Skip the global 401 redirect in the Axios interceptor when the
+      request is to /auth/login; a wrong-password 401 should show an
+      inline error, not trigger a full page reload that wipes React state
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+commit c8f8e45ecb8383ab31b8ef1723b690078dcde1b8
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Jun 30 00:02:58 2026 +0800
+
+    Login page + Readme
+    
+    Added and fix primary relational database as well as add data validation for login page
+
+commit 35a1615506d54d4a90cebaf5045967562702d3c5
+Author: secbest <jastkc8@gmail.com>
+Date:   Sun Jun 28 23:15:55 2026 +0800
+
+    Figma Design Code & Claude.md
+    
+    Implemented "Design login screen for EFAR" folder for Figma Design Code  references and claude.md for references
+
+commit 2e2336e5d4d7da763f59599bb77c00f4af1ab74f
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jun 26 23:54:17 2026 +0800
+
+    Figma Make
+    
+    Figma Make prompts to enhance design for visualisation and overview
+
+commit 289aaafecfebf04f5a8628760033fe2746550d8d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jun 25 00:34:01 2026 +0800
+
+    Stage 3: Coding(Group part Step 1 - 4)
+
+commit 76065f612ea7909a57f8491e4fc1be8c50faaf08
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jun 24 23:40:42 2026 +0800
+
+    Backend created
+    
+    Supbase database created
+
+commit 06291449cd7e7f720391b3935b97bfb633fbf079
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jun 24 01:07:47 2026 +0800
+
+    Added more plugins and skills for Claude
+    
+    Plugins containing supabase, vercel, figma, frontend design, superpower
+
+commit 5b07b7c07a26a98f76cf4ada981a1fd75ed7ce6d
+Author: secbest <jastkc8@gmail.com>
+Date:   Tue Jun 23 23:09:59 2026 +0800
+
+    Claude plugin skills installed
+
+commit c0b368731789c79f45dd9eb92593ec139390a3e2
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jun 22 16:41:25 2026 +0800
+
+    Stage 2 Design (Part 5)
+    
+    Design Stage completed and reviewed properly
+
+commit 244dd7299f086386f48004d3512d9e75a20d302b
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jun 22 16:00:40 2026 +0800
+
+    Stage 2 Design (Part 4.2)
+    
+    All api doc, database schema and use cases completed. Now Design Stage is in review
+
+commit fd1ef3cea727f98f600ea6eb502b7c7c5ebe5fe9
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jun 22 15:57:17 2026 +0800
+
+    Stage 2:Design (Part 4.1)
+
+commit cbc84fccb84868d9ae2f9f663c619391a3e4bb39
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jun 22 15:23:07 2026 +0800
+
+    Stage 2: Design (Part 3)
+    
+    Use Cases completed, database-schema and api doc in progress
+
+commit 4627b7376cfe4f21d46db6bf5ebd8c717079f213
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jun 20 00:27:29 2026 +0800
+
+    Stage 2: Design (Part 2)
+    
+    Implemented folder structure and architecture
+
+commit 9bf8868eaca490497579a88be8d8c13372db0f32
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jun 19 16:47:05 2026 +0800
+
+    Stage 2: Design (Part 1)
+    
+    Refined README.md with task allocation, features, complexity.
+    
+    Created and added er-diagram with the photo
+    
+    Defined problem statement with user roles, workflows, risk, out -of-scope, success criteria
+
+commit 660f6abe34fd464ed9174646d0db94e0f43cdcea
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jun 19 14:55:03 2026 +0800
+
+    FSAD Setup
+    
+    Backend, Frontend, Design, claude, md files are set up
+
+commit 440d96d18f8a7996ac6b5901fa2e257643f5ec9f
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jun 10 17:39:21 2026 +0800
+
+    md files
+    
+    md files needed to prepare for claude
+
+commit 998071e9d900b567f33e7920644eaf236a4b174d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri May 15 13:17:24 2026 +0800
+
+    Update README.md
+    
+    Test
+
+commit 01f6ab61f9b33ff27aaedd9e688eb58a3c5b45ad
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri May 15 13:14:31 2026 +0800
+
+    first commit
