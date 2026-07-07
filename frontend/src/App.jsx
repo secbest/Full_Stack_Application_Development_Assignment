@@ -19,8 +19,9 @@ import LoginPage from './pages/auth/LoginPage'
 // Managing Director
 import DashboardPage from './pages/dashboard/DashboardPage'
 
-// AR Specialist (Jasper)
+// AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua)
 import InvoiceListPage from './pages/invoices/InvoiceListPage'
+import InvoiceDetailPage from './pages/invoices/InvoiceDetailPage'
 import PricingContractPage from './pages/invoices/PricingContractPage'
 import ServiceMemoListPage from './pages/memos/ServiceMemoListPage'
 
@@ -72,9 +73,10 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
           </Route>
 
-          {/* ── AR Specialist (Jasper) ─────────────────────────────────────── */}
+          {/* ── AR Specialist (design Jasper; Wave 3 by Kwan Hua) ──────────── */}
           <Route element={<RoleRoute roles={['ar_specialist']} />}>
             <Route path="/invoices"           element={<InvoiceListPage />} />
+            <Route path="/invoices/:id"       element={<InvoiceDetailPage />} />
             <Route path="/service-memos"      element={<ServiceMemoListPage />} />
             <Route path="/pricing-contracts"  element={<PricingContractPage />} />
           </Route>

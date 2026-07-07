@@ -18,6 +18,27 @@ const vendorInvoiceUploadSchema = Yup.object({
   rebate_percentage: Yup.number().min(0).max(100).default(1.00),
 })
 
+const VENDOR_INVOICE_STATUSES = ['pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed']
+
+// GET /api/vendor-invoices - list query. Applied via validate(..., 'query') so the
+// controller receives page/limit as numbers with defaults already filled in.
+const vendorInvoiceListQuerySchema = Yup.object({
+  status: Yup.string().oneOf(VENDOR_INVOICE_STATUSES, 'Invalid status filter').nullable(),
+  vendor_name: Yup.string().trim().nullable(),
+  date_from: Yup.string().matches(/^\d{4}-\d{2}-\d{2}$/, 'date_from must be in YYYY-MM-DD format').nullable(),
+  date_to: Yup.string().matches(/^\d{4}-\d{2}-\d{2}$/, 'date_to must be in YYYY-MM-DD format').nullable(),
+  page: Yup.number().integer().min(1).default(1),
+  limit: Yup.number().integer().min(1).max(100).default(20),
+})
+
+// GET /api/xero/sync-logs - list query (shared by AP + AR).
+const syncLogListQuerySchema = Yup.object({
+  status: Yup.string().oneOf(['pending', 'success', 'failed'], 'Invalid status filter').nullable(),
+  entity_type: Yup.string().oneOf(['ar_invoice', 'vendor_invoice', 'bank_feed'], 'Invalid entity_type filter').nullable(),
+  page: Yup.number().integer().min(1).default(1),
+  limit: Yup.number().integer().min(1).max(200).default(50),
+})
+
 const intakeCreateSchema = Yup.object({
   customer_name: Yup.string().trim().required('Customer name is required'),
   organisation: Yup.string().trim().nullable(),
@@ -71,6 +92,8 @@ module.exports = {
   registerSchema,
   loginSchema,
   vendorInvoiceUploadSchema,
+  vendorInvoiceListQuerySchema,
+  syncLogListQuerySchema,
   intakeCreateSchema,
   intakeConfirmSchema,
   intakeRejectSchema,

@@ -21,7 +21,7 @@ export const NAV_ROUTES = [
     roles: ['managing_director'],
   },
 
-  // ── AR Specialist (Jasper) ───────────────────────────────────────────────────
+  // ── AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua) ─────────────
   {
     path: '/invoices',
     label: 'Invoices',

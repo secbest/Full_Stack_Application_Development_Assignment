@@ -3,5 +3,6 @@
 const xeroService = require('./xeroService')
 const cloudinaryService = require('./cloudinaryService')
 const ocrService = require('./ocrService')
+const pricingService = require('./pricingService')
 
-module.exports = { xeroService, cloudinaryService, ocrService }
+module.exports = { xeroService, cloudinaryService, ocrService, pricingService }

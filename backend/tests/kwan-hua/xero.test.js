@@ -74,3 +74,129 @@ describe('xeroService.getAuthorizationUrl (UC-01)', () => {
     expect(first.state).not.toBe(second.state)
   })
 })
+
+describe('xeroService.consumeState (UC-01 CSRF)', () => {
+  beforeEach(() => {
+    process.env.XERO_CLIENT_ID = 'test-client-id'
+    process.env.XERO_REDIRECT_URI = 'http://localhost:3000/api/xero/callback'
+  })
+
+  test('a freshly issued state validates exactly once', () => {
+    const { state } = xeroService.getAuthorizationUrl()
+    expect(xeroService.consumeState(state)).toBe(true)
+    expect(xeroService.consumeState(state)).toBe(false) // single-use
+  })
+
+  test('an unknown or empty state is rejected', () => {
+    expect(xeroService.consumeState('never-issued')).toBe(false)
+    expect(xeroService.consumeState(undefined)).toBe(false)
+  })
+})
+
+describe('xeroService.isSimulation', () => {
+  const ORIGINAL_ENV = process.env
+  beforeEach(() => { process.env = { ...ORIGINAL_ENV } })
+  afterAll(() => { process.env = ORIGINAL_ENV })
+
+  test('defaults to simulation when the flag is unset', () => {
+    delete process.env.XERO_SIMULATION
+    expect(xeroService.isSimulation()).toBe(true)
+  })
+
+  test('only XERO_SIMULATION="false" turns simulation off', () => {
+    process.env.XERO_SIMULATION = 'false'
+    expect(xeroService.isSimulation()).toBe(false)
+    process.env.XERO_SIMULATION = 'true'
+    expect(xeroService.isSimulation()).toBe(true)
+  })
+})
+
+describe('xeroService.computeRetryAvailable (UC-08)', () => {
+  test('failed + under the attempt cap + connected => retryable', () => {
+    expect(xeroService.computeRetryAvailable({ status: 'failed', attempt_count: 1 }, true)).toBe(true)
+  })
+  test('not retryable once attempt_count hits the cap of 3', () => {
+    expect(xeroService.computeRetryAvailable({ status: 'failed', attempt_count: 3 }, true)).toBe(false)
+  })
+  test('not retryable when Xero is disconnected', () => {
+    expect(xeroService.computeRetryAvailable({ status: 'failed', attempt_count: 1 }, false)).toBe(false)
+  })
+  test('not retryable for a successful sync', () => {
+    expect(xeroService.computeRetryAvailable({ status: 'success', attempt_count: 1 }, true)).toBe(false)
+  })
+})
+
+describe('xeroService token encryption (AES-256-GCM)', () => {
+  const ORIGINAL_ENV = process.env
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV }
+    process.env.XERO_ENCRYPTION_KEY = 'a'.repeat(64) // 32 bytes as hex
+  })
+  afterAll(() => { process.env = ORIGINAL_ENV })
+
+  test('round-trips a token and does not store it in plaintext', () => {
+    const secret = 'super-secret-refresh-token'
+    const enc = xeroService.encryptToken(secret)
+    expect(enc).not.toContain(secret)
+    expect(enc.split(':')).toHaveLength(3) // iv:tag:ciphertext
+    expect(xeroService.decryptToken(enc)).toBe(secret)
+  })
+
+  test('throws XERO_CONFIG_MISSING when the key is not a 64-char hex string', () => {
+    process.env.XERO_ENCRYPTION_KEY = 'too-short'
+    expect(() => xeroService.encryptToken('x')).toThrow()
+    try {
+      xeroService.encryptToken('x')
+    } catch (err) {
+      expect(err.code).toBe('XERO_CONFIG_MISSING')
+    }
+  })
+})
+
+describe('xeroService.pushBill (UC-07 simulation)', () => {
+  const ORIGINAL_ENV = process.env
+  beforeEach(() => { process.env = { ...ORIGINAL_ENV } })
+  afterAll(() => { process.env = ORIGINAL_ENV })
+
+  test('simulated push succeeds and returns a generated Xero record id', async () => {
+    delete process.env.XERO_SIMULATION // default = simulate
+    const result = await xeroService.pushBill(
+      { vendor_name: 'Esso', invoice_number: 'INV-1', VendorInvoiceItems: [] },
+      { xero_tenant_id: 'demo', access_token: 'demo' }
+    )
+    expect(result.ok).toBe(true)
+    expect(typeof result.xeroRecordId).toBe('string')
+    expect(result.xeroRecordId.length).toBeGreaterThan(0)
+  })
+
+  test('simulated AR invoice push returns a Xero-style invoice id', async () => {
+    delete process.env.XERO_SIMULATION
+    const result = await xeroService.pushArInvoice(
+      { id: 42, client_name: 'TTSH', total_amount: 850, InvoiceLineItems: [] },
+      { xero_tenant_id: 'demo', access_token: 'demo' }
+    )
+    expect(result.ok).toBe(true)
+    expect(result.xeroRecordId).toMatch(/^INV-XR-/)
+  })
+})
+
+describe('xeroService.refreshTokens (UC-02)', () => {
+  const ORIGINAL_ENV = process.env
+  beforeEach(() => { process.env = { ...ORIGINAL_ENV } })
+  afterAll(() => { process.env = ORIGINAL_ENV })
+
+  test('simulation mode returns a fresh rotated token pair without calling Xero', async () => {
+    delete process.env.XERO_SIMULATION
+    const tokens = await xeroService.refreshTokens('sim-refresh-old')
+    expect(tokens.accessToken).toMatch(/^sim-access-/)
+    expect(tokens.refreshToken).toMatch(/^sim-refresh-/)
+    expect(tokens.expiresIn).toBeGreaterThan(0)
+  })
+
+  test('real mode throws XERO_CONFIG_MISSING when client credentials are absent', async () => {
+    process.env.XERO_SIMULATION = 'false'
+    delete process.env.XERO_CLIENT_ID
+    delete process.env.XERO_CLIENT_SECRET
+    await expect(xeroService.refreshTokens('x')).rejects.toMatchObject({ code: 'XERO_CONFIG_MISSING' })
+  })
+})

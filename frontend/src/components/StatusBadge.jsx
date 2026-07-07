@@ -11,6 +11,13 @@ const STATUS_COLORS = {
   submitted: '#3B82F6',
   reviewed: '#22C55E',
   returned: '#F59E0B',
+  // AR invoice statuses
+  matched: '#3B82F6',
+  adjusted: '#F59E0B',
+  approved: '#22C55E',
+  synced_to_xero: '#22C55E',
+  failed: '#EF4444',
+  unmatched: '#EF4444',
 }
 
 const STATUS_LABELS = {
@@ -21,6 +28,12 @@ const STATUS_LABELS = {
   submitted: 'Submitted',
   reviewed: 'Reviewed',
   returned: 'Returned',
+  matched: 'Matched',
+  adjusted: 'Adjusted',
+  approved: 'Approved',
+  synced_to_xero: 'Synced to Xero',
+  failed: 'Sync Failed',
+  unmatched: 'Unmatched',
 }
 
 export function StatusBadge({ status, className }) {
