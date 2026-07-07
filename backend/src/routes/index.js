@@ -29,11 +29,11 @@ router.use('/dashboard', dashboardRoutes)
 // router.use('/invoices', invoiceRoutes)
 
 // ─── Kwan Hua: Xero Foundation, OCR & AP Processing ──────────────────────────
-// const xeroRoutes = require('./xeroRoutes')
-// router.use('/xero', xeroRoutes)
+const xeroRoutes = require('./xeroRoutes')              // Wave 1B: GET /connect only, rest is Wave 3
+router.use('/xero', xeroRoutes)
 
-// const vendorInvoiceRoutes = require('./vendorInvoiceRoutes')
-// router.use('/vendor-invoices', vendorInvoiceRoutes)
+const vendorInvoiceRoutes = require('./vendorInvoiceRoutes') // Wave 1B: POST / (upload) only, rest is Wave 3
+router.use('/vendor-invoices', vendorInvoiceRoutes)
 
 // const vendorInvoiceItemRoutes = require('./vendorInvoiceItemRoutes')
 // router.use('/vendor-invoice-items', vendorInvoiceItemRoutes)

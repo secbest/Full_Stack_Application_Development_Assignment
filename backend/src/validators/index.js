@@ -14,6 +14,10 @@ const loginSchema = Yup.object({
   password: Yup.string().required('Password is required'),
 })
 
+const vendorInvoiceUploadSchema = Yup.object({
+  rebate_percentage: Yup.number().min(0).max(100).default(1.00),
+})
+
 const intakeCreateSchema = Yup.object({
   customer_name: Yup.string().trim().required('Customer name is required'),
   organisation: Yup.string().trim().nullable(),
@@ -66,6 +70,7 @@ const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashb
 module.exports = {
   registerSchema,
   loginSchema,
+  vendorInvoiceUploadSchema,
   intakeCreateSchema,
   intakeConfirmSchema,
   intakeRejectSchema,
