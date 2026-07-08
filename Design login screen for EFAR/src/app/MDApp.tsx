@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import {
   Bell, LayoutDashboard, FileBarChart, LogOut,
   AlertTriangle, CheckCircle2, RefreshCw, Calendar,
+  Users, Search,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -13,7 +14,7 @@ import { SidebarItem } from "./shared";
 
 // ─── Types & Data ──────────────────────────────────────────────────────────────
 
-type MDPage = "dashboard" | "reports";
+type MDPage = "dashboard" | "reports" | "accounts";
 type DashTab = "fleet" | "expense";
 type DateFilter = "Today" | "This Week" | "This Month" | "Custom";
 
@@ -65,6 +66,7 @@ function MDSidebar({ activePage, onNav, onLogout }: {
       <nav style={{ flex: 1, paddingTop: 12 }}>
         <SidebarItem icon={<LayoutDashboard size={16} />} label="Dashboard" active={activePage === "dashboard"} onClick={() => onNav("dashboard")} />
         <SidebarItem icon={<FileBarChart size={16} />} label="Reports" active={activePage === "reports"} onClick={() => onNav("reports")} />
+        <SidebarItem icon={<Users size={16} />} label="Accounts" active={activePage === "accounts"} onClick={() => onNav("accounts")} />
       </nav>
       <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <button onClick={onLogout}
@@ -206,11 +208,12 @@ function FleetOverview() {
                     innerRadius={65}
                     outerRadius={100}
                     paddingAngle={3}
+                    isAnimationActive={false}
                     dataKey="value"
                     nameKey="label"
                   >
                     {data.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
+                      <Cell key={`fleet-cell-${i}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -454,15 +457,15 @@ function ExpenseSummary() {
                   <XAxis dataKey="short" tick={{ fontSize: 12, fontFamily: "'Inter', sans-serif", fill: "#64748B" }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fontFamily: "'Inter', sans-serif", fill: "#94A3B8" }} axisLine={false} tickLine={false} width={44} />
                   <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "rgba(30,41,59,0.04)" }} />
-                  <Bar dataKey="amount" radius={[6, 6, 0, 0]} cursor="pointer">
-                    {VENDOR_BARS.map((entry, i) => (
-                      <Cell key={entry.vendor}
-                        fill={`rgba(30,41,59,${i === activeBarIdx ? 1 : entry.opacity})`}
-                        stroke={i === activeBarIdx ? "#1E293B" : "none"}
-                        strokeWidth={i === activeBarIdx ? 2 : 0}
-                      />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="amount" cursor="pointer" isAnimationActive={false} shape={(props: { x?: number; y?: number; width?: number; height?: number; index?: number }) => {
+                    const { x = 0, y = 0, width = 0, height = 0, index = 0 } = props;
+                    if (!width || !height) return <g />;
+                    const r = Math.min(6, Math.abs(width) / 2);
+                    const d = `M${x},${y + height} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + width - r},${y} Q${x + width},${y} ${x + width},${y + r} L${x + width},${y + height} Z`;
+                    const fill = `rgba(30,41,59,${index === activeBarIdx ? 1 : VENDOR_BARS[index]?.opacity ?? 0.5})`;
+                    const stroke = index === activeBarIdx ? "#1E293B" : "none";
+                    return <path d={d} fill={fill} stroke={stroke} strokeWidth={index === activeBarIdx ? 2 : 0} />;
+                  }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -534,12 +537,13 @@ function ExpenseSummary() {
                   dataKey="actual"
                   stroke="#1E293B"
                   strokeWidth={2.5}
-                  dot={(props: DotProps & { cx?: number; cy?: number; payload?: { month: string } }) => {
-                    const { cx, cy, payload } = props;
-                    if (cx == null || cy == null) return <g key={`dot-a-empty`} />;
+                  isAnimationActive={false}
+                  dot={(props: DotProps & { cx?: number; cy?: number; payload?: { month: string }; index?: number }) => {
+                    const { cx, cy, payload, index } = props;
+                    if (cx == null || cy == null) return <g key={`dot-a-empty-${index ?? Math.random()}`} />;
                     const isCurrent = payload?.month === CURRENT_MONTH;
                     return (
-                      <circle key={`dot-a-${cx}`} cx={cx} cy={cy} r={isCurrent ? 5 : 3.5}
+                      <circle key={`dot-a-${index}`} cx={cx} cy={cy} r={isCurrent ? 5 : 3.5}
                         fill={isCurrent ? "#1E293B" : "#FFFFFF"} stroke="#1E293B" strokeWidth={2} />
                     );
                   }}
@@ -552,6 +556,7 @@ function ExpenseSummary() {
                   stroke="#CBD5E1"
                   strokeWidth={2}
                   strokeDasharray="6 4"
+                  isAnimationActive={false}
                   dot={false}
                   connectNulls={false}
                   name="Forecast"
@@ -742,30 +747,27 @@ function ReportRevenue() {
             )}
           </div>
           <div style={{ padding: "20px 24px" }}>
-            <div style={{ height: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={CLIENT_BARS} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}
-                  onClick={(d) => {
-                    if (d?.activePayload?.[0]) {
-                      const idx = CLIENT_BARS.findIndex((c) => c.client === d.activePayload![0].payload.client);
-                      setActiveClientIdx(activeClientIdx === idx ? null : idx);
-                    }
-                  }}>
-                  <CartesianGrid horizontal={false} stroke="#F1F5F9" />
-                  <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fontFamily: "'Inter', sans-serif", fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="short" width={80} tick={{ fontSize: 12, fontFamily: "'Inter', sans-serif", fill: "#64748B" }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, "Revenue"]} contentStyle={{ background: "#1E293B", border: "none", borderRadius: 8, color: "#FFF", fontSize: 13, fontFamily: "'Inter', sans-serif" }} />
-                  <Bar dataKey="amount" radius={[0, 6, 6, 0]} cursor="pointer">
-                    {CLIENT_BARS.map((entry, i) => {
-                      const isActive = activeClientIdx === i;
-                      const isDimmed = activeClientIdx !== null && !isActive;
-                      return <Cell key={entry.client} fill={`rgba(30,41,59,${isDimmed ? 0.2 : isActive ? 1 : entry.opacity})`} />;
-                    })}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {(() => {
+                const maxAmt = Math.max(...CLIENT_BARS.map((c) => c.amount));
+                return CLIENT_BARS.map((entry, i) => {
+                  const isActive = activeClientIdx === i;
+                  const isDimmed = activeClientIdx !== null && !isActive;
+                  const pct = (entry.amount / maxAmt) * 100;
+                  return (
+                    <div key={i} onClick={() => setActiveClientIdx(activeClientIdx === i ? null : i)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                      <span style={{ width: 80, fontSize: 12, color: isDimmed ? "#CBD5E1" : "#64748B", fontFamily: "'Inter', sans-serif", textAlign: "right", flexShrink: 0, transition: "color 0.15s" }}>{entry.short}</span>
+                      <div style={{ flex: 1, background: "#F1F5F9", borderRadius: 6, height: 28, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 6, background: isDimmed ? "rgba(30,41,59,0.15)" : isActive ? "#1E293B" : `rgba(30,41,59,${entry.opacity})`, transition: "background 0.15s, width 0.3s" }} />
+                      </div>
+                      <span style={{ width: 70, fontSize: 12, fontWeight: 600, color: isDimmed ? "#CBD5E1" : "#1E293B", fontFamily: "'Inter', sans-serif", flexShrink: 0, transition: "color 0.15s" }}>${(entry.amount / 1000).toFixed(1)}k</span>
+                    </div>
+                  );
+                });
+              })()}
             </div>
-            <p style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif", marginTop: 6, textAlign: "center" }}>Click a bar to filter the invoice table below</p>
+            <p style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif", marginTop: 14, textAlign: "center" }}>Click a bar to filter the invoice table below</p>
           </div>
         </div>
 
@@ -778,10 +780,10 @@ function ReportRevenue() {
             <div style={{ height: 180 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={SERVICE_DONUT} cx="50%" cy="50%" innerRadius={55} outerRadius={84} paddingAngle={3} dataKey="value" nameKey="label">
-                    {SERVICE_DONUT.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={SERVICE_DONUT} cx="50%" cy="50%" innerRadius={55} outerRadius={84} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false}>
+                    {SERVICE_DONUT.map((entry, i) => <Cell key={`donut-cell-${i}`} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, ""]} contentStyle={{ background: "#1E293B", border: "none", borderRadius: 8, color: "#FFF", fontSize: 13, fontFamily: "'Inter', sans-serif" }} />
+                  <Tooltip formatter={(v: number, name: string) => [`$${v.toLocaleString()}`, name]} contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 13, fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} itemStyle={{ color: "#1E293B" }} labelStyle={{ color: "#64748B" }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -981,6 +983,219 @@ function ReportsScreen() {
   );
 }
 
+// ─── Accounts Management Screen ────────────────────────────────────────────────
+
+type AccountRow = { name: string; email: string; role: string; status: "Online" | "Offline" | "Locked"; lastLogin: string };
+
+const ROLES = ["Quotations", "Field Crew", "Accounts Receivable", "Accounts Payable", "Managing Director"] as const;
+
+const INITIAL_ACCOUNTS: AccountRow[] = [
+  { name: "Camilla Cruz", email: "camilla@efar.com", role: "Quotations",        status: "Online",  lastLogin: "Active now"  },
+  { name: "Ravi Kumar",   email: "ravi@efar.com",    role: "Field Crew",        status: "Offline", lastLogin: "2 hours ago" },
+  { name: "Sarah Lee",    email: "sarah@efar.com",   role: "Accounts Receivable", status: "Online",  lastLogin: "15 mins ago" },
+  { name: "Chloe Wong",   email: "chloe@efar.com",   role: "Accounts Payable",  status: "Offline", lastLogin: "Yesterday"   },
+  { name: "Doris Tan",    email: "doris@efar.com",   role: "Managing Director", status: "Online",  lastLogin: "Active now"  },
+];
+
+function AddUserModal({ onClose, onAdd }: { onClose: () => void; onAdd: (u: AccountRow) => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<string>(ROLES[0]);
+  const [error, setError] = useState("");
+
+  const handleSubmit = () => {
+    if (!name.trim()) { setError("Full name is required."); return; }
+    if (!email.trim() || !email.includes("@")) { setError("A valid email is required."); return; }
+    onAdd({ name: name.trim(), email: email.trim(), role, status: "Offline", lastLogin: "Just added" });
+    onClose();
+  };
+
+  const inp: React.CSSProperties = { width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", boxSizing: "border-box" };
+  const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 500, color: "#64748B", fontFamily: "'Inter', sans-serif", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: "0.04em" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#FFFFFF", borderRadius: 16, width: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.18)", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Add New User</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 4, borderRadius: 6, display: "flex" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={lbl}>Full Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. John Smith" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Email Address</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. john@efar.com" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inp, appearance: "none", cursor: "pointer" }}>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </div>
+          {error && <p style={{ fontSize: 12, color: "#EF4444", fontFamily: "'Inter', sans-serif", margin: 0 }}>{error}</p>}
+        </div>
+        <div style={{ padding: "16px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ height: 36, padding: "0 16px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, fontWeight: 500, color: "#64748B", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Cancel</button>
+          <button onClick={handleSubmit} style={{ height: 36, padding: "0 20px", borderRadius: 8, border: "none", background: "#1E293B", fontSize: 13, fontWeight: 600, color: "#FFFFFF", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Add User</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountsManagement() {
+  const cardBase: React.CSSProperties = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
+
+  const [accounts, setAccounts] = useState<AccountRow[]>(INITIAL_ACCOUNTS);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("All Roles");
+  const [statusFilter, setStatusFilter] = useState("All Statuses");
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const filtered = accounts.filter((r) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q);
+    const matchRole = roleFilter === "All Roles" || r.role === roleFilter;
+    const matchStatus = statusFilter === "All Statuses" || r.status === statusFilter;
+    return matchSearch && matchRole && matchStatus;
+  });
+
+  const onlineCount = accounts.filter((r) => r.status === "Online").length;
+  const lockedCount = accounts.filter((r) => r.status === "Locked").length;
+
+  const selSty: React.CSSProperties = { height: 32, padding: "0 28px 0 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", appearance: "none", cursor: "pointer" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {showAddModal && (
+        <AddUserModal
+          onClose={() => setShowAddModal(false)}
+          onAdd={(u) => setAccounts((prev) => [u, ...prev])}
+        />
+      )}
+
+      {/* Action Bar Row */}
+      <div style={{ background: "#F8FAFC", padding: "0 16px", height: 48, display: "flex", alignItems: "center", justifyContent: "space-between", margin: "-32px -32px 12px -32px", borderBottom: "1px solid #E2E8F0" }}>
+        <div style={{ position: "relative", width: 320 }}>
+          <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", pointerEvents: "none" }} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search users by name or email..."
+            style={{ width: "100%", height: 32, paddingLeft: 36, paddingRight: 12, borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", boxSizing: "border-box" }}
+          />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ position: "relative" }}>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} style={selSty}>
+              <option>All Roles</option>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div style={{ position: "relative" }}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selSty}>
+              <option>All Statuses</option>
+              <option>Online</option>
+              <option>Offline</option>
+              <option>Locked</option>
+            </select>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <button onClick={() => setShowAddModal(true)} style={{ height: 32, padding: "0 16px", borderRadius: 6, background: "#1E293B", color: "#FFFFFF", border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+            + Add New User
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Users</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 6 }}>{accounts.length}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{accounts.filter((r) => r.role.includes("Admin") || r.role === "Managing Director").length} admin, {accounts.filter((r) => r.role === "Field Crew").length} crew.</p>
+        </div>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Currently Online</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#22C55E", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 6 }}>{onlineCount}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Across active sessions.</p>
+        </div>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Security Alerts</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: lockedCount > 0 ? "#EF4444" : "#22C55E", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 6 }}>{lockedCount}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{lockedCount > 0 ? `${lockedCount} account${lockedCount > 1 ? "s" : ""} locked due to failed logins.` : "No locked accounts."}</p>
+        </div>
+      </div>
+
+      {/* User Directory */}
+      <div style={{ ...cardBase, overflow: "hidden" }}>
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>User Directory</h2>
+          <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{filtered.length} of {accounts.length} users</span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
+              {["User Info", "Role", "Current Status", "Last Login", "Actions"].map((col) => (
+                <th key={col} style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", whiteSpace: "nowrap" }}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: "40px 16px", textAlign: "center", fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>
+                  No users match your filters.
+                </td>
+              </tr>
+            ) : filtered.map((row, i) => {
+              const dotColor = row.status === "Online" ? "#22C55E" : row.status === "Locked" ? "#EF4444" : "#64748B";
+              return (
+                <tr key={row.email} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #F1F5F9" : "none", height: 52, background: "#FFFFFF" }}>
+                  <td style={{ padding: "0 16px" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.name}</span>
+                      <span style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.email}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.role}</td>
+                  <td style={{ padding: "0 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, fontWeight: row.status !== "Offline" ? 600 : 400, color: row.status === "Locked" ? "#EF4444" : "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.status}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.lastLogin}</td>
+                  <td style={{ padding: "0 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {row.status === "Online" && (
+                        <button onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}
+                          style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#EF4444", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Force Logout</button>
+                      )}
+                      {row.status === "Locked" && (
+                        <button onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline" } : r))}
+                          style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#3B82F6", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Unlock</button>
+                      )}
+                      <button onClick={() => setAccounts((prev) => prev.filter((r) => r.email !== row.email))}
+                        style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#64748B", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Remove</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function MDApp({ onLogout }: { onLogout: () => void }) {
   const [activePage, setActivePage] = useState<MDPage>("dashboard");
   const [activeTab, setActiveTab] = useState<DashTab>("fleet");
@@ -993,7 +1208,7 @@ export default function MDApp({ onLogout }: { onLogout: () => void }) {
         {/* Top header */}
         <header style={{ height: 64, background: "#FFFFFF", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", flexShrink: 0 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "#1E293B", letterSpacing: "-0.01em", fontFamily: "'Inter', sans-serif" }}>
-            {activePage === "dashboard" ? "Executive Dashboard" : "Reports"}
+            {activePage === "dashboard" ? "Executive Dashboard" : activePage === "accounts" ? "Accounts Management" : "Reports"}
           </h1>
           <div style={{ position: "relative", lineHeight: 0 }}>
             <Bell size={20} color="#64748B" style={{ cursor: "pointer" }} />
@@ -1032,6 +1247,7 @@ export default function MDApp({ onLogout }: { onLogout: () => void }) {
           {activePage === "dashboard" && activeTab === "fleet"   && <FleetOverview />}
           {activePage === "dashboard" && activeTab === "expense" && <ExpenseSummary />}
           {activePage === "reports" && <ReportsScreen />}
+          {activePage === "accounts" && <AccountsManagement />}
         </main>
       </div>
 

@@ -83,7 +83,7 @@ npm test           # run unit tests
 
 | Role | Key Actions |
 |---|---|
-| Managing Director | Executive dashboard, macro expense analytics |
+| Managing Director | Executive dashboard, macro expense analytics, user account management |
 | AR Specialist | Validate booking matches, adjust surcharges, sync to Xero |
 | AP Specialist | Review OCR-extracted vendor invoices, reconcile bank feeds |
 | Quotations Specialist | Manage structured intake queue, verify service tiers |
@@ -236,6 +236,7 @@ Expired/Neutral:              #94A3B8
 27. **Executive Dashboard - Fleet tab** - 4 KPI cards, doughnut chart (booking status), revenue leakage alert panel
 28. **Executive Dashboard - Expense tab** - 3 KPI cards, vendor bar chart (interactive), vendor invoice table (read-only)
 29. **Reports** - 4 tab types (Revenue/Billing Cycle/Leakage History/Vendor Expenditure), period selector, export CSV/PDF
+30. **Accounts Management** - search/filter action bar (name/email search, role filter, status filter), 3 KPI cards (Total Users/Currently Online/Security Alerts), user directory table (name+email, role, status dot, last login, actions), row actions (Force Logout, Unlock, Remove), [+ Add New User] modal (name/email/role fields with validation)
 
 ### Logic Corrections (Must Follow in Implementation)
 
@@ -288,6 +289,8 @@ AP Invoice Review → [Reject]  → confirmation modal + Vendor Invoice List
 
 Executive Dashboard Fleet tab ↔ Expense tab (secondary tabs, no route change)
 Executive Dashboard → sidebar Reports → Reports screen
+Executive Dashboard → sidebar Accounts → Accounts Management screen
+Accounts Management → [+ Add New User] → modal → toast + updated user directory table
 ```
 
 ### Public Intake Form Note
