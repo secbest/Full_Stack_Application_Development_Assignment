@@ -24,9 +24,16 @@ router.use('/dashboard', dashboardRoutes)
 // ─── AR Billing, Pricing Engine & Invoice Sync (Wave 3) ───────────────────────
 // Design by Jasper (design/jasper/); Wave 3 implemented by Kwan Hua (took over Wave 3).
 // Memo review (pending-review, approve, return) lives on serviceMemoRoutes above.
-// Pricing-contract CRUD is Wave 2 (not implemented); the engine reads seeded pricing data.
 const invoiceRoutes = require('./invoiceRoutes')
 router.use('/invoices', invoiceRoutes)
+
+// Pricing-contract CRUD (Wave 2B, Jasper).
+const contractRoutes = require('./contractRoutes')
+router.use('/contracts', contractRoutes)
+
+// Minimal read-only client list (needed by the contract form's client picker).
+const clientRoutes = require('./clientRoutes')
+router.use('/clients', clientRoutes)
 
 // ─── Kwan Hua: Xero Foundation, OCR & AP Processing ──────────────────────────
 const xeroRoutes = require('./xeroRoutes')              // Wave 1B: GET /connect only, rest is Wave 3

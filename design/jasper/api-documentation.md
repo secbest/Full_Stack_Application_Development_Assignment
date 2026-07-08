@@ -4,10 +4,19 @@
 
 All endpoints are prefixed with `/api`. All endpoints require a valid JWT in the `Authorization: Bearer <token>` header unless stated otherwise.
 
-Error responses always use the shape:
+**Response envelope (updated to match the implemented shape, used consistently by every controller across the whole app, not just this feature):**
+
+Success responses wrap the payload in `{ success: true, data: <payload> }`:
 ```json
-{ "error": "ERROR_CODE", "message": "Human-readable description" }
+{ "success": true, "data": { "id": 1, "...": "..." } }
 ```
+
+Error responses use `code` (not `error`) for the machine-readable identifier, plus `success: false`:
+```json
+{ "success": false, "code": "ERROR_CODE", "message": "Human-readable description" }
+```
+
+The JSON examples throughout the sections below show only the contents of the `data` field for brevity - wrap them in `{ "success": true, "data": { ...shown... } }` to get the real response. Where a section documents an error code (e.g. `CONTRACT_OVERLAP`), the actual field name for that code in the response is `code`, matching the shape above.
 
 ---
 

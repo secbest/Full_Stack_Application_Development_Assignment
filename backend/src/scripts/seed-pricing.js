@@ -21,6 +21,10 @@ const {
 } = require('../models')
 
 // Published surcharge schedule defaults (design/jasper/database-schema.md).
+// Also duplicated (independently, not via a shared import - Node backend and Vite
+// frontend don't share a module system) in frontend/src/lib/contractLabels.js's
+// SURCHARGE_DEFAULT_AMOUNTS, which pre-fills the create-contract form's surcharge
+// section. If you change a published figure here, check that file too.
 const SURCHARGES = [
   { surcharge_type: 'oxygen_base', amount: 50.00 },
   { surcharge_type: 'oxygen_per_litre', amount: 1.00 },

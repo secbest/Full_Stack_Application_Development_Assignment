@@ -23,6 +23,8 @@ import DashboardPage from './pages/dashboard/DashboardPage'
 import InvoiceListPage from './pages/invoices/InvoiceListPage'
 import InvoiceDetailPage from './pages/invoices/InvoiceDetailPage'
 import PricingContractPage from './pages/invoices/PricingContractPage'
+import ContractDetailPage from './pages/invoices/ContractDetailPage'
+import ContractFormPage from './pages/invoices/ContractFormPage'
 import ServiceMemoListPage from './pages/memos/ServiceMemoListPage'
 
 // AP Specialist (Kwan Hua)
@@ -78,7 +80,10 @@ export default function App() {
             <Route path="/invoices"           element={<InvoiceListPage />} />
             <Route path="/invoices/:id"       element={<InvoiceDetailPage />} />
             <Route path="/service-memos"      element={<ServiceMemoListPage />} />
-            <Route path="/pricing-contracts"  element={<PricingContractPage />} />
+            <Route path="/pricing-contracts"           element={<PricingContractPage />} />
+            <Route path="/pricing-contracts/new"       element={<ContractFormPage />} />
+            <Route path="/pricing-contracts/:id"       element={<ContractDetailPage />} />
+            <Route path="/pricing-contracts/:id/edit"  element={<ContractFormPage />} />
           </Route>
 
           {/* ── AP Specialist (Kwan Hua) ───────────────────────────────────── */}

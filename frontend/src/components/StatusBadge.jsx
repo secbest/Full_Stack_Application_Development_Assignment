@@ -18,6 +18,11 @@ const STATUS_COLORS = {
   synced_to_xero: '#22C55E',
   failed: '#EF4444',
   unmatched: '#EF4444',
+  // Pricing contracts
+  active: '#22C55E',
+  expired: '#94A3B8',
+  upcoming: '#3B82F6',
+  deactivated: '#EF4444',
 }
 
 const STATUS_LABELS = {
@@ -34,6 +39,10 @@ const STATUS_LABELS = {
   synced_to_xero: 'Synced to Xero',
   failed: 'Sync Failed',
   unmatched: 'Unmatched',
+  active: 'Active',
+  expired: 'Expired',
+  upcoming: 'Upcoming',
+  deactivated: 'Deactivated',
 }
 
 export function StatusBadge({ status, className }) {
