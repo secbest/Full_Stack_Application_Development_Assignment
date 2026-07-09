@@ -1,0 +1,647 @@
+### EFAR API - Jasper's Feature Area (AR Billing, Pricing Engine & Invoice Sync)
+### REST Client extension for VS Code - open this file and click "Send Request" above each ###
+###
+### NOTE: This API has no /api/auth/login endpoint - auth uses pre-signed dev JWTs
+### (see api-documentation.md Section 10 "Dev Auth Reference"). The @arToken variable
+### below stands in for "token from login" and is reused by every request that follows.
+
+@baseUrl = http://localhost:3000/api
+
+# Pre-signed dev tokens (HS256, shared dev secret, expire 2027-06-22)
+@arToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.ESzmUh8-f6nRvC0MH0c3t13hSEfeapsAYD4ResqL4pM
+@mdToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsIm5hbWUiOiJEb3JpcyBDaGluZyIsImVtYWlsIjoiZG9yaXNAZWZhci5zZyIsInJvbGUiOiJtYW5hZ2luZ19kaXJlY3RvciIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.k452ZYTHp373ilcJKalsXLlKWQ7Df1c_kJ9F2JIsJzM
+@apToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWFpbCI6ImNobG9lQGVmYXIuc2ciLCJyb2xlIjoiYXBfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.hHKZGVrmB6jmPcm52HnUg5lbxkSPMZe7FhreLrE1eZI
+@qToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1haWwiOiJjYW1pbGxhQGVmYXIuc2ciLCJyb2xlIjoicXVvdGF0aW9uc19zcGVjaWFsaXN0IiwiaWF0IjoxNzgyMTE0NDI1LCJleHAiOjE4MTM2NTA0MjV9.tYNXbCvGiUFz-uu1a4Y5fE_GMzWEjLMkBO7KABeMi1w
+
+# IDs that must exist in the seed data - adjust to match your local seed if different
+@seedClientId = 1
+@seedContractId = 1
+@seedRateId = 1
+@seedSurchargeId = 1
+@seedMemoId = 7
+@seedInvoiceId = 2
+@seedLineItemId = 3
+@seedBookingId = 7
+
+###############################################################################
+# 1. PRICING CONTRACTS
+###############################################################################
+
+### Happy path: list all contracts as AR specialist
+# @name listContracts
+GET {{baseUrl}}/contracts?page=1&limit=20
+Authorization: Bearer {{arToken}}
+
+###
+
+# Tests: filtered list by client + active status still succeeds (not a distinct
+# error case, kept as a secondary happy-path variant for the same endpoint)
+GET {{baseUrl}}/contracts?client_id={{seedClientId}}&is_active=true
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET /api/contracts with a non-boolean is_active value -> expect 400
+GET {{baseUrl}}/contracts?is_active=notaboolean
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/contracts without Authorization header -> expect 401
+GET {{baseUrl}}/contracts
+
+###
+
+### Happy path: create a new pricing contract with rates + surcharges -> expect 201
+# @name createContract
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "client_id": {{seedClientId}},
+  "contract_name": "REST Client Test Contract - FY2027",
+  "effective_from": "2027-01-01",
+  "effective_to": "2027-12-31",
+  "rates": [
+    {
+      "service_type": "eas",
+      "transfer_type": "one_way_hospital",
+      "time_of_day": "office_hours",
+      "base_amount": 850.00
+    }
+  ],
+  "surcharges": [
+    { "surcharge_type": "oxygen_base", "amount": 50.00 },
+    { "surcharge_type": "resuscitation", "amount": 320.00 }
+  ]
+}
+
+###
+
+### Invalid input: POST /api/contracts missing required contract_name -> expect 400 VALIDATION_ERROR
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "client_id": {{seedClientId}},
+  "effective_from": "2027-01-01",
+  "effective_to": "2027-12-31",
+  "rates": [],
+  "surcharges": []
+}
+
+###
+
+### No auth: POST /api/contracts without Authorization header -> expect 401
+POST {{baseUrl}}/contracts
+Content-Type: application/json
+
+{
+  "client_id": {{seedClientId}},
+  "contract_name": "No Auth Test Contract",
+  "effective_from": "2027-01-01",
+  "effective_to": "2027-12-31",
+  "rates": [],
+  "surcharges": []
+}
+
+###
+
+### Happy path: fetch a single contract with its rates/surcharges -> expect 200
+GET {{baseUrl}}/contracts/{{seedContractId}}
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET /api/contracts/:id with a non-existent id -> expect 404 CONTRACT_NOT_FOUND
+GET {{baseUrl}}/contracts/999999
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/contracts/:id without Authorization header -> expect 401
+GET {{baseUrl}}/contracts/{{seedContractId}}
+
+###
+
+### Happy path: patch a contract's effective_to date -> expect 200
+PATCH {{baseUrl}}/contracts/{{seedContractId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "effective_to": "2026-09-30"
+}
+
+###
+
+### Invalid input: PATCH /api/contracts/:id with effective_to before effective_from -> expect 400 VALIDATION_ERROR
+PATCH {{baseUrl}}/contracts/{{seedContractId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "effective_from": "2026-06-01",
+  "effective_to": "2026-01-01"
+}
+
+###
+
+### No auth: PATCH /api/contracts/:id without Authorization header -> expect 401
+PATCH {{baseUrl}}/contracts/{{seedContractId}}
+Content-Type: application/json
+
+{
+  "effective_to": "2026-09-30"
+}
+
+###############################################################################
+# 2. PRICING RATES
+###############################################################################
+
+### Happy path: add a new rate row to an existing contract -> expect 201
+POST {{baseUrl}}/contracts/{{seedContractId}}/rates
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "service_type": "mts",
+  "transfer_type": "sg_jb_ground",
+  "time_of_day": "all_hours",
+  "base_amount": 1800.00
+}
+
+###
+
+### Invalid input: POST rates with an invalid service_type enum -> expect 400 VALIDATION_ERROR
+POST {{baseUrl}}/contracts/{{seedContractId}}/rates
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "service_type": "not_a_real_type",
+  "transfer_type": "sg_jb_ground",
+  "time_of_day": "all_hours",
+  "base_amount": 1800.00
+}
+
+###
+
+### No auth: POST /api/contracts/:contractId/rates without Authorization header -> expect 401
+POST {{baseUrl}}/contracts/{{seedContractId}}/rates
+Content-Type: application/json
+
+{
+  "service_type": "mts",
+  "transfer_type": "sg_jb_ground",
+  "time_of_day": "all_hours",
+  "base_amount": 1800.00
+}
+
+###
+
+### Happy path: update base_amount on an existing rate row -> expect 200
+PUT {{baseUrl}}/contracts/{{seedContractId}}/rates/{{seedRateId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "base_amount": 1900.00
+}
+
+###
+
+### Invalid input: PUT rate with a negative base_amount -> expect 400 VALIDATION_ERROR
+PUT {{baseUrl}}/contracts/{{seedContractId}}/rates/{{seedRateId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "base_amount": -50.00
+}
+
+###
+
+### No auth: PUT /api/contracts/:contractId/rates/:rateId without Authorization header -> expect 401
+PUT {{baseUrl}}/contracts/{{seedContractId}}/rates/{{seedRateId}}
+Content-Type: application/json
+
+{
+  "base_amount": 1900.00
+}
+
+###
+
+### Happy path: delete a rate row not in use by any invoice -> expect 200
+DELETE {{baseUrl}}/contracts/{{seedContractId}}/rates/{{seedRateId}}
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: DELETE a non-existent rate row -> expect 404 RATE_NOT_FOUND
+DELETE {{baseUrl}}/contracts/{{seedContractId}}/rates/999999
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: DELETE /api/contracts/:contractId/rates/:rateId without Authorization header -> expect 401
+DELETE {{baseUrl}}/contracts/{{seedContractId}}/rates/{{seedRateId}}
+
+###############################################################################
+# 3. SURCHARGE SCHEDULES
+###############################################################################
+
+### Happy path: update the amount for a surcharge row -> expect 200
+PUT {{baseUrl}}/contracts/{{seedContractId}}/surcharges/{{seedSurchargeId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "amount": 350.00
+}
+
+###
+
+### Invalid input: PUT surcharge with a missing amount field -> expect 400 VALIDATION_ERROR
+PUT {{baseUrl}}/contracts/{{seedContractId}}/surcharges/{{seedSurchargeId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{}
+
+###
+
+### No auth: PUT /api/contracts/:contractId/surcharges/:surchargeId without Authorization header -> expect 401
+PUT {{baseUrl}}/contracts/{{seedContractId}}/surcharges/{{seedSurchargeId}}
+Content-Type: application/json
+
+{
+  "amount": 350.00
+}
+
+###############################################################################
+# 4. MEMO REVIEW QUEUE
+###############################################################################
+
+### Happy path: list memos pending AR review -> expect 200
+GET {{baseUrl}}/memos/pending-review?page=1&limit=20
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET pending-review with a non-numeric page param -> expect 400
+GET {{baseUrl}}/memos/pending-review?page=notanumber
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/memos/pending-review without Authorization header -> expect 401
+GET {{baseUrl}}/memos/pending-review
+
+###
+
+### Happy path: approve a memo, triggering the automated pricing match -> expect 200
+PATCH {{baseUrl}}/memos/{{seedMemoId}}/approve
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: approve a non-existent memo id -> expect 404 MEMO_NOT_FOUND
+PATCH {{baseUrl}}/memos/999999/approve
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: PATCH /api/memos/:id/approve without Authorization header -> expect 401
+PATCH {{baseUrl}}/memos/{{seedMemoId}}/approve
+
+###
+
+### Happy path: return a memo to the field crew with a correction note -> expect 200
+PATCH {{baseUrl}}/memos/{{seedMemoId}}/return
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "note": "Evacuation floor count appears to be incorrect. Please review and resubmit."
+}
+
+###
+
+### Invalid input: return a memo with an empty note -> expect 400 VALIDATION_ERROR
+PATCH {{baseUrl}}/memos/{{seedMemoId}}/return
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "note": ""
+}
+
+###
+
+### No auth: PATCH /api/memos/:id/return without Authorization header -> expect 401
+PATCH {{baseUrl}}/memos/{{seedMemoId}}/return
+Content-Type: application/json
+
+{
+  "note": "Testing without auth."
+}
+
+###############################################################################
+# 5. INVOICES
+###############################################################################
+
+### Happy path: list invoices filtered by status -> expect 200
+GET {{baseUrl}}/invoices?status=matched&page=1&limit=20
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET /api/invoices with an invalid status enum -> expect 400 INVALID_STATUS
+GET {{baseUrl}}/invoices?status=not_a_real_status
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/invoices without Authorization header -> expect 401
+GET {{baseUrl}}/invoices
+
+###
+
+### Happy path: fetch a single invoice with line items -> expect 200
+GET {{baseUrl}}/invoices/{{seedInvoiceId}}
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET a non-existent invoice id -> expect 404 INVOICE_NOT_FOUND
+GET {{baseUrl}}/invoices/999999
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/invoices/:id without Authorization header -> expect 401
+GET {{baseUrl}}/invoices/{{seedInvoiceId}}
+
+###
+
+### Happy path: batch-approve a set of matched/adjusted invoices -> expect 200
+POST {{baseUrl}}/invoices/batch-approve
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "invoice_ids": [1, 2, 3]
+}
+
+###
+
+### Invalid input: batch-approve with an empty invoice_ids array -> expect 400 VALIDATION_ERROR
+POST {{baseUrl}}/invoices/batch-approve
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "invoice_ids": []
+}
+
+###
+
+### No auth: POST /api/invoices/batch-approve without Authorization header -> expect 401
+POST {{baseUrl}}/invoices/batch-approve
+Content-Type: application/json
+
+{
+  "invoice_ids": [1, 2, 3]
+}
+
+###
+
+### Happy path: retry a Xero push for a failed invoice -> expect 200
+POST {{baseUrl}}/invoices/{{seedInvoiceId}}/retry-xero
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: retry-xero on a non-existent invoice id -> expect 404 INVOICE_NOT_FOUND
+POST {{baseUrl}}/invoices/999999/retry-xero
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: POST /api/invoices/:id/retry-xero without Authorization header -> expect 401
+POST {{baseUrl}}/invoices/{{seedInvoiceId}}/retry-xero
+
+###############################################################################
+# 6. INVOICE LINE ITEMS
+###############################################################################
+
+### Happy path: add a manual adjustment line item to an invoice -> expect 201
+POST {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "description": "Hospital Administration Fee",
+  "quantity": 1,
+  "unit_price": 25.00
+}
+
+###
+
+### Invalid input: add a line item with a negative unit_price -> expect 400 VALIDATION_ERROR
+POST {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "description": "Invalid Fee",
+  "quantity": 1,
+  "unit_price": -25.00
+}
+
+###
+
+### No auth: POST /api/invoices/:invoiceId/line-items without Authorization header -> expect 401
+POST {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items
+Content-Type: application/json
+
+{
+  "description": "Hospital Administration Fee",
+  "quantity": 1,
+  "unit_price": 25.00
+}
+
+###
+
+### Happy path: update an existing line item's unit_price -> expect 200
+PUT {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/{{seedLineItemId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "unit_price": 100.00
+}
+
+###
+
+### Invalid input: update a line item with a negative quantity -> expect 400 VALIDATION_ERROR
+PUT {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/{{seedLineItemId}}
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "quantity": -1
+}
+
+###
+
+### No auth: PUT /api/invoices/:invoiceId/line-items/:itemId without Authorization header -> expect 401
+PUT {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/{{seedLineItemId}}
+Content-Type: application/json
+
+{
+  "unit_price": 100.00
+}
+
+###
+
+### Happy path: delete a manual adjustment line item -> expect 200
+DELETE {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/{{seedLineItemId}}
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: delete a non-existent line item -> expect 404 LINE_ITEM_NOT_FOUND
+DELETE {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/999999
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: DELETE /api/invoices/:invoiceId/line-items/:itemId without Authorization header -> expect 401
+DELETE {{baseUrl}}/invoices/{{seedInvoiceId}}/line-items/{{seedLineItemId}}
+
+###############################################################################
+# 7. REVENUE LEAKAGE ALERTS
+###############################################################################
+
+### Happy path: list bookings flagged for revenue leakage -> expect 200
+GET {{baseUrl}}/revenue-leakage?threshold_hours=4
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET revenue-leakage with a non-numeric threshold_hours -> expect 400
+GET {{baseUrl}}/revenue-leakage?threshold_hours=notanumber
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/revenue-leakage without Authorization header -> expect 401
+GET {{baseUrl}}/revenue-leakage
+
+###
+
+### Happy path: resolve a revenue leakage alert with a reason -> expect 200
+PATCH {{baseUrl}}/revenue-leakage/{{seedBookingId}}/resolve
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "reason": "Job cancelled on site - patient refused transport."
+}
+
+###
+
+### Invalid input: resolve an alert with a missing reason -> expect 400 VALIDATION_ERROR
+PATCH {{baseUrl}}/revenue-leakage/{{seedBookingId}}/resolve
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{}
+
+###
+
+### No auth: PATCH /api/revenue-leakage/:bookingId/resolve without Authorization header -> expect 401
+PATCH {{baseUrl}}/revenue-leakage/{{seedBookingId}}/resolve
+Content-Type: application/json
+
+{
+  "reason": "Testing without auth."
+}
+
+###############################################################################
+# 8. AR DASHBOARD
+###############################################################################
+
+### Happy path: get AR dashboard summary counts and totals -> expect 200
+GET {{baseUrl}}/ar/dashboard?from_date=2026-06-01&to_date=2026-06-22
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: GET ar/dashboard with a malformed date -> expect 400
+GET {{baseUrl}}/ar/dashboard?from_date=not-a-date
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: GET /api/ar/dashboard without Authorization header -> expect 401
+GET {{baseUrl}}/ar/dashboard
+
+###############################################################################
+# 9. XERO BANK FEED
+###############################################################################
+
+### Happy path: trigger a manual bank feed pull from Xero -> expect 200
+POST {{baseUrl}}/xero/bank-feed/pull
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: N/A - endpoint takes no request body, so this repeats the auth
+### check with a garbage body to confirm the server ignores/rejects it gracefully
+POST {{baseUrl}}/xero/bank-feed/pull
+Authorization: Bearer {{arToken}}
+Content-Type: application/json
+
+{
+  "unexpected_field": true
+}
+
+###
+
+### No auth: POST /api/xero/bank-feed/pull without Authorization header -> expect 401
+POST {{baseUrl}}/xero/bank-feed/pull
+
+###############################################################################
+# 10. ROLE-BASED ACCESS (403 checks, using non-AR tokens against AR-only routes)
+###############################################################################
+
+### Forbidden: managing_director attempting a write-only AR route -> expect 403 FORBIDDEN
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{mdToken}}
+Content-Type: application/json
+
+{
+  "client_id": {{seedClientId}},
+  "contract_name": "MD Should Not Be Able To Create This",
+  "effective_from": "2027-01-01",
+  "effective_to": "2027-12-31",
+  "rates": [],
+  "surcharges": []
+}
+
+###
+
+### Forbidden: ap_specialist attempting to read the memo review queue -> expect 403 FORBIDDEN
+GET {{baseUrl}}/memos/pending-review
+Authorization: Bearer {{apToken}}
+
+###
+
+### Forbidden: quotations_specialist attempting to read the AR dashboard -> expect 403 FORBIDDEN
+GET {{baseUrl}}/ar/dashboard
+Authorization: Bearer {{qToken}}
