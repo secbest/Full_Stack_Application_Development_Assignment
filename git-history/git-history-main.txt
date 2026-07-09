@@ -1,3 +1,202 @@
+commit 17189a025496324944ebdd303543d09afba34671
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jul 8 15:30:39 2026 +0800
+
+    "Design login screen for EFAR" & CLAUDE.md
+    
+    Updated "Design login screen for EFAR" figma make folder & CLAUDE.md with Account Management feature implemented for managing director
+
+commit e90a7cf7a1caff9bbc32cd0c1f3cd762b7e42a6d
+Merge: decd04d c06fce1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:15 2026 +0800
+
+    Merge wave-1-1b-xero-api into main
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit c06fce1395347cb7de2da46ef70bc291094dce8b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:08 2026 +0800
+
+    Pin Vite dev server to strict port 5173
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit eb6ae8aa20f9cc1a788ab192bb2a936ec1cd25bb
+Merge: 1efb131 decd04d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:03:30 2026 +0800
+
+    Merge main into wave-1-1b-xero-api
+    
+    Resolves conflicts from parallel development on main: combines image
+    upload middleware/service (signature, hospital stamp) with PDF upload
+    middleware/service (vendor invoices) in upload.js and cloudinaryService.js,
+    merges db:seed:bookings/db:seed:xero package.json scripts, and keeps both
+    Liang Yi's service-memo/dashboard validators and the new
+    vendorInvoiceUploadSchema in validators/index.js.
+
+commit decd04d01744b61294abb7131a873c6055cb8535
+Merge: 9aa5b29 881f371
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jul 6 15:50:47 2026 +0800
+
+    Merge main into wave-1-1A: reconcile booking management with Field Ops
+    
+    Main had independently merged Jasper's Wave 2A Field Operations work,
+    which added its own bookingController.js/bookingRoutes.js (listMyJobs,
+    getBookingById for the My Jobs / Memo Wizard screens) and its own
+    seed-bookings.js. Combined both feature sets so neither is lost:
+    
+    - bookingController.js/bookingRoutes.js now expose listMyJobs (Field
+      Crew, unchanged incl. its per-crew permission check) alongside
+      listBookings/updateBookingCrew (Quotations/AR/MD). getBookingById is
+      kept exactly as Field Ops built it (nested client: {id, name} shape,
+      field_crew-only-own-booking check) since the Memo Wizard's Booking
+      Summary panel depends on that exact shape.
+    - seed-bookings.js now seeds both BKG-TEST-* (Field Ops fixtures) and
+      BKG-2026-* (intake-linked bookings) in one script.
+    - routes/index.js and validators/index.js: combined both branches'
+      additive route/schema registrations.
+    - router/routes.js: combined ROLE_HOMES updates from both branches.
+    - layouts/AppLayout.jsx: kept main's version, which already corrected
+      the sidebar to CLAUDE.md's official #1E293B design token.
+    
+    Verified: frontend build passes; backend boots and connects to
+    Supabase; live smoke test as both Camilla (quotations_specialist -
+    intake queue, booking list with working intake link) and Ravi
+    (field_crew - my-jobs, booking detail in Memo Wizard shape) succeeds.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 9aa5b2922b2ab8212f824d240af30860749de40b
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jul 6 15:38:13 2026 +0800
+
+    Fix intake/booking list pages failing to load and add booking seed data
+    
+    Both pages unwrapped the paginated API response one level too shallow
+    (data.data instead of data.data.data), so the array .map() threw and
+    was swallowed into a generic "Failed to load" toast. Also filled in
+    missing fields (intake_reference, pickup/destination/notes, creator
+    name) on the bookings list endpoint so the Linked Intake and detail
+    fields actually render. Adds seed-bookings.js to populate sample
+    bookings linked to the existing confirmed intake seed data.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 00f15072defc468569a60ae1ba8219ba4f5598a1
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Mon Jul 6 14:54:24 2026 +0800
+
+    Main intake and bookings
+
+commit 881f37167a3bf82cd470753250aede7d886c2f77
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 13:47:37 2026 +0800
+
+    Documentation updated
+    
+    README.md, git history, handoff summary, test-cases updated
+
+commit 1efb1311b7a0892630c3879511ba66b3874ebbfd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 11:00:28 2026 +0800
+
+    Add Wave 1B Xero connect + vendor invoice upload endpoints
+    
+    Implements the two endpoints scoped to Wave 1B in the build order:
+    GET /api/xero/connect and POST /api/vendor-invoices (PDF upload ->
+    Cloudinary -> Gemini OCR -> rebate calc -> Sequelize create). Adds
+    supporting services, seed data for the 4 Xero/AP tables, and unit
+    tests for the rebate calculation and OAuth URL builder.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 71c23ae26d48b5a9c61d2891c26689eb6fa38580
+Merge: 1dfacf0 9e675c7
+Author: Tow Kwan Hwa <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:31:40 2026 +0800
+
+    Merge pull request #1 from secbest/wave-2-2A-field-operations
+    
+    Wave 2 2A field operations
+
+commit 9e675c737b08c2d98f111ac2ffcf49b8c8aa252a
+Merge: 3d769ce 1dfacf0
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:27:57 2026 +0800
+
+    Merge main into wave-2-2A-field-operations
+    
+    Resolves the README.md Progress Log conflict by following Kwan Hua's
+    restructuring on main (per-student handoff files instead of a shared README
+    section) - Jasper's Wave 2A summary already lives in
+    my-project-ai/Jasper/handoff-2026-07-02.md, so nothing is lost.
+
+commit 3d769ceea733a01ce0bc872e3b11e019430f6e1b
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:26:13 2026 +0800
+
+    Implement Wave 2A: Field Operations & Executive Dashboard
+    
+    Delivers the field crew flow (My Jobs, 4-step memo wizard, memo history) and
+    managing director dashboard (Fleet/Expense tabs), backed by new
+    service-memo/dashboard/booking-read API endpoints, plus the shadcn primitives,
+    toast system, and UI fixes (sidebar theme color, popover background,
+    jsconfig deprecation) needed to support them.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 03844b2810f985e48e14fb9dd7d14138fc37a522
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 10:25:54 2026 +0800
+
+    Record Wave 2A ownership handover and restore .env.example placeholders
+    
+    Liang Yi had not started Wave 2A (Field Operations & Executive Dashboard) by
+    the time it was next in the build order, so Jasper is implementing it instead
+    - documented in README, design docs, and Jasper's handoff log for grading
+    traceability. Also found and restored a real Supabase connection string that
+    had been committed to backend/.env.example instead of a placeholder.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 1dfacf0caaf192f0aad4eeb86c4593a161403ee4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:19:41 2026 +0800
+
+    Update READ.me/Handoff.md
+
+commit c4b489fe4f90310a8f6b16633ba9b6dc19d49901
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 2 15:59:01 2026 +0800
+
+    Handoff Summary
+    
+    Handoff Summary on 2/7/2026
+
+commit 79dfe0c577e99f2eebd9a8f1e3598afc5466bb75
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:52:32 2026 +0800
+
+    Update file directory
+
+commit 62bccbab06eae1e9c95a7baa4f626431c31b8929
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:47:24 2026 +0800
+
+    Update: Ai Logs/Git-History
+
+commit e4c26658ad5f29d07d01933ae54836c24f239a08
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 2 15:34:20 2026 +0800
+
+    Git history
+    
+    Git history setted up for team and individual
+
 commit d67241e0723c450cc632943026f2065c59ff63e4
 Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
 Date:   Wed Jul 1 10:19:31 2026 +0800
