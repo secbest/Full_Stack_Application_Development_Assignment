@@ -10,7 +10,11 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 
 ## Task Allocation
 
-| Member | Scope | Features Owned |
+Design ownership (use cases, API docs, database schema in `design/<student-name>/`) follows the original feature split below. **Implementation ownership has since shifted**: Jasper took over the whole of Wave 2 (both his own pricing engine scope and Liang Yi's field operations scope), and Kwan Hua took over the whole of Wave 3 (both his own AP scope and Jasper's AR billing/invoice sync scope). The tables below reflect current, accurate ownership for each.
+
+### Design ownership (use cases / API docs / schema authorship)
+
+| Member | Scope | Features Designed |
 |--------|-------|----------------|
 | Jasper | AR Billing, Pricing Engine & Invoice Sync | Automated pricing match engine, Push draft invoices to Xero, Bank feed ingestion from Xero, Client pricing contract management, Invoice review and surcharge adjustment, Batch invoice approval, Revenue leakage alert, AR batch status tracker, Memo review by AR Specialist |
 | Kwan Hua | Xero Foundation, OCR & AP Processing | Xero OAuth2 connection, OCR/AI data extraction via Gemini, AP data sync to Xero, Xero sync status and error handling, Automated 1% rebate verification, Low-confidence extraction flag, AP review and approval interface, PDF vendor invoice upload |
@@ -18,11 +22,18 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 | Liang Yi | Field Operations & Executive Dashboard | Field memo form, Digital signature capture, Fleet and job status overview, Overhead cost and vendor expense summary, Mandatory revenue field validation, Hospital stamp image upload, Memo submission and AR notification trigger |
 | Group | Shared Infrastructure | Auth (register, login, logout), JWT middleware and role-based route protection, Database setup and Sequelize config, Deployment (Vercel, Render, Supabase) |
 
-> **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) was implemented by Jasper, as Liang Yi had not started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). Delivered: `POST/GET /api/service-memos*`, `GET /api/dashboard/*`, the field crew "My Jobs" -> 4-step memo wizard -> "Memo History" flow, and the Managing Director's Fleet/Expense dashboard. See `my-project-ai/Jasper/handoff-2026-07-02.md` for the full session log.
->
+### Implementation ownership (code + tests actually committed)
+
+| Member | Scope built | What was delivered |
+|--------|-------|----------------|
+| **Jasper** | **All of Wave 2** - Field Operations & Executive Dashboard (Liang Yi's design) + Pricing Contracts (Jasper's own design) | `POST/GET /api/service-memos*`, `GET /api/dashboard/*`, the field crew "My Jobs" -> 4-step memo wizard -> "Memo History" flow, the Managing Director's Fleet/Expense dashboard, `pricing_contracts`/`pricing_rates`/`surcharge_schedules` tables and full `/api/contracts/*` CRUD (backend + frontend). Tests and commits under Jasper's name (`backend/tests/jasper/`, `frontend/tests/jasper/`). |
+| **Kwan Hua** | **All of Wave 3** - AR Billing, Pricing Engine & Invoice Sync (Jasper's design) + AP Processing (Kwan Hua's own design) | The pricing engine (`backend/src/services/pricingService.js`), `GET /api/service-memos/pending-review`, `PATCH /api/service-memos/:id/approve` (runs the engine and generates the invoice), `PATCH /api/service-memos/:id/return`, `GET /api/invoices`, `GET /api/invoices/:id`, invoice line-item add/edit/delete, `POST /api/invoices/batch-approve`, `POST /api/invoices/:id/retry-xero`, plus the full AP review/approve/reject/reextract/sync-xero flow, all writing `xero_sync_logs` with the appropriate `entity_type`. Frontend: the AR screens (Memo Review Queue/Detail, Invoice List/Detail, Pricing Contracts) and the full AP screen set (Vendor Invoice List with PDF upload, the two-panel AP Invoice Review, Xero Connection settings, and the shared Xero Sync Status/retry panel), plus `db:seed:pricing`/`db:seed:xero`. Also fixed a schema bug where `xero_sync_logs.entity_id` had picked up a real foreign-key constraint against `invoices` during `db:sync` despite the column being a polymorphic key shared with `vendor_invoices` - added `constraints: false` on both associations in `models/index.js` since every AP sync (and any AR sync, previously by luck) would otherwise fail. Tests and commits under Kwan Hua's name (`backend/tests/kwan-hua/`, `frontend/tests/kwan-hua/`). |
+| Zheng Bao | Customer Intake & Booking Management (Wave 1A, as designed) | Unchanged from design ownership above. |
+| Liang Yi | - (design only; implementation absorbed into Jasper's Wave 2, above) | Authored the use cases, API docs, and database schema for Field Operations & Executive Dashboard; did not implement, so Jasper built this scope. |
+
 > **Cross-team note for Zheng Bao:** `backend/src/routes/bookingRoutes.js` currently has two temporary read-only routes (`GET /my-jobs`, `GET /:id`) added only to unblock the Field Crew screens above. Please reconcile or replace them once your full booking-management routes (create, confirm/reject, `PATCH /:id/status`, crew assignment) are ready.
->
-> **Note (2026-07-08):** Jasper's Wave 3 scope (AR Billing & Invoice Sync) was implemented by Kwan Hua, who took over the whole of Wave 3. Design ownership (`design/jasper/`) is unchanged - Jasper authored the AR use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Kwan Hua's name for traceability (`backend/tests/kwan-hua/pricing.test.js`). Delivered: the pricing engine (`backend/src/services/pricingService.js`), `GET /api/service-memos/pending-review`, `PATCH /api/service-memos/:id/approve` (runs the engine and generates the invoice), `PATCH /api/service-memos/:id/return`, `GET /api/invoices`, `GET /api/invoices/:id`, invoice line-item add/edit/delete, `POST /api/invoices/batch-approve`, `POST /api/invoices/:id/retry-xero` (all writing `xero_sync_logs` with `entity_type='ar_invoice'`), plus the AR frontend screens (Memo Review Queue/Detail, Invoice List, Invoice Detail) and the `db:seed:pricing` seed. Still open (not part of this takeover): pricing-contract management CRUD (Jasper's Wave 2) and the Revenue Leakage / AR Dashboard aggregation endpoints (Wave 4).
+
+See `my-project-ai/Jasper/handoff-2026-07-02.md` and `my-project-ai/Tow_Kwan_Hwa/handoff-2026-07-08.md` for the full session logs behind these handovers.
 
 ## How to Run Locally
 

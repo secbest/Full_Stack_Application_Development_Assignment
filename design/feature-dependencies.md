@@ -112,9 +112,11 @@ No hard circular dependencies exist. The pipeline runs in one direction: intake 
 
 ## Suggested Build Order
 
-> **Status update (2026-07-08):** Wave 3 (Jasper's AR Billing, Pricing Engine & Invoice Sync scope) has been implemented by Kwan Hua, who took over the whole of Wave 3. Design ownership of `design/jasper/` is unchanged; the implementation and its tests are committed under Kwan Hua's name (`backend/tests/kwan-hua/pricing.test.js`). Delivered: the pricing engine (`backend/src/services/pricingService.js`), memo review queue + `PATCH /api/service-memos/:id/approve` (engine + invoice generation) + `/return`, the `/api/invoices/*` endpoints (list, detail, line-item add/edit/delete, `batch-approve`, `retry-xero`) writing `xero_sync_logs` with `entity_type='ar_invoice'`, the AR frontend screens (Memo Review Queue/Detail, Invoice List/Detail), and `seed-pricing.js`. Not included (still Jasper's / later waves): pricing-contract CRUD (Wave 2) and the Revenue Leakage / AR Dashboard endpoints (Wave 4).
+> **Current implementation ownership (accurate as of 2026-07-09):** Implementation ownership has diverged from the design-time split below. **Jasper implemented the whole of Wave 2** - his own Pricing Contracts scope plus Liang Yi's Field Operations & Executive Dashboard scope (Liang Yi had not started coding when Wave 2 opened; design ownership of `design/liang-yi/` is unchanged, code and tests are committed under Jasper's name in `backend/tests/jasper/` and `frontend/tests/jasper/`). **Kwan Hua implemented the whole of Wave 3** - his own AP Processing scope plus Jasper's AR Billing, Pricing Engine & Invoice Sync scope (design ownership of `design/jasper/` is unchanged, code and tests are committed under Kwan Hua's name in `backend/tests/kwan-hua/` and `frontend/tests/kwan-hua/`).
 >
-> **Status update (2026-07-02, In Progress):** Wave 2A (Liang Yi's Field Operations & Executive Dashboard scope) has been implemented by Jasper - `service_memos`/`memo_signatures` tables, the full `/api/service-memos/*` and `/api/dashboard/*` endpoints, and the frontend My Jobs -> Memo Wizard -> Memo History flow plus the Fleet/Expense dashboard. Built directly against the real `Booking`/`User` Sequelize models (not the stub) once `npm run db:sync` confirmed table creation doesn't depend on migrations in this project - see `backend/src/scripts/sync-db.js`. Two temporary read-only routes (`GET /api/bookings/my-jobs`, `GET /api/bookings/:id`) were added to `backend/src/routes/bookingRoutes.js` to unblock this work; Zheng Bao should reconcile these with his full booking-management implementation.
+> Delivered under Jasper (Wave 2, all of it): `service_memos`/`memo_signatures` tables, full `/api/service-memos/*` and `/api/dashboard/*` endpoints, the field crew My Jobs -> Memo Wizard -> Memo History flow, the Fleet/Expense dashboard, `pricing_contracts`/`pricing_rates`/`surcharge_schedules` tables, and the full `/api/contracts/*` CRUD (backend + frontend). Built directly against the real `Booking`/`User` Sequelize models once `npm run db:sync` confirmed table creation doesn't depend on migrations in this project - see `backend/src/scripts/sync-db.js`. Two temporary read-only routes (`GET /api/bookings/my-jobs`, `GET /api/bookings/:id`) were added to `backend/src/routes/bookingRoutes.js` to unblock this work; Zheng Bao should reconcile these with his full booking-management implementation.
+>
+> Delivered under Kwan Hua (Wave 3, all of it): the pricing engine (`backend/src/services/pricingService.js`), memo review queue + `PATCH /api/service-memos/:id/approve` (engine + invoice generation) + `/return`, the `/api/invoices/*` endpoints (list, detail, line-item add/edit/delete, `batch-approve`, `retry-xero`) writing `xero_sync_logs` with `entity_type='ar_invoice'`, the AR frontend screens (Memo Review Queue/Detail, Invoice List/Detail), `seed-pricing.js`, and the full AP review/approve/reject/sync-xero flow writing `xero_sync_logs` with `entity_type='vendor_invoice'`. Not yet built by anyone (later wave): the Revenue Leakage / AR Dashboard aggregation endpoints (Wave 4, design-owned by Liang Yi).
 
 ```
 Wave 0 - Group (all members blocked until this is done)
@@ -133,23 +135,21 @@ Wave 1 - Parallel (no inter-member dependency)
                  + xero_sync_logs tables + migrations + seeds
                  GET /api/xero/connect, POST /api/vendor-invoices (upload)
 
-Wave 2 - Parallel (after Wave 1)
-  ├── Liang Yi:  service_memos + memo_signatures tables + migrations + seeds
-  │              POST /api/memos (submit memo, triggers PATCH /bookings/:id/status)
-  │              GET /api/memos/:id
-  │              POST /api/memos/:id/signatures
+Wave 2 - Parallel (after Wave 1) - built entirely by Jasper (see note above)
+  ├── (design: Liang Yi, built: Jasper)  service_memos + memo_signatures tables + migrations + seeds
+  │              POST/GET /api/service-memos*, PATCH /bookings/:id/status trigger
   │
-  └── Jasper:    pricing_contracts + pricing_rates + surcharge_schedules
+  └── (design: Jasper, built: Jasper)    pricing_contracts + pricing_rates + surcharge_schedules
                  tables + migrations + seeds
                  All /api/contracts/* endpoints
 
-Wave 3 - Parallel (after Wave 2, both streams unblocked)
-  ├── Jasper:    invoices + invoice_line_items tables + migrations
-                 POST /api/memos/:id/approve (triggers pricing engine)
+Wave 3 - Parallel (after Wave 2, both streams unblocked) - built entirely by Kwan Hua (see note above)
+  ├── (design: Jasper, built: Kwan Hua)  invoices + invoice_line_items tables + migrations
+                 PATCH /api/service-memos/:id/approve (triggers pricing engine)
                  PATCH /api/invoices/:id, POST /api/invoices/batch-approve
-                 POST /api/invoices/:id/sync-xero (writes to xero_sync_logs)
+                 POST /api/invoices/:id/retry-xero (writes to xero_sync_logs)
   │
-  └── Kwan Hua:  GET/PATCH /api/vendor-invoices/:id (AP review)
+  └── (design: Kwan Hua, built: Kwan Hua) GET/PATCH /api/vendor-invoices/:id (AP review)
                  POST /api/vendor-invoices/:id/sync-xero
 
 Wave 4 - After Wave 3

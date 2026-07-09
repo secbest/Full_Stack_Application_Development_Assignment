@@ -23,6 +23,13 @@ const STATUS_COLORS = {
   expired: '#94A3B8',
   upcoming: '#3B82F6',
   deactivated: '#EF4444',
+  // Vendor invoices (AP)
+  pending_review: '#F59E0B',
+  extraction_failed: '#EF4444',
+  rejected: '#EF4444',
+  // Xero sync logs
+  pending: '#F59E0B',
+  success: '#22C55E',
 }
 
 const STATUS_LABELS = {
@@ -43,6 +50,11 @@ const STATUS_LABELS = {
   expired: 'Expired',
   upcoming: 'Upcoming',
   deactivated: 'Deactivated',
+  pending_review: 'Pending Review',
+  extraction_failed: 'Extraction Failed',
+  rejected: 'Rejected',
+  pending: 'Pending',
+  success: 'Success',
 }
 
 export function StatusBadge({ status, className }) {

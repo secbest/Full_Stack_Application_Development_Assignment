@@ -29,7 +29,9 @@ import ServiceMemoListPage from './pages/memos/ServiceMemoListPage'
 
 // AP Specialist (Kwan Hua)
 import VendorInvoiceListPage from './pages/vendor/VendorInvoiceListPage'
+import VendorInvoiceReviewPage from './pages/vendor/VendorInvoiceReviewPage'
 import XeroConnectPage from './pages/vendor/XeroConnectPage'
+import XeroSyncStatusPage from './pages/vendor/XeroSyncStatusPage'
 
 // Quotations Specialist (Zheng Bao)
 import BookingListPage from './pages/bookings/BookingListPage'
@@ -88,8 +90,16 @@ export default function App() {
 
           {/* ── AP Specialist (Kwan Hua) ───────────────────────────────────── */}
           <Route element={<RoleRoute roles={['ap_specialist']} />}>
-            <Route path="/vendor-invoices" element={<VendorInvoiceListPage />} />
-            <Route path="/xero/connect"    element={<XeroConnectPage />} />
+            <Route path="/vendor-invoices"     element={<VendorInvoiceListPage />} />
+            <Route path="/vendor-invoices/:id" element={<VendorInvoiceReviewPage />} />
+          </Route>
+
+          {/* ── Shared: Xero settings + sync status (Kwan Hua) ──────────────── */}
+          {/* /settings/xero must match xeroController.js's hardcoded OAuth callback
+              redirect target exactly - see design/kwan-hua/api-documentation.md UC-01. */}
+          <Route element={<RoleRoute roles={['managing_director', 'ap_specialist', 'ar_specialist']} />}>
+            <Route path="/settings/xero"    element={<XeroConnectPage />} />
+            <Route path="/xero/sync-status" element={<XeroSyncStatusPage />} />
           </Route>
 
           {/* ── Quotations Specialist (Zheng Bao) ─────────────────────────── */}

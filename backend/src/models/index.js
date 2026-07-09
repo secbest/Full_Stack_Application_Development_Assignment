@@ -101,8 +101,10 @@ Invoice.belongsTo(Client,         { foreignKey: 'client_id' })
 Invoice.belongsTo(PricingContract, { foreignKey: 'contract_id' })
 Invoice.belongsTo(User,           { foreignKey: 'approved_by', as: 'approvedBy' })
 Invoice.hasMany(InvoiceLineItem,  { foreignKey: 'invoice_id', onDelete: 'CASCADE' })
-// Polymorphic: AR invoices use XeroSyncLog with entity_type = 'ar_invoice'
-Invoice.hasMany(XeroSyncLog, { foreignKey: 'entity_id', scope: { entity_type: 'ar_invoice' }, as: 'syncLogs' })
+// Polymorphic: AR invoices use XeroSyncLog with entity_type = 'ar_invoice'. constraints:
+// false is required - entity_id also serves vendor_invoice rows (see VendorInvoice.hasMany
+// below), so a real FK here would reject every AP sync log row.
+Invoice.hasMany(XeroSyncLog, { foreignKey: 'entity_id', scope: { entity_type: 'ar_invoice' }, as: 'syncLogs', constraints: false })
 
 // ── InvoiceLineItem ───────────────────────────────────────────────────────────
 InvoiceLineItem.belongsTo(Invoice, { foreignKey: 'invoice_id' })
@@ -125,8 +127,9 @@ MemoSignature.belongsTo(ServiceMemo, { foreignKey: 'memo_id' })
 VendorInvoice.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploadedBy' })
 VendorInvoice.belongsTo(User, { foreignKey: 'approved_by', as: 'approvedBy' })
 VendorInvoice.hasMany(VendorInvoiceItem, { foreignKey: 'vendor_invoice_id', onDelete: 'CASCADE' })
-// Polymorphic: vendor invoices use XeroSyncLog with entity_type = 'vendor_invoice'
-VendorInvoice.hasMany(XeroSyncLog, { foreignKey: 'entity_id', scope: { entity_type: 'vendor_invoice' }, as: 'syncLogs' })
+// Polymorphic: vendor invoices use XeroSyncLog with entity_type = 'vendor_invoice'.
+// constraints: false for the same reason as Invoice.hasMany above.
+VendorInvoice.hasMany(XeroSyncLog, { foreignKey: 'entity_id', scope: { entity_type: 'vendor_invoice' }, as: 'syncLogs', constraints: false })
 
 // ── VendorInvoiceItem ─────────────────────────────────────────────────────────
 VendorInvoiceItem.belongsTo(VendorInvoice, { foreignKey: 'vendor_invoice_id' })

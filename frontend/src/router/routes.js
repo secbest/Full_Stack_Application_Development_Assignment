@@ -48,11 +48,21 @@ export const NAV_ROUTES = [
     Icon: Building2,
     roles: ['ap_specialist'],
   },
+
+  // ── Shared: Xero settings + sync status (Kwan Hua) ───────────────────────────
+  // Connect/disconnect actions inside are gated to managing_director; AP/AR see a
+  // read-only status card. Sync status is the shared retry panel for both queues.
   {
-    path: '/xero/connect',
+    path: '/settings/xero',
     label: 'Xero Connection',
     Icon: Plug,
-    roles: ['ap_specialist'],
+    roles: ['managing_director', 'ap_specialist', 'ar_specialist'],
+  },
+  {
+    path: '/xero/sync-status',
+    label: 'Xero Sync Status',
+    Icon: History,
+    roles: ['ap_specialist', 'ar_specialist'],
   },
 
   // ── Quotations Specialist (Zheng Bao) ────────────────────────────────────────
