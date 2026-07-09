@@ -21,6 +21,8 @@ This platform digitises the full operations-to-billing cycle for EFAR by connect
 > **Note (2026-07-02):** Liang Yi's Wave 2A scope (Field Operations & Executive Dashboard) was implemented by Jasper, as Liang Yi had not started coding when Wave 2 opened up. Design ownership (`design/liang-yi/`) is unchanged - Liang Yi authored the use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Jasper's name for traceability (`backend/tests/jasper/`, `frontend/tests/jasper/`). Delivered: `POST/GET /api/service-memos*`, `GET /api/dashboard/*`, the field crew "My Jobs" -> 4-step memo wizard -> "Memo History" flow, and the Managing Director's Fleet/Expense dashboard. See `my-project-ai/Jasper/handoff-2026-07-02.md` for the full session log.
 >
 > **Cross-team note for Zheng Bao:** `backend/src/routes/bookingRoutes.js` currently has two temporary read-only routes (`GET /my-jobs`, `GET /:id`) added only to unblock the Field Crew screens above. Please reconcile or replace them once your full booking-management routes (create, confirm/reject, `PATCH /:id/status`, crew assignment) are ready.
+>
+> **Note (2026-07-08):** Jasper's Wave 3 scope (AR Billing & Invoice Sync) was implemented by Kwan Hua, who took over the whole of Wave 3. Design ownership (`design/jasper/`) is unchanged - Jasper authored the AR use cases, API docs, and database schema referenced above. Code and tests for this wave are committed under Kwan Hua's name for traceability (`backend/tests/kwan-hua/pricing.test.js`). Delivered: the pricing engine (`backend/src/services/pricingService.js`), `GET /api/service-memos/pending-review`, `PATCH /api/service-memos/:id/approve` (runs the engine and generates the invoice), `PATCH /api/service-memos/:id/return`, `GET /api/invoices`, `GET /api/invoices/:id`, invoice line-item add/edit/delete, `POST /api/invoices/batch-approve`, `POST /api/invoices/:id/retry-xero` (all writing `xero_sync_logs` with `entity_type='ar_invoice'`), plus the AR frontend screens (Memo Review Queue/Detail, Invoice List, Invoice Detail) and the `db:seed:pricing` seed. Still open (not part of this takeover): pricing-contract management CRUD (Jasper's Wave 2) and the Revenue Leakage / AR Dashboard aggregation endpoints (Wave 4).
 
 ## How to Run Locally
 
@@ -40,6 +42,8 @@ npm run db:seed           # inserts demo user accounts
 npm run db:seed:clients   # inserts demo client records
 npm run db:seed:intakes   # inserts demo intake_submissions (requires db:seed first)
 npm run db:seed:bookings  # inserts demo bookings for Ravi Kumar (requires db:seed + db:seed:clients first)
+npm run db:seed:xero      # inserts demo Xero connection + vendor invoices (AP - Kwan Hua)
+npm run db:seed:pricing   # inserts pricing contract + rates + surcharges + review-queue memos (AR Wave 3 - Kwan Hua; requires the seeds above)
 ```
 
 Demo accounts (password: `Efar@2026`):
@@ -69,6 +73,31 @@ npm run dev        # nodemon (auto-restart on change)
 # or
 node src/index.js  # single run
 ```
+
+### Xero integration (real vs simulation)
+
+The Xero OAuth2 connection and the AP/AR invoice sync run against the **real Xero API** when
+credentials are configured, and fall back to a built-in **simulation mode** otherwise so the app is
+demoable without a Xero account. Controlled by `XERO_SIMULATION` in `backend/.env`:
+
+- `XERO_SIMULATION=true` (default): connect/callback/approve/sync/retry all succeed with generated
+  identifiers - no Xero account needed.
+- `XERO_SIMULATION=false`: hits the live Xero API. Requires a registered Xero app.
+
+**To connect a real Xero organisation:**
+
+1. Create a free app at <https://developer.xero.com> -> **My Apps** -> **New app** (Web app).
+2. Set the **OAuth 2.0 redirect URI** to exactly `http://localhost:3000/api/xero/callback`
+   (must match `XERO_REDIRECT_URI`).
+3. Copy the **Client ID** and generate a **Client secret**.
+4. In `backend/.env` set: `XERO_SIMULATION=false`, `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`,
+   `XERO_REDIRECT_URI`, and a 64-char hex `XERO_ENCRYPTION_KEY`
+   (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+   Optionally set `XERO_SALES_ACCOUNT_CODE` / `XERO_PURCHASE_ACCOUNT_CODE` so synced invoices/bills
+   are ready to approve in Xero.
+5. Create a free **Demo Company** in Xero to sync into.
+6. Log in as the Managing Director, open Xero Connection, and complete the OAuth consent. Tokens are
+   AES-256-GCM encrypted at rest and auto-refreshed (~30 min lifetime) before each sync.
 
 ## Tech Stack
 

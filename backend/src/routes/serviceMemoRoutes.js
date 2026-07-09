@@ -13,6 +13,7 @@ const {
   listServiceMemos,
   getServiceMemoById,
 } = require('../controllers/serviceMemoController')
+const { listPendingReview, approveMemo, returnMemo } = require('../controllers/memoReviewController')
 
 // Order matters: authenticate -> authorise (role) -> validate (shape) -> controller.
 // Auth failures should never leak whether a payload was well-formed, so auth always runs first.
@@ -48,6 +49,12 @@ router.get(
   validate(listServiceMemosQuerySchema, 'query'),
   listServiceMemos
 )
+
+// ─── AR Review (Wave 3 - implemented by Kwan Hua; AR design by Jasper) ────────
+// Registered before '/:id' so the literal path is not swallowed by the id param.
+router.get('/pending-review', authenticate, authorise('ar_specialist', 'managing_director'), listPendingReview)
+router.patch('/:id/approve', authenticate, authorise('ar_specialist'), approveMemo)
+router.patch('/:id/return', authenticate, authorise('ar_specialist'), returnMemo)
 
 router.get(
   '/:id',

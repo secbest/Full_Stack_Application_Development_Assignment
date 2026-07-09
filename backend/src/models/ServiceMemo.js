@@ -50,6 +50,10 @@ const ServiceMemo = sequelize.define('ServiceMemo', {
     allowNull: false,
     defaultValue: 'submitted',
   },
+
+  // Written only by the AR review endpoints (Jasper's Wave 3): the correction note
+  // left when a memo is returned to the field crew. Surfaced in the crew's Memo History.
+  ar_note: { type: DataTypes.TEXT, allowNull: true },
 }, {
   tableName: 'service_memos',
   underscored: true,

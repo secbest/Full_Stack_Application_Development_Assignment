@@ -3,7 +3,7 @@
 // every model class exists before any foreign-key reference is made.
 // To add a new model: (1) create its file, (2) require it here, (3) add its associations.
 
-const { User, ROLES }     = require('./User')
+const { User, ROLES, ROLE } = require('./User')
 const Client              = require('./Client')
 
 // Zheng Bao - Customer Intake & Booking Management
@@ -144,6 +144,7 @@ module.exports = {
   // Shared / group
   User,
   ROLES,
+  ROLE,
   Client,
 
   // Zheng Bao

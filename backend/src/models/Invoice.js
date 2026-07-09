@@ -9,7 +9,9 @@ const Invoice = sequelize.define('Invoice', {
   memo_id:     { type: DataTypes.INTEGER, allowNull: false, unique: true, references: { model: 'service_memos',     key: 'id' } },
   booking_id:  { type: DataTypes.INTEGER, allowNull: false,              references: { model: 'bookings',          key: 'id' } },
   client_id:   { type: DataTypes.INTEGER, allowNull: false,              references: { model: 'clients',           key: 'id' } },
-  contract_id: { type: DataTypes.INTEGER, allowNull: false,              references: { model: 'pricing_contracts', key: 'id' } },
+  // Nullable: an 'unmatched' invoice (no active contract for the client) carries no
+  // contract_id. Every priced invoice ('matched' onward) always sets it.
+  contract_id: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'pricing_contracts', key: 'id' } },
   approved_by: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'users',             key: 'id' } },
   subtotal:      { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
   tax_amount:    { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
