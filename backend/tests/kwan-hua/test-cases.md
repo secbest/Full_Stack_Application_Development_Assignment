@@ -30,3 +30,77 @@ _List all test cases below before submission. Include what is being tested and t
 | 24 | pricing.test.js | `computeInvoiceLineItems()` no matching rate | Returns `matched: false` with no line items (controller marks invoice `unmatched`) |
 | 25 | pricing.test.js | `computeInvoiceLineItems()` manual-adjustment flag | Every engine-generated line item has `is_manual_adjustment: false` |
 | 26 | pricing.test.js | `toSurchargeMap()` | Reduces surcharge rows to a `type -> amount` numeric map |
+| 27 | contracts.test.js | `computeIsActive()` future vs. past end date | Returns `true`/`false` based on whether `effective_to` has lapsed |
+| 28 | contracts.test.js | `createContract()` duplicate rate rows in one payload | 409 `RATE_DUPLICATE` before any DB call |
+| 29 | contracts.test.js | `createContract()` duplicate surcharge_type rows in one payload | 400 `VALIDATION_ERROR` before any DB call |
+| 30 | contracts.test.js | `createContract()` unknown client_id | 404 `CLIENT_NOT_FOUND` |
+| 31 | contracts.test.js | `createContract()` overlapping active contract for the same client | 409 `CONTRACT_OVERLAP`, no contract row created |
+| 32 | contracts.test.js | `createContract()` happy path with rates + surcharges | 201, rates/surcharges echoed back, `warning: null` |
+| 33 | contracts.test.js | `createContract()` with zero rates | 201 with a non-null `warning` about un-priceable jobs |
+| 34 | contracts.test.js | `updateContract()` unknown id | 404 `CONTRACT_NOT_FOUND` |
+| 35 | contracts.test.js | `updateContract()` `effective_to` before `effective_from` | 400 `VALIDATION_ERROR` |
+| 36 | contracts.test.js | `updateContract()` matched invoices exist, no acknowledgment | 400 `HAS_MATCHED_INVOICES` with `matched_invoice_count` |
+| 37 | contracts.test.js | `updateContract()` matched invoices exist + `acknowledge_matched_invoices: true` | 200, edit proceeds |
+| 38 | contracts.test.js | `updateContract()` explicit `is_active` override | Explicit value always wins over the recomputed one |
+| 39 | contracts.test.js | `updateContract()` end date moved into the past, no explicit `is_active` | Auto-deactivates (`is_active: false`) |
+| 40 | contracts.test.js | `addRate()` unknown contract id | 404 `CONTRACT_NOT_FOUND` |
+| 41 | contracts.test.js | `addRate()` duplicate (service_type, transfer_type, time_of_day) | 409 `RATE_DUPLICATE` |
+| 42 | contracts.test.js | `addRate()` happy path | 201 with the new rate row |
+| 43 | contracts.test.js | `deleteRate()` unknown rate id on this contract | 404 `RATE_NOT_FOUND` |
+| 44 | contracts.test.js | `deleteRate()` contract has billing history | 409 `RATE_IN_USE`, no delete |
+| 45 | contracts.test.js | `deleteRate()` contract has no billing history | 200, row destroyed |
+| 46 | contracts.test.js | `updateSurcharge()` unknown surcharge id on this contract | 404 `SURCHARGE_NOT_FOUND` |
+| 47 | contracts.test.js | `updateSurcharge()` happy path | 200, amount updated |
+| 48 | invoices.test.js | `addLineItem()` unknown invoice id | 404 |
+| 49 | invoices.test.js | `addLineItem()` invoice `approved`/`synced_to_xero` | 409 `INVOICE_LOCKED` |
+| 50 | invoices.test.js | `addLineItem()` blank description or non-positive qty/price | 400 `VALIDATION_ERROR` |
+| 51 | invoices.test.js | `addLineItem()` happy path on a `matched` invoice | 201, invoice flips to `adjusted`, subtotal recalculated |
+| 52 | invoices.test.js | `updateLineItem()` negative quantity | 400 `VALIDATION_ERROR` |
+| 53 | invoices.test.js | `updateLineItem()` unknown item id on this invoice | 404 |
+| 54 | invoices.test.js | `updateLineItem()` happy path | `amount` recomputed as `qty * unit_price`, invoice re-totaled |
+| 55 | invoices.test.js | `deleteLineItem()` engine-generated item (`is_manual_adjustment: false`) | 403 `SYSTEM_LINE_ITEM` |
+| 56 | invoices.test.js | `deleteLineItem()` manual item | 200, deleted + totals recalculated |
+| 57 | invoices.test.js | `batchApprove()` empty/non-array `invoice_ids` | 400 `VALIDATION_ERROR` |
+| 58 | invoices.test.js | `batchApprove()` Xero not connected | 503 `XERO_NOT_CONNECTED` |
+| 59 | invoices.test.js | `batchApprove()` mixed eligible/ineligible invoices | Ineligible ids skipped, eligible ones approved + synced |
+| 60 | invoices.test.js | `batchApprove()` Xero push fails for one invoice | Invoice marked `failed`, AR specialist notified |
+| 61 | invoices.test.js | `retryXero()` unknown invoice id | 404 |
+| 62 | invoices.test.js | `retryXero()` invoice not `failed` | 409 `INVOICE_NOT_FAILED` |
+| 63 | invoices.test.js | `retryXero()` Xero not connected | 503 `XERO_NOT_CONNECTED` |
+| 64 | invoices.test.js | `retryXero()` Xero rejects the retried push | 502 `XERO_SYNC_ERROR` |
+| 65 | invoices.test.js | `retryXero()` happy path | 200, invoice -> `synced_to_xero` with a Xero id |
+| 66 | memo-review.test.js | `approveMemo()` unknown memo id | 404 |
+| 67 | memo-review.test.js | `approveMemo()` memo not `submitted` | 409 `MEMO_ALREADY_REVIEWED` |
+| 68 | memo-review.test.js | `approveMemo()` invoice already exists for this memo | 409 `MEMO_ALREADY_REVIEWED` |
+| 69 | memo-review.test.js | `approveMemo()` client has no active contract | 422 `NO_ACTIVE_CONTRACT`, `unmatched` invoice with `contract_id: null` |
+| 70 | memo-review.test.js | `approveMemo()` active contract but no matching rate | 422 `NO_MATCHING_RATE`, `unmatched` invoice with the contract id set |
+| 71 | memo-review.test.js | `approveMemo()` happy path | 200, `matched` invoice with line items, memo -> `reviewed` |
+| 72 | memo-review.test.js | `returnMemo()` missing/blank note | 400 `VALIDATION_ERROR` |
+| 73 | memo-review.test.js | `returnMemo()` unknown memo id | 404 |
+| 74 | memo-review.test.js | `returnMemo()` linked invoice already `approved`/`synced_to_xero` | 409 `MEMO_ALREADY_INVOICED` |
+| 75 | memo-review.test.js | `returnMemo()` happy path | Memo -> `submitted` with `ar_note`, crew notified |
+| 76 | vendor-invoices.test.js | `uploadVendorInvoice()` no file attached | 400 `INVALID_FILE_TYPE` |
+| 77 | vendor-invoices.test.js | `updateVendorInvoice()` unknown id | 404 |
+| 78 | vendor-invoices.test.js | `updateVendorInvoice()` invoice not in an editable status | 409 `INVALID_STATUS` |
+| 79 | vendor-invoices.test.js | `updateVendorInvoice()` non-positive `extracted_total` | 400 `INVALID_TOTAL` |
+| 80 | vendor-invoices.test.js | `updateVendorInvoice()` `extracted_total` change | Rebate + verified total recalculated |
+| 81 | vendor-invoices.test.js | `updateVendorInvoice()` duplicate vendor+invoice_number | 409 `DUPLICATE_INVOICE` |
+| 82 | vendor-invoices.test.js | `approveVendorInvoice()` unknown id | 404 |
+| 83 | vendor-invoices.test.js | `approveVendorInvoice()` not `pending_review` | 409 `INVALID_STATUS` |
+| 84 | vendor-invoices.test.js | `approveVendorInvoice()` `extracted_total` not set | 409 `MISSING_TOTAL` |
+| 85 | vendor-invoices.test.js | `approveVendorInvoice()` duplicate approved/synced invoice exists | 409 `DUPLICATE_INVOICE` |
+| 86 | vendor-invoices.test.js | `approveVendorInvoice()` Xero not connected | 503 `XERO_NOT_CONNECTED` |
+| 87 | vendor-invoices.test.js | `approveVendorInvoice()` happy path | 200, invoice -> `synced_to_xero` with a Xero bill id |
+| 88 | vendor-invoices.test.js | `approveVendorInvoice()` Xero push fails | 200 with `status: 'failed'`, no bill id |
+| 89 | vendor-invoices.test.js | `rejectVendorInvoice()` missing `rejection_reason` | 400 `MISSING_REASON` |
+| 90 | vendor-invoices.test.js | `rejectVendorInvoice()` invoice not in an editable status | 409 `INVALID_STATUS` |
+| 91 | vendor-invoices.test.js | `rejectVendorInvoice()` happy path | 200, invoice -> `rejected` with the reason stored |
+| 92 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` unknown item id | 404 |
+| 93 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` parent invoice not editable | 409 `INVALID_STATUS` |
+| 94 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` non-positive `amount` | 400 `INVALID_AMOUNT` |
+| 95 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` edit without an amount change | Parent invoice total left untouched |
+| 96 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` amount change | Parent `extracted_total`/rebate recomputed from all line items |
+
+_Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path and
+`reextractVendorInvoice` (both require mocking `fetch`/Cloudinary/OCR I/O rather than pure
+DB + logic branches) - these are exercised manually via the AP Invoice Review screen instead._
