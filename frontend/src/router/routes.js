@@ -8,6 +8,8 @@ import {
   CalendarDays,
   Briefcase,
   History,
+  FileBarChart,
+  Users,
 } from 'lucide-react'
 
 // NAV_ROUTES drives both the sidebar nav in AppLayout and the route tree in App.jsx.
@@ -18,6 +20,18 @@ export const NAV_ROUTES = [
     path: '/dashboard',
     label: 'Dashboard',
     Icon: LayoutDashboard,
+    roles: ['managing_director'],
+  },
+  {
+    path: '/reports',
+    label: 'Reports',
+    Icon: FileBarChart,
+    roles: ['managing_director'],
+  },
+  {
+    path: '/management',
+    label: 'Accounts Management',
+    Icon: Users,
     roles: ['managing_director'],
   },
 

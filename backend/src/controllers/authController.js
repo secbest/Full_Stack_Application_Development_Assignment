@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { User } = require('../models')
 const { success, created, error } = require('../utils')
-const { registerSchema, loginSchema } = require('../validators')
+const { loginSchema } = require('../validators')
 
 function signToken(user) {
   const secret = process.env.NODE_ENV === 'production'
@@ -17,7 +17,7 @@ function signToken(user) {
 
 async function register(req, res) {
   try {
-    const body = await registerSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
+    const body = req.body
     const exists = await User.findOne({ where: { email: body.email } })
     if (exists) return error(res, 'An account with this email already exists.', 'EMAIL_IN_USE', 409)
     const hash = await bcrypt.hash(body.password, 12)
@@ -28,7 +28,6 @@ async function register(req, res) {
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
     })
   } catch (err) {
-    if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 422)
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }
 }

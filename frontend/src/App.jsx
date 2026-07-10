@@ -18,6 +18,8 @@ import LoginPage from './pages/auth/LoginPage'
 
 // Managing Director
 import DashboardPage from './pages/dashboard/DashboardPage'
+import ReportPage from './pages/dashboard/ReportPage'
+import ManagementPage from './pages/dashboard/Management'
 
 // AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua)
 import InvoiceListPage from './pages/invoices/InvoiceListPage'
@@ -75,6 +77,8 @@ export default function App() {
           {/* ── Managing Director ──────────────────────────────────────────── */}
           <Route element={<RoleRoute roles={['managing_director']} />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/reports" element={<ReportPage />} />
+            <Route path="/management" element={<ManagementPage />} />
           </Route>
 
           {/* ── AR Specialist (design Jasper; Wave 3 by Kwan Hua) ──────────── */}

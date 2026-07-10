@@ -1,0 +1,79 @@
+### EFAR API - Dashboard Endpoints (Liang Yi / Jasper implementation)
+### Requires the "REST Client" VS Code extension (humao.rest-client).
+###
+### Prerequisites:
+### 1. Backend running locally: cd backend && node src/index.js  (default PORT=3000)
+### 2. Demo users seeded: node src/scripts/seed-users.js
+###    (all demo accounts share the password "Efar@2026")
+###
+### The login request below is run once; its response token is captured into
+### @mdToken and reused automatically by every subsequent request in this file
+### via {{login.response.body.$.data.token}} - no need to copy/paste tokens manually.
+
+@baseUrl = http://localhost:3000/api
+@contentType = application/json
+
+### ============================================================
+### AUTH - obtain a Managing Director token
+### Both dashboard endpoints are restricted to the managing_director role,
+### so every request below needs this token in its Authorization header.
+### ============================================================
+
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "doris@efar.com.sg",
+  "password": "Efar@2026"
+}
+
+###
+
+@mdToken = {{login.response.body.$.data.token}}
+
+
+### ============================================================
+### GET /api/dashboard/fleet-overview  (UC-06)
+### ============================================================
+
+### Happy path: valid managing_director token, valid "this_week" period
+### Expect: 200 OK with totals, booking_status_breakdown, and revenue_risk
+GET {{baseUrl}}/dashboard/fleet-overview?period=this_week
+Authorization: Bearer {{mdToken}}
+
+###
+
+### Invalid input: "period" is not one of today/this_week/this_month
+### Expect: 400 VALIDATION_ERROR ("period must be one of: today, this_week, this_month")
+GET {{baseUrl}}/dashboard/fleet-overview?period=last_year
+Authorization: Bearer {{mdToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED ("Missing or invalid token.")
+GET {{baseUrl}}/dashboard/fleet-overview?period=today
+
+
+### ============================================================
+### GET /api/dashboard/vendor-expenses  (UC-07)
+### ============================================================
+
+### Happy path: valid managing_director token, valid date range
+### Expect: 200 OK with summary, by_vendor (sorted by expenditure desc), monthly_trend
+GET {{baseUrl}}/dashboard/vendor-expenses?date_from=2026-01-01&date_to=2026-06-30
+Authorization: Bearer {{mdToken}}
+
+###
+
+### Invalid input: date_from is after date_to
+### Expect: 400 VALIDATION_ERROR on field "date_to" ("date_from must be before or equal to date_to.")
+GET {{baseUrl}}/dashboard/vendor-expenses?date_from=2026-06-30&date_to=2026-01-01
+Authorization: Bearer {{mdToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED ("Missing or invalid token.")
+GET {{baseUrl}}/dashboard/vendor-expenses?date_from=2026-01-01&date_to=2026-06-30
