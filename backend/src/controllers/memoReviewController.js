@@ -96,7 +96,12 @@ async function approveMemo(req, res) {
           status: 'unmatched',
         }, { transaction: t })
       })
-      return error(res, `No active pricing contract found for this client - invoice #${invoice.id} created with status \`unmatched\`.`, 'NO_ACTIVE_CONTRACT', 422)
+      return error(
+        res,
+        `No active pricing contract found for this client - invoice #${invoice.id} created as \`unmatched\`. To resolve: create/activate a pricing contract for this client, or open the invoice and add a manual line item to price it yourself.`,
+        'NO_ACTIVE_CONTRACT',
+        422
+      )
     }
 
     const rates = await PricingRate.findAll({
@@ -119,7 +124,12 @@ async function approveMemo(req, res) {
           status: 'unmatched',
         }, { transaction: t })
       })
-      return error(res, `Active contract found but no rate row matches the memo's service/transfer/time combination - invoice #${invoice.id} created with status \`unmatched\`.`, 'NO_MATCHING_RATE', 422)
+      return error(
+        res,
+        `Active contract found but no rate row matches this memo's service/transfer/time combination - invoice #${invoice.id} created as \`unmatched\`. To resolve: add a matching rate to the contract, or open the invoice and add a manual line item to price it yourself.`,
+        'NO_MATCHING_RATE',
+        422
+      )
     }
 
     const invoice = await sequelize.transaction(async (t) => {

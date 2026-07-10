@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node src/index.js",
+    "predev": "node src/scripts/check-port-free.js",
     "dev": "nodemon src/index.js",
     "test": "jest",
     "db:sync": "node src/scripts/sync-db.js",

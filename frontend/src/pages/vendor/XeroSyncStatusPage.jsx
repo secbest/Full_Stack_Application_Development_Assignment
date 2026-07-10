@@ -66,7 +66,7 @@ export default function XeroSyncStatusPage() {
   return (
     <div className="p-6 space-y-4 font-sans">
       <button onClick={() => navigate(user?.role === 'ap_specialist' ? '/vendor-invoices' : '/invoices')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={14} /> Back
+        <ArrowLeft size={14} /> {user?.role === 'ap_specialist' ? 'Back to Vendor Invoices' : 'Back to Invoices'}
       </button>
 
       <div className="flex items-center gap-3">
