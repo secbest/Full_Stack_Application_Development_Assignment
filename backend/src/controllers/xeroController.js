@@ -1,4 +1,4 @@
-const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, XeroSyncLog } = require('../models')
+const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, XeroSyncLog } = require('../models')
 const { xeroService } = require('../services')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
@@ -146,8 +146,10 @@ async function resolveEntityReference(log) {
     return vi ? `${vi.vendor_name} - ${vi.invoice_number}` : null
   }
   if (log.entity_type === 'ar_invoice') {
-    const inv = await Invoice.findByPk(log.entity_id).catch(() => null)
-    return inv ? (inv.invoice_number || `AR invoice #${log.entity_id}`) : null
+    // The Invoice model has no invoice_number column (unlike VendorInvoice) - the
+    // client name + id is the only human-readable identifier it actually has.
+    const inv = await Invoice.findByPk(log.entity_id, { include: [{ model: Client, attributes: ['name'] }] }).catch(() => null)
+    return inv ? `${inv.Client ? inv.Client.name : 'Unknown Client'} - Invoice #${inv.id}` : null
   }
   return null
 }
@@ -208,21 +210,35 @@ async function retrySync(req, res) {
     const conn = await getFreshConnection()
     if (!conn) return error(res, 'Xero is not connected. Ask the Managing Director to reconnect before retrying.', 'XERO_NOT_CONNECTED', 503)
 
-    // Only vendor invoices are owned here; AR invoice bodies are Jasper's to update.
+    // Vendor invoices (AP) push as ACCPAY bills; AR invoices push as ACCREC sales
+    // invoices - these are different Xero payload shapes (pushBill vs pushArInvoice),
+    // so both branches need their real record, not just the vendor-invoice one.
     let vendorInvoice = null
+    let arInvoice = null
+    let result
+
     if (log.entity_type === 'vendor_invoice') {
       vendorInvoice = await VendorInvoice.findByPk(log.entity_id, { include: [{ model: VendorInvoiceItem }] })
       if (!vendorInvoice) return notFound(res, 'The vendor invoice for this sync log no longer exists.')
+      result = await xeroService.pushBill(vendorInvoice, conn)
+    } else if (log.entity_type === 'ar_invoice') {
+      arInvoice = await Invoice.findByPk(log.entity_id, { include: [{ model: InvoiceLineItem }, { model: Client, attributes: ['name'] }] })
+      if (!arInvoice) return notFound(res, 'The AR invoice for this sync log no longer exists.')
+      result = await xeroService.pushArInvoice(
+        { id: arInvoice.id, client_name: arInvoice.Client ? arInvoice.Client.name : null, total_amount: arInvoice.total_amount, InvoiceLineItems: arInvoice.InvoiceLineItems },
+        conn
+      )
+    } else {
+      return error(res, `Unknown sync log entity_type "${log.entity_type}".`, 'INTERNAL_ERROR', 500)
     }
 
-    const target = vendorInvoice || { vendor_name: 'AR Invoice', invoice_number: String(log.entity_id) }
-    const result = await xeroService.pushBill(target, conn)
     const attempt_count = log.attempt_count + 1
 
     if (result.ok) {
       const syncedAt = new Date()
       await log.update({ status: 'success', attempt_count, xero_record_id: result.xeroRecordId, error_message: null, synced_at: syncedAt })
       if (vendorInvoice) await vendorInvoice.update({ status: 'synced_to_xero', xero_bill_id: result.xeroRecordId })
+      if (arInvoice) await arInvoice.update({ status: 'synced_to_xero', xero_invoice_id: result.xeroRecordId })
       return success(res, {
         id: log.id,
         status: 'success',
@@ -240,6 +256,16 @@ async function retrySync(req, res) {
         user_id: vendorInvoice.uploaded_by,
         type: 'xero_sync_failed',
         title: `Xero sync failed again for ${vendorInvoice.vendor_name}`,
+        body: result.error,
+        link: '/xero/sync-status',
+      })
+    }
+    if (arInvoice) {
+      await arInvoice.update({ status: 'failed' })
+      notificationService.create({
+        user_id: arInvoice.approved_by || null,
+        type: 'xero_sync_failed',
+        title: `Xero sync failed again for invoice #${arInvoice.id}`,
         body: result.error,
         link: '/xero/sync-status',
       })
