@@ -20,6 +20,7 @@ import LoginPage from './pages/auth/LoginPage'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import ReportPage from './pages/dashboard/ReportPage'
 import ManagementPage from './pages/dashboard/Management'
+import SettingsPage from './pages/settings/SettingsPage'
 
 // AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua)
 import InvoiceListPage from './pages/invoices/InvoiceListPage'
@@ -73,6 +74,9 @@ export default function App() {
 
           {/* Root: redirect to the logged-in user's role home */}
           <Route index element={<RoleHomeRedirect />} />
+
+          {/* Account Settings: every authenticated role, no RoleRoute restriction. */}
+          <Route path="/settings" element={<SettingsPage />} />
 
           {/* ── Managing Director ──────────────────────────────────────────── */}
           <Route element={<RoleRoute roles={['managing_director']} />}>
