@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Download, CheckCircle2, AlertTriangle, FileBarChart } from 'lucide-react';
+import { Calendar, Download, CheckCircle2, AlertTriangle, XCircle, FileBarChart } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 const REPORT_TABS = [
@@ -51,6 +51,30 @@ const LEAKAGE_ROWS = [
   { bkg: "BKG-011", client: "TTSH",          completedAt: "25 Jun 2026", daysUntilMemo: 1.2, crew: "Ravi Kumar", resolution: "Dismissed" },
 ];
 
+// Billing status badge: derived from the leak's resolution/days, distinct from the
+// per-row "Resolution" column (what happened to the leak) below.
+const BILLING_STATUS_CONFIG = {
+  missing:  { label: "Missing", bg: "rgba(239,68,68,0.15)",  color: "#991B1B", Icon: XCircle },
+  late:     { label: "Late",    bg: "rgba(245,158,11,0.15)", color: "#92400E", Icon: AlertTriangle },
+  on_time:  { label: "On Time", bg: "rgba(34,197,94,0.15)",  color: "#166534", Icon: null },
+};
+
+function getBillingStatus(row) {
+  if (row.resolution === "Still Missing") return "missing";
+  if (row.daysUntilMemo >= 2) return "late";
+  return "on_time";
+}
+
+function BillingStatusBadge({ status }) {
+  const { label, bg, color, Icon } = BILLING_STATUS_CONFIG[status];
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: bg, color, fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>
+      {Icon && <Icon size={12} strokeWidth={2.5} />}
+      {label}
+    </span>
+  );
+}
+
 function getReportTableData(reportTab) {
   if (reportTab === "revenue") {
     return {
@@ -69,8 +93,8 @@ function getReportTableData(reportTab) {
   if (reportTab === "leakage") {
     return {
       title: "Leakage History Report",
-      headers: ["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Crew Member", "Resolution"],
-      rows: LEAKAGE_ROWS.map((r) => [r.bkg, r.client, r.completedAt, `${r.daysUntilMemo}d`, r.crew, r.resolution]),
+      headers: ["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Billing Status", "Crew Member", "Resolution"],
+      rows: LEAKAGE_ROWS.map((r) => [r.bkg, r.client, r.completedAt, `${r.daysUntilMemo}d`, BILLING_STATUS_CONFIG[getBillingStatus(r)].label, r.crew, r.resolution]),
     };
   }
   return null;
@@ -411,31 +435,34 @@ function ReportLeakage() {
       <div style={{ ...cardBase, padding: "18px 24px", display: "flex", alignItems: "center", gap: 20 }}>
         <AlertTriangle size={22} color="#EF4444" strokeWidth={2} />
         <p style={{ fontSize: 14, color: "#64748B", fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
-          <strong style={{ color: "#1E293B" }}>This quarter: 3 jobs billed late, 1 job never billed.</strong> Late rows are amber-tinted; missing rows are red-tinted.
+          <strong style={{ color: "#1E293B" }}>This quarter: 3 jobs billed late, 1 job never billed.</strong> See the Billing Status column for each booking's status.
         </p>
       </div>
       <div style={{ ...cardBase, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-              {["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Crew Member", "Resolution"].map((col) => (
+              {["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Billing Status", "Crew Member", "Resolution"].map((col) => (
                 <th key={col} style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", whiteSpace: "nowrap" }}>{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {LEAKAGE_ROWS.map((row, i) => {
-              const isMissing = row.resolution === "Still Missing";
-              const isLate = row.daysUntilMemo >= 2;
-              const bg = isMissing ? "#FEF2F2" : isLate ? "rgba(245,158,11,0.06)" : i % 2 === 1 ? "#F8FAFC" : "#FFFFFF";
               const { bg: rBg, color: rColor } = resStyle(row.resolution);
               return (
-                <tr key={row.bkg} style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: bg }}>
+                <tr key={row.bkg}
+                  style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: "transparent", transition: "background 0.12s" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#F1F5F9"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
                   <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.bkg}</td>
                   <td style={{ padding: "0 16px", fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.client}</td>
                   <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.completedAt}</td>
                   <td style={{ padding: "0 16px" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: row.daysUntilMemo >= 3 ? "#EF4444" : row.daysUntilMemo >= 1.5 ? "#F59E0B" : "#22C55E", fontFamily: "'Inter', sans-serif" }}>{row.daysUntilMemo}d</span>
+                  </td>
+                  <td style={{ padding: "0 16px" }}>
+                    <BillingStatusBadge status={getBillingStatus(row)} />
                   </td>
                   <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.crew}</td>
                   <td style={{ padding: "0 16px" }}>
