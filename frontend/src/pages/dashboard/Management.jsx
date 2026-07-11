@@ -154,6 +154,37 @@ function AddUserModal({ onClose, onAdd }) {
   );
 }
 
+function ConfirmDeleteModal({ user, deleting, onCancel, onConfirm }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onCancel}>
+      <div role="dialog" aria-modal="true" aria-labelledby="remove-user-heading" style={{ background: "#FFFFFF", borderRadius: 16, width: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.18)", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "20px 24px" }}>
+          <h2 id="remove-user-heading" style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif", margin: "0 0 8px" }}>Remove User?</h2>
+          <p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", lineHeight: 1.5, margin: 0 }}>
+            Are you sure you want to remove <strong style={{ color: "#1E293B" }}>{user.name}</strong>? This action cannot be undone.
+          </p>
+        </div>
+        <div style={{ padding: "16px 24px", borderTop: "1px solid #E2E8F0", background: "#F8FAFC", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button
+            onClick={onCancel}
+            disabled={deleting}
+            style={{ height: 36, padding: "0 16px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, fontWeight: 500, color: "#64748B", cursor: deleting ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif" }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={deleting}
+            style={{ height: 36, padding: "0 20px", borderRadius: 8, border: "none", background: "#EF4444", fontSize: 13, fontWeight: 600, color: "#FFFFFF", cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}
+          >
+            {deleting ? "Removing…" : "Remove User"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ACTION_BUTTON_VARIANTS = {
   destructive: { color: "#EF4444", hoverBg: "rgba(239,68,68,0.1)" },
   info:        { color: "#3B82F6", hoverBg: "rgba(59,130,246,0.1)" },
@@ -185,26 +216,31 @@ function AccountsManagement() {
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [removingEmail, setRemovingEmail] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Only rows created via Add New User in this session carry a real backend `id` -
   // the seeded demo rows above are UI mock data, not actual DB users, so removing
   // them is correctly rejected by the backend rather than silently faked here.
-  async function handleRemove(row) {
+  async function confirmRemove() {
+    const row = userToDelete;
     if (!row.id) {
       toast.error("This demo account isn't backed by a real user record, so it can't be removed.");
+      setUserToDelete(null);
       return;
     }
-    setRemovingEmail(row.email);
+    setDeleting(true);
     try {
       await api.delete(`/users/${row.id}`);
       setAccounts((prev) => prev.filter((r) => r.email !== row.email));
       toast.success(`${row.name}'s account was removed.`);
+      setUserToDelete(null);
     } catch (err) {
       const message = err.response?.data?.message || "Something went wrong while removing this account. Please try again.";
       toast.error(message);
+      // Modal stays open on failure so the admin can retry or cancel.
     } finally {
-      setRemovingEmail(null);
+      setDeleting(false);
     }
   }
 
@@ -227,6 +263,15 @@ function AccountsManagement() {
         <AddUserModal
           onClose={() => setShowAddModal(false)}
           onAdd={(u) => setAccounts((prev) => [u, ...prev])}
+        />
+      )}
+
+      {userToDelete && (
+        <ConfirmDeleteModal
+          user={userToDelete}
+          deleting={deleting}
+          onCancel={() => setUserToDelete(null)}
+          onConfirm={confirmRemove}
         />
       )}
 
@@ -284,7 +329,7 @@ function AccountsManagement() {
 
       {/* User Directory */}
       <div style={{ ...cardBase, overflow: "hidden" }}>
-        <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>User Directory</h2>
           <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{filtered.length} of {accounts.length} users</span>
         </div>
@@ -322,10 +367,11 @@ function AccountsManagement() {
                   </td>
                   <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.lastLogin}</td>
                   <td style={{ padding: "0 16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 16 }}>
-                      <ActionButton variant="neutral" disabled={removingEmail === row.email} onClick={() => handleRemove(row)}>
-                        {removingEmail === row.email ? "Removing…" : "Remove"}
-                      </ActionButton>
+                    {/* marginLeft cancels ActionButton's own 12px left padding, so "Remove"'s
+                        text lines up with the "Actions" header above rather than sitting
+                        12px further right than it. */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 16, marginLeft: -12 }}>
+                      <ActionButton variant="neutral" onClick={() => setUserToDelete(row)}>Remove</ActionButton>
                       {row.status === "Online" && (
                         <ActionButton variant="destructive" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}>Force Logout</ActionButton>
                       )}

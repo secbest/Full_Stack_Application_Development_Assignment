@@ -180,3 +180,86 @@ describe('Accounts Management - Add New User form', () => {
     expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });
+
+// Only rows created through Add New User carry a real backend `id` (the seeded demo
+// rows are static mock data with no DB-backed id), so these tests add one first via
+// the same mocked /auth/register flow as the tests above.
+async function addRealUser() {
+  mock.onPost('/auth/register').reply(201, {
+    success: true,
+    data: {
+      token: 'fake-jwt',
+      user: { id: 99, name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist' },
+    },
+  });
+  await openAddUserModal();
+  await fillForm({ name: 'Jane Doe', email: 'jane@efar.com.sg', password: 'Efar@2026' });
+  await submit();
+  await screen.findByText('jane@efar.com.sg');
+  mock.resetHistory();
+}
+
+describe('Accounts Management - Remove user confirmation', () => {
+  test('clicking Remove opens a confirmation modal instead of deleting immediately', async () => {
+    renderPage();
+    await addRealUser();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+
+    expect(screen.getByRole('heading', { name: 'Remove User?' })).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to remove/)).toHaveTextContent(
+      'Are you sure you want to remove Jane Doe? This action cannot be undone.'
+    );
+
+    // No deletion has happened yet - just opening the confirmation makes no request.
+    expect(mock.history.delete).toHaveLength(0);
+    expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
+  });
+
+  test('Cancel closes the modal without deleting the user', async () => {
+    renderPage();
+    await addRealUser();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('heading', { name: 'Remove User?' })).not.toBeInTheDocument();
+    expect(mock.history.delete).toHaveLength(0);
+    expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
+  });
+
+  test('confirming removal calls the delete endpoint and updates the UI on success', async () => {
+    mock.onDelete('/users/99').reply(200, { success: true, data: { message: 'User removed.' } });
+
+    renderPage();
+    await addRealUser();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove User' }));
+
+    expect(await screen.findByText("Jane Doe's account was removed.")).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Remove User?' })).not.toBeInTheDocument();
+    expect(screen.queryByText('jane@efar.com.sg')).not.toBeInTheDocument();
+    expect(mock.history.delete).toHaveLength(1);
+  });
+
+  test('confirming removal keeps the modal open and shows an error on failure', async () => {
+    mock.onDelete('/users/99').reply(409, {
+      success: false,
+      code: 'USER_IN_USE',
+      message: 'This user has associated records and cannot be removed.',
+    });
+
+    renderPage();
+    await addRealUser();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove User' }));
+
+    expect(await screen.findByText('This user has associated records and cannot be removed.')).toBeInTheDocument();
+
+    // Modal stays open so the admin can retry or cancel; row is still present.
+    expect(screen.getByRole('heading', { name: 'Remove User?' })).toBeInTheDocument();
+    expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
+  });
+});
