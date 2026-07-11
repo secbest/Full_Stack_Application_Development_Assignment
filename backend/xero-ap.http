@@ -1,0 +1,537 @@
+### EFAR API - Xero Foundation, OCR & AP Processing (Kwan Hua implementation)
+### Requires the "REST Client" VS Code extension (humao.rest-client).
+###
+### Prerequisites:
+### 1. Backend running locally: cd backend && node src/index.js  (default PORT=3000)
+### 2. Demo users seeded:        node src/scripts/seed-users.js
+###    (all demo accounts share the password "Efar@2026")
+### 3. Optional but recommended: node src/scripts/seed-xero.js
+###    seeds an active (simulated) Xero connection so approve/sync/retry requests
+###    below don't 503 with XERO_NOT_CONNECTED. XERO_SIMULATION defaults to "true"
+###    (see backend/.env.example), so Xero pushes are faked - no real Xero account
+###    is required to exercise the happy paths.
+### 4. The upload endpoint's happy path (section 5) genuinely calls Gemini + Cloudinary -
+###    it needs a real GEMINI_API_KEY and Cloudinary credentials in backend/.env.
+###    Without them it will 502 (CLOUDINARY_UPLOAD_FAILED / OCR_EXTRACTION_FAILED) -
+###    that's expected, not a bug in this file.
+###
+### The four login requests below are run once each; their response tokens are
+### captured into variables and reused automatically by every request below via
+### {{loginX.response.body.$.data.token}} - no need to copy/paste tokens manually.
+###
+### A few endpoints have no request body at all (GET /status, GET /connect,
+### DELETE /disconnect, POST /approve, POST /reextract, POST /retry), so a literal
+### "missing/invalid field -> 400" test doesn't apply to them. Those sections
+### substitute the closest real negative-path test that endpoint actually has,
+### and say so explicitly in the comment.
+
+@baseUrl = http://localhost:3000/api
+@contentType = application/json
+
+### ============================================================
+### AUTH - one token per role used across this file
+### managing_director: Xero connect/disconnect (UC-01)
+### ap_specialist:      vendor invoices + line items (UC-03..07)
+### ar_specialist:       shared sync-log panel (UC-08)
+### quotations_specialist: has NO permission anywhere below - used for 403 checks
+### ============================================================
+
+# @name loginMd
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "doris@efar.com.sg",
+  "password": "Efar@2026"
+}
+
+###
+
+@mdToken = {{loginMd.response.body.$.data.token}}
+
+# @name loginAp
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "chloe@efar.com.sg",
+  "password": "Efar@2026"
+}
+
+###
+
+@apToken = {{loginAp.response.body.$.data.token}}
+
+# @name loginAr
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "sarah@efar.com.sg",
+  "password": "Efar@2026"
+}
+
+###
+
+@arToken = {{loginAr.response.body.$.data.token}}
+
+# @name loginWrongRole
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "camilla@efar.com.sg",
+  "password": "Efar@2026"
+}
+
+###
+
+@wrongRoleToken = {{loginWrongRole.response.body.$.data.token}}
+
+
+### ============================================================
+### Fill these in as you go - copy real ids from the responses above/below.
+### ============================================================
+@vendorInvoiceId = 1
+@vendorInvoiceItemId = 1
+@syncLogId = 1
+
+
+### ============================================================
+### 1. GET /api/xero/status  (UC-01)
+### ============================================================
+
+### Happy path: authenticated as ar_specialist (also allowed: ap_specialist, managing_director)
+### Expect: 200 OK, { is_connected, xero_org_name, xero_tenant_id, connected_at, token_expiry }
+GET {{baseUrl}}/xero/status
+Authorization: Bearer {{arToken}}
+
+###
+
+### No fields to validate on a bodyless GET - substituting the endpoint's real
+### role-check negative path instead (quotations_specialist is not in the allowed list)
+### Expect: 403 FORBIDDEN
+GET {{baseUrl}}/xero/status
+Authorization: Bearer {{wrongRoleToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED ("Missing or invalid token.")
+GET {{baseUrl}}/xero/status
+
+
+### ============================================================
+### 2. GET /api/xero/connect  (UC-01 step 3, managing_director only)
+### ============================================================
+
+### Happy path: valid managing_director token, Xero client_id/redirect_uri configured
+### Expect: 200 OK, { auth_url } pointing at login.xero.com with client_id/scope/state
+GET {{baseUrl}}/xero/connect
+Authorization: Bearer {{mdToken}}
+
+###
+
+### No fields to validate on a bodyless GET - substituting the endpoint's real
+### role-check negative path (only managing_director may initiate the OAuth2 flow)
+### Expect: 403 FORBIDDEN
+GET {{baseUrl}}/xero/connect
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+GET {{baseUrl}}/xero/connect
+
+
+### ============================================================
+### 3. GET /api/xero/callback  (UC-01 steps 5-7, no auth - called by Xero's redirect)
+### ============================================================
+### This endpoint always responds with a 302 redirect back to the frontend, never JSON,
+### so it doesn't fit the happy/400/401 pattern used elsewhere in this file:
+###   - There is no "no auth" case - this route intentionally has none (CSRF is handled
+###     via the single-use `state` param instead of a JWT).
+###   - Its "invalid input" cases are redirects with an ?error=... query flag, not a 400.
+### `state` must be a real value freshly issued by request #2 above (it's single-use and
+### server-side), so copy it out of that response's `auth_url` query string before running
+### the happy-path request below. `code` can be any non-empty string - XERO_SIMULATION=true
+### (the default) short-circuits the real Xero token exchange.
+
+@xeroState = paste-the-state-value-from-the-connect-response-here
+
+### Happy path: real single-use state + a placeholder code (simulation mode)
+### Expect: 302 redirect to {FRONTEND_URL}/settings/xero?connected=true
+GET {{baseUrl}}/xero/callback?code=sim-code-123&state={{xeroState}}
+
+###
+
+### Xero denied permission: `error` query param present
+### Expect: 302 redirect to .../settings/xero?error=access_denied
+GET {{baseUrl}}/xero/callback?error=access_denied&state={{xeroState}}
+
+###
+
+### Invalid/reused state (CSRF check fails, or you re-run this after using it once already)
+### Expect: 302 redirect to .../settings/xero?error=invalid_state
+GET {{baseUrl}}/xero/callback?code=sim-code-123&state=not-a-real-state
+
+
+### ============================================================
+### 4. DELETE /api/xero/disconnect  (UC-01, managing_director only)
+### ============================================================
+
+### Happy path: valid managing_director token, an active connection exists
+### (run request #3's happy path first, or node src/scripts/seed-xero.js)
+### Expect: 200 OK, { message: "Xero disconnected successfully." }
+DELETE {{baseUrl}}/xero/disconnect
+Authorization: Bearer {{mdToken}}
+
+###
+
+### No fields to validate on a bodyless DELETE - substituting the endpoint's real
+### "nothing to disconnect" negative path: run this a second time right after the one above
+### Expect: 404 NOT_CONNECTED
+DELETE {{baseUrl}}/xero/disconnect
+Authorization: Bearer {{mdToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+DELETE {{baseUrl}}/xero/disconnect
+
+
+### ============================================================
+### 5. POST /api/vendor-invoices  (UC-03/04/05, ap_specialist only, multipart/form-data)
+### ============================================================
+
+### Happy path: valid PDF, default 1% rebate (requires real GEMINI_API_KEY + Cloudinary
+### credentials in backend/.env - see prerequisite #4 at the top of this file)
+### Expect: 201 Created, vendor_invoices row with status "pending_review",
+### extracted fields + rebate_amount/verified_total populated
+POST {{baseUrl}}/vendor-invoices
+Authorization: Bearer {{apToken}}
+Content-Type: multipart/form-data; boundary=----efar-boundary
+
+------efar-boundary
+Content-Disposition: form-data; name="file"; filename="CMD-2026-01187.pdf"
+Content-Type: application/pdf
+
+< ./src/scripts/fixtures/CMD-2026-01187.pdf
+------efar-boundary
+Content-Disposition: form-data; name="rebate_percentage"
+
+1.00
+------efar-boundary--
+
+###
+
+### Invalid input: wrong file type (PDF-only endpoint, this sends nothing recognisable as one)
+### Expect: 400 INVALID_FILE_TYPE ("Only PDF files are accepted...")
+POST {{baseUrl}}/vendor-invoices
+Authorization: Bearer {{apToken}}
+Content-Type: multipart/form-data; boundary=----efar-boundary
+
+------efar-boundary
+Content-Disposition: form-data; name="file"; filename="not-an-invoice.txt"
+Content-Type: text/plain
+
+This is not a PDF.
+------efar-boundary--
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+POST {{baseUrl}}/vendor-invoices
+Content-Type: multipart/form-data; boundary=----efar-boundary
+
+------efar-boundary
+Content-Disposition: form-data; name="file"; filename="CMD-2026-01187.pdf"
+Content-Type: application/pdf
+
+< ./src/scripts/fixtures/CMD-2026-01187.pdf
+------efar-boundary--
+
+
+### ============================================================
+### 6. GET /api/vendor-invoices  (UC-06/07, ap_specialist + managing_director)
+### ============================================================
+
+### Happy path: default pagination, no filters
+### Expect: 200 OK, { data: [...], pagination: { page: 1, limit: 20, ... } }
+GET {{baseUrl}}/vendor-invoices
+Authorization: Bearer {{apToken}}
+
+###
+
+### Invalid input: date_from is after date_to
+### Expect: 400 INVALID_DATE_RANGE
+GET {{baseUrl}}/vendor-invoices?date_from=2026-06-30&date_to=2026-06-01
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+GET {{baseUrl}}/vendor-invoices
+
+
+### ============================================================
+### 7. GET /api/vendor-invoices/:id  (UC-06, ap_specialist + managing_director)
+### ============================================================
+
+### Happy path: an id that exists (update @vendorInvoiceId above if needed)
+### Expect: 200 OK, full detail incl. items[]
+GET {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}
+Authorization: Bearer {{apToken}}
+
+###
+
+### No fields to validate on a bodyless GET - substituting the closest real negative
+### path: an id that doesn't exist
+### Expect: 404 NOT_FOUND
+GET {{baseUrl}}/vendor-invoices/999999
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+GET {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}
+
+
+### ============================================================
+### 8. PATCH /api/vendor-invoices/:id  (UC-06, ap_specialist only)
+### ============================================================
+
+### Happy path: correct a header field on a pending_review invoice
+### Expect: 200 OK, field updated, rebate recalculated if extracted_total changed
+PATCH {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{
+  "vendor_name": "Esso Petroleum Singapore Pte Ltd",
+  "extracted_total": 1840.00
+}
+
+###
+
+### Invalid input: extracted_total is not a positive number
+### Expect: 400 INVALID_TOTAL
+PATCH {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{
+  "extracted_total": -50
+}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+PATCH {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}
+Content-Type: {{contentType}}
+
+{
+  "vendor_name": "Should not be allowed"
+}
+
+
+### ============================================================
+### 9. POST /api/vendor-invoices/:id/approve  (UC-06/07, ap_specialist only)
+### ============================================================
+
+### Happy path: invoice is pending_review with extracted_total set, Xero connected
+### Expect: 200 OK, status "synced_to_xero" (or "failed" if the simulated push fails)
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/approve
+Authorization: Bearer {{apToken}}
+
+###
+
+### No fields to validate on a bodyless POST - substituting the endpoint's real
+### "not enough data to approve" negative path: extracted_total is not set
+### Expect: 409 MISSING_TOTAL
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/approve
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/approve
+
+
+### ============================================================
+### 10. POST /api/vendor-invoices/:id/reject  (UC-06, ap_specialist only)
+### ============================================================
+
+### Happy path: valid rejection_reason on a pending_review invoice
+### Expect: 200 OK, status "rejected", reason stored
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reject
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{
+  "rejection_reason": "Invoice does not belong to EFAR - vendor address does not match our accounts."
+}
+
+###
+
+### Invalid input: rejection_reason missing
+### Expect: 400 MISSING_REASON
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reject
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reject
+Content-Type: {{contentType}}
+
+{
+  "rejection_reason": "Should not be allowed without a token."
+}
+
+
+### ============================================================
+### 11. POST /api/vendor-invoices/:id/reextract  (UC-04, ap_specialist only)
+### ============================================================
+
+### Happy path: invoice is pending_review or extraction_failed
+### Expect: 200 OK, new extraction replaces the previous fields + line items
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reextract
+Authorization: Bearer {{apToken}}
+
+###
+
+### No fields to validate on a bodyless POST - substituting the endpoint's real
+### status-guard negative path: re-run this against an invoice already approved/synced/rejected
+### Expect: 409 INVALID_STATUS
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reextract
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+POST {{baseUrl}}/vendor-invoices/{{vendorInvoiceId}}/reextract
+
+
+### ============================================================
+### 12. PATCH /api/vendor-invoice-items/:id  (UC-06, ap_specialist only)
+### ============================================================
+
+### Happy path: correct a line item's amount on an editable parent invoice
+### Expect: 200 OK, item updated, parent_invoice totals recomputed from all items
+PATCH {{baseUrl}}/vendor-invoice-items/{{vendorInvoiceItemId}}
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{
+  "amount": 1740.00
+}
+
+###
+
+### Invalid input: amount is not a positive number
+### Expect: 400 INVALID_AMOUNT
+PATCH {{baseUrl}}/vendor-invoice-items/{{vendorInvoiceItemId}}
+Authorization: Bearer {{apToken}}
+Content-Type: {{contentType}}
+
+{
+  "amount": 0
+}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+PATCH {{baseUrl}}/vendor-invoice-items/{{vendorInvoiceItemId}}
+Content-Type: {{contentType}}
+
+{
+  "amount": 1740.00
+}
+
+
+### ============================================================
+### 13. GET /api/xero/sync-logs  (UC-08, ap_specialist + ar_specialist + managing_director)
+### ============================================================
+
+### Happy path: default pagination, no filters
+### Expect: 200 OK, { data: [...], pagination, xero_connected }
+GET {{baseUrl}}/xero/sync-logs
+Authorization: Bearer {{arToken}}
+
+###
+
+### Invalid input: status is not one of pending/success/failed
+### Expect: 400 VALIDATION_ERROR ("Invalid status filter")
+GET {{baseUrl}}/xero/sync-logs?status=bogus
+Authorization: Bearer {{arToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+GET {{baseUrl}}/xero/sync-logs
+
+
+### ============================================================
+### 14. POST /api/xero/sync-logs/:id/retry  (UC-08, ap_specialist + ar_specialist)
+### ============================================================
+
+### Happy path: log status is "failed", attempt_count < 3, Xero connected
+### Expect: 200 OK, status "success" (or "failed" again if the simulated push still fails)
+POST {{baseUrl}}/xero/sync-logs/{{syncLogId}}/retry
+Authorization: Bearer {{apToken}}
+
+###
+
+### No fields to validate on a bodyless POST - substituting the endpoint's real
+### status-guard negative path: retry a log that is not currently "failed"
+### Expect: 409 NOT_FAILED
+POST {{baseUrl}}/xero/sync-logs/{{syncLogId}}/retry
+Authorization: Bearer {{apToken}}
+
+###
+
+### No auth: Authorization header omitted entirely
+### Expect: 401 UNAUTHORIZED
+POST {{baseUrl}}/xero/sync-logs/{{syncLogId}}/retry
+
+
+### ============================================================
+### BONUS: a real inconsistency worth knowing about
+### ============================================================
+
+### uploadVendorInvoice validates rebate_percentage with its OWN inline Yup schema
+### (0-100), separately from the shared `validate()` middleware used everywhere else
+### in this file. Its catch block returns a Yup ValidationError as 422, not 400 -
+### the only endpoint in this feature area that does. Every other "invalid input"
+### case above is a genuine 400.
+### Expect: 422 VALIDATION_ERROR (not 400 - flagging this as a real inconsistency)
+POST {{baseUrl}}/vendor-invoices
+Authorization: Bearer {{apToken}}
+Content-Type: multipart/form-data; boundary=----efar-boundary
+
+------efar-boundary
+Content-Disposition: form-data; name="file"; filename="CMD-2026-01187.pdf"
+Content-Type: application/pdf
+
+< ./src/scripts/fixtures/CMD-2026-01187.pdf
+------efar-boundary
+Content-Disposition: form-data; name="rebate_percentage"
+
+150
+
+------efar-boundary--
