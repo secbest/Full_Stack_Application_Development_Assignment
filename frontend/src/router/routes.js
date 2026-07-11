@@ -6,6 +6,7 @@ import {
   Building2,
   Plug,
   CalendarDays,
+  BookOpen,
   Briefcase,
   History,
   FileBarChart,
@@ -89,7 +90,7 @@ export const NAV_ROUTES = [
   {
     path: '/bookings',
     label: 'Bookings',
-    Icon: CalendarDays,
+    Icon: BookOpen,
     roles: ['quotations_specialist'],
   },
 
