@@ -17,6 +17,11 @@ const DEMO_USERS = [
   { name: 'Chloe Tan',    email: 'chloe@efar.com.sg',   role: 'ap_specialist' },
   { name: 'Camilla Wong', email: 'camilla@efar.com.sg', role: 'quotations_specialist' },
   { name: 'Ravi Kumar',   email: 'ravi@efar.com.sg',    role: 'field_crew' },
+  { name: 'Ahmad Salleh', email: 'ahmad@efar.com.sg',   role: 'field_crew' },
+  { name: 'Wei Jian',     email: 'weijian@efar.com.sg', role: 'field_crew' },
+  { name: 'Farah Ismail', email: 'farah@efar.com.sg',   role: 'field_crew' },
+  { name: 'Kumar Selvam', email: 'kumar@efar.com.sg',   role: 'field_crew' },
+  { name: 'Nurul Aisyah', email: 'nurul@efar.com.sg',   role: 'field_crew' },
 ]
 
 async function main() {

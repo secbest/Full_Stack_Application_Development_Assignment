@@ -1,14 +1,39 @@
-import React, { useEffect, useState } from 'react'
-import { CalendarDays, Eye } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { CalendarDays, ChevronDown, Eye, Search } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { bookingAssignmentSchema } from '@/schemas'
 import api from '../../api'
 
-const crewOptions = [
-  { id: 3, name: 'Ravi Kumar' },
-  { id: 4, name: 'Ahmad Salleh' },
-  { id: 5, name: 'Wei Jian' },
-]
+// Backend stores service_type as a lowercase code; the filter/table need the display label.
+const SERVICE_TYPE_LABELS = {
+  eas: 'EAS',
+  mts: 'MTS',
+  event_standby: 'Event Standby',
+  workplace_standby: 'Workplace Standby',
+}
+
+// Status badge colors follow the CLAUDE.md status pattern: Confirmed/Info = blue,
+// In Progress/Warning = amber, Invoiced/Success = green, Completed = neutral slate.
+const STATUS_BADGE_CLASSES = {
+  Confirmed: 'bg-blue-100 text-blue-700',
+  'In Progress': 'bg-amber-100 text-amber-700',
+  Completed: 'bg-slate-200 text-slate-700',
+  Invoiced: 'bg-emerald-100 text-emerald-700',
+}
+
+// Row tint mirrors the badge colors so status is readable at a glance; unassigned
+// takes priority since it's the most actionable state regardless of booking status.
+const STATUS_ROW_CLASSES = {
+  Confirmed: 'bg-blue-100/70',
+  'In Progress': 'bg-amber-100/70',
+  Completed: 'bg-slate-200/70',
+  Invoiced: 'bg-emerald-100/70',
+}
+
+function getRowBackground(booking) {
+  if (!booking.assignedCrew) return 'bg-amber-200/60'
+  return STATUS_ROW_CLASSES[booking.status] || 'bg-white'
+}
 
 const INITIAL_BOOKINGS = []
 
@@ -27,6 +52,10 @@ export default function BookingListPage() {
   const [assignmentNotification, setAssignmentNotification] = useState(null)
   const [notificationVisible, setNotificationVisible] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [crewOptions, setCrewOptions] = useState([])
+  const [crewMenuOpen, setCrewMenuOpen] = useState(false)
+  const [crewSearch, setCrewSearch] = useState('')
+  const crewMenuRef = useRef(null)
 
   // Derived counts used for the stats cards at the top of the page.
   const totalCount = bookings.length
@@ -78,7 +107,7 @@ export default function BookingListPage() {
     if (q && !(b.ref.toLowerCase().includes(q) || b.client.toLowerCase().includes(q))) return false
     if (statusFilter && b.status !== statusFilter) return false
     if (unassignedFilter && b.assignedCrew) return false
-    if (serviceTypeFilter && b.serviceType.indexOf(serviceTypeFilter) === -1) return false
+    if (serviceTypeFilter && b.serviceType !== serviceTypeFilter) return false
     if (tierFilter && b.tier !== tierFilter) return false
     if (!matchesDateFilter(b)) return false
     return true
@@ -95,7 +124,7 @@ export default function BookingListPage() {
         createdBy: booking.created_by_name || booking.created_by,
         linkedIntake: booking.intake_reference || booking.intake_submission_id,
         client: booking.client_name || 'Unknown client',
-        serviceType: booking.service_type,
+        serviceType: SERVICE_TYPE_LABELS[booking.service_type] || booking.service_type,
         tier: booking.service_tier.charAt(0).toUpperCase() + booking.service_tier.slice(1),
         status: booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' '),
         tierNote: booking.original_service_tier ? `Adjusted from: ${booking.original_service_tier}` : '',
@@ -112,9 +141,33 @@ export default function BookingListPage() {
     }
   }
 
+  async function fetchCrewOptions() {
+    try {
+      const { data } = await api.get('/users', { params: { role: 'field_crew' } })
+      setCrewOptions(data.data.map((user) => ({ id: user.id, name: user.name })))
+    } catch (err) {
+      setAssignmentNotification({ type: 'error', message: 'Failed to load crew list.' })
+    }
+  }
+
   useEffect(() => {
     fetchBookings()
+    fetchCrewOptions()
   }, [])
+
+  // Close the crew search dropdown when clicking outside of it.
+  useEffect(() => {
+    if (!crewMenuOpen) return undefined
+    const handleClickOutside = (e) => {
+      if (crewMenuRef.current && !crewMenuRef.current.contains(e.target)) setCrewMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [crewMenuOpen])
+
+  const filteredCrewOptions = crewOptions.filter((crew) =>
+    crew.name.toLowerCase().includes(crewSearch.trim().toLowerCase())
+  )
 
   async function handleSaveAssignment(bookingRef) {
     try {
@@ -128,6 +181,8 @@ export default function BookingListPage() {
       setBookings((bs) => bs.map((b) => (b.ref === bookingRef ? { ...b, assignedCrew } : b)))
       if (selectedBooking && selectedBooking.ref === bookingRef) setSelectedBooking({ ...selectedBooking, assignedCrew })
       setAssignmentNotification({ type: 'success', message: `Assigned ${assignedCrew} to ${bookingRef}` })
+      setCrewMenuOpen(false)
+      setCrewSearch('')
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'Failed to assign crew.'
       setAssignmentNotification({ type: 'error', message })
@@ -219,15 +274,16 @@ export default function BookingListPage() {
             </CardHeader>
             <CardContent>
               <div className="mb-3 flex flex-wrap items-center gap-3">
-                <div className="flex-1 min-w-[220px]">
+                <div className="flex-1 min-w-[220px] relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onFocus={() => setSearchFocused(true)}
                     onBlur={() => setSearchFocused(false)}
-                    placeholder="Search by reference or client…"
-                    className={`w-full h-[38px] pl-3 pr-3 rounded-lg border bg-white text-xs text-slate-800 outline-none transition-colors ${
-                      searchFocused ? 'border-blue-500' : 'border-slate-200'
+                    placeholder="Search by reference or client"
+                    className={`w-full h-[38px] pl-[34px] pr-3.5 rounded-lg border-2 bg-white text-xs text-slate-800 outline-none transition-colors ${
+                      searchFocused ? 'border-blue-500' : 'border-slate-300 hover:border-slate-400'
                     }`}
                   />
                 </div>
@@ -241,32 +297,35 @@ export default function BookingListPage() {
                     <button onClick={() => { setStatusFilter('Invoiced'); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Invoiced' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Invoiced</button>
                   </div>
 
-                  <div>
-                    <select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} className="h-[38px] pl-3 pr-8 rounded-lg border bg-white text-xs outline-none appearance-none cursor-pointer text-slate-400">
+                  <div className="relative">
+                    <select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} className={`h-[38px] pl-3 pr-8 rounded-lg border-2 bg-white text-xs font-medium outline-none appearance-none cursor-pointer transition-colors hover:border-slate-400 focus:border-blue-500 ${serviceTypeFilter ? 'border-slate-300 text-slate-800' : 'border-slate-200 text-slate-500'}`}>
                       <option value="">All Service Types</option>
                       <option value="EAS">EAS</option>
                       <option value="MTS">MTS</option>
                       <option value="Event Standby">Event Standby</option>
                       <option value="Workplace Standby">Workplace Standby</option>
                     </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   </div>
 
-                  <div>
-                    <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="h-[38px] pl-3 pr-8 rounded-lg border bg-white text-xs outline-none appearance-none cursor-pointer text-slate-400">
+                  <div className="relative">
+                    <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className={`h-[38px] pl-3 pr-8 rounded-lg border-2 bg-white text-xs font-medium outline-none appearance-none cursor-pointer transition-colors hover:border-slate-400 focus:border-blue-500 ${dateFilter ? 'border-slate-300 text-slate-800' : 'border-slate-200 text-slate-500'}`}>
                       <option value="">All Dates</option>
                       <option value="Today">Today</option>
                       <option value="This Week">This Week</option>
                       <option value="This Month">This Month</option>
                     </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   </div>
 
-                  <div>
-                    <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className="h-[38px] pl-3 pr-8 rounded-lg border bg-white text-xs outline-none appearance-none cursor-pointer text-slate-400">
+                  <div className="relative">
+                    <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className={`h-[38px] pl-3 pr-8 rounded-lg border-2 bg-white text-xs font-medium outline-none appearance-none cursor-pointer transition-colors hover:border-slate-400 focus:border-blue-500 ${tierFilter ? 'border-slate-300 text-slate-800' : 'border-slate-200 text-slate-500'}`}>
                       <option value="">All Tiers</option>
                       <option value="Basic">Basic</option>
                       <option value="Advanced">Advanced</option>
                       <option value="Critical">Critical</option>
                     </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                   </div>
                 </div>
               </div>
@@ -276,22 +335,33 @@ export default function BookingListPage() {
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50/70">
-                        {['Booking Ref', 'Client', 'Service Type', 'Tier', 'Scheduled', 'Assigned', 'Action'].map((c) => (
+                        {['Booking Ref', 'Client', 'Service Type', 'Tier', 'Status', 'Scheduled', 'Assigned', 'Action'].map((c) => (
                           <th key={c} className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{c}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((b, idx) => (
-                        <tr key={b.ref} className={`h-12 hover:bg-slate-50/80 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'}`}>
+                      {filtered.map((b) => (
+                        <tr key={b.ref} className={`h-12 hover:bg-slate-100/80 transition-colors ${getRowBackground(b)}`}>
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{b.ref}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{b.client}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{b.serviceType}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{b.tier}</span></td>
-                          <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">{b.scheduled}</span></td>
-                          <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">{b.assignedCrew || '—'}</span></td>
                           <td className="px-4 py-2 align-middle">
-                            <button onClick={() => { setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${STATUS_BADGE_CLASSES[b.status] || 'bg-slate-100 text-slate-600'}`}>
+                              {b.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">{b.scheduled}</span></td>
+                          <td className="px-4 py-2 align-middle">
+                            {b.assignedCrew ? (
+                              <span className="text-xs text-slate-600">{b.assignedCrew}</span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 whitespace-nowrap">Unassigned</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 align-middle">
+                            <button onClick={() => { setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); setCrewSearch(''); setCrewMenuOpen(false); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
                               <Eye size={12} />
                               <span>Review</span>
                             </button>
@@ -418,12 +488,47 @@ export default function BookingListPage() {
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Crew Assignment</div>
                     <div className="mt-2 flex flex-col gap-2">
-                      <select value={assignedCrew} onChange={(e) => setAssignedCrew(e.target.value)} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none">
-                        <option value="">-- Select crew member --</option>
-                        <option value="Ravi Kumar">Ravi Kumar</option>
-                        <option value="Ahmad Salleh">Ahmad Salleh</option>
-                        <option value="Wei Jian">Wei Jian</option>
-                      </select>
+                      <div className="relative" ref={crewMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setCrewMenuOpen((open) => !open)}
+                          className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none"
+                        >
+                          <span className={assignedCrew ? 'text-slate-800' : 'text-slate-400'}>{assignedCrew || '-- Select crew member --'}</span>
+                          <ChevronDown size={14} className="text-slate-400" />
+                        </button>
+
+                        {crewMenuOpen ? (
+                          <div className="absolute z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg">
+                            <div className="relative border-b border-slate-100 p-2">
+                              <Search size={14} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                autoFocus
+                                value={crewSearch}
+                                onChange={(e) => setCrewSearch(e.target.value)}
+                                placeholder="Search crew…"
+                                className="w-full rounded border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-xs outline-none focus:border-blue-500"
+                              />
+                            </div>
+                            <div className="max-h-40 overflow-y-auto py-1">
+                              {filteredCrewOptions.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-slate-400">No crew found.</div>
+                              ) : (
+                                filteredCrewOptions.map((crew) => (
+                                  <button
+                                    type="button"
+                                    key={crew.id}
+                                    onClick={() => { setAssignedCrew(crew.name); setCrewMenuOpen(false); setCrewSearch(''); }}
+                                    className={`block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 ${assignedCrew === crew.name ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-700'}`}
+                                  >
+                                    {crew.name}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                       <button onClick={() => handleSaveAssignment(selectedBooking.ref)} className="h-10 rounded-md bg-slate-900 px-4 text-sm text-white hover:bg-slate-800">Save</button>
                       {selectedBooking.assignedCrew && <div className="text-sm text-slate-700">Currently: {selectedBooking.assignedCrew}</div>}
                     </div>
