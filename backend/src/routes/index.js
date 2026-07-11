@@ -4,7 +4,7 @@ const router = require('express').Router()
 const authRoutes = require('./authRoutes')              // POST /auth/register, POST /auth/login
 router.use('/auth', authRoutes)
 
-const userRoutes = require('./userRoutes')               // DELETE /users/:id (managing_director only)
+const userRoutes = require('./userRoutes')               // PATCH /users/me, PATCH /users/me/password (self-service); DELETE /users/:id (managing_director only)
 router.use('/users', userRoutes)
 
 // ─── Zheng Bao: Customer Intake & Booking Management ──────────────────────────

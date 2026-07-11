@@ -58,15 +58,20 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        {/* User footer */}
+        {/* User footer - the only entry point to /settings (no NAV_ROUTES item) */}
         <div className="px-3 py-3 border-t border-white/10 space-y-2">
-          <div className="px-3 py-1">
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `block px-3 py-1 rounded-md transition-colors ${isActive ? 'bg-[#0F172A]' : 'hover:bg-[#0F172A]'}`
+            }
+          >
             <p className="text-sm font-medium text-white truncate">{user?.name}</p>
             <p className="text-xs text-slate-400 truncate">{user?.email}</p>
             <span className={`inline-block mt-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${roleMeta.badge}`}>
               {roleMeta.label}
             </span>
-          </div>
+          </NavLink>
           <Button
             variant="ghost"
             size="sm"

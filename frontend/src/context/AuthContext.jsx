@@ -45,8 +45,18 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  // Used after a profile edit: the backend re-signs a JWT with the new name/email
+  // claims (see backend/src/controllers/userController.js), so the client must swap
+  // its stored token the same way login() does, or a page refresh would show stale data.
+  function updateUser(newToken) {
+    localStorage.setItem('efar_token', newToken)
+    const decoded = getUserFromToken(newToken)
+    setToken(newToken)
+    setUser(decoded)
+  }
+
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )
