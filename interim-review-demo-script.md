@@ -17,8 +17,8 @@
 | 12:30-14:30 | Pricing Contracts (the rules the engine reads) | Jasper |
 | 14:30-20:30 | AR: Memo Review -> Pricing Match -> Invoice -> Xero Sync | Kwan Hua |
 | 20:30-25:00 | AP: Vendor Invoice OCR -> Rebate Check -> Xero Sync | Kwan Hua |
-| 25:00-27:30 | Executive Dashboard (Fleet + Expense) | Liang Yi narrates, Jasper drives |
-| 27:30-29:30 | Gaps & completion plan | Liang Yi |
+| 25:00-28:30 | Executive Dashboard: Fleet + Expense, then Reports & Accounts Management | Liang Yi narrates Fleet/Expense (Jasper's build), drives Reports/Accounts Management (Liang Yi's own build) |
+| 28:30-29:30 | Gaps & completion plan | Liang Yi |
 | 29:30-30:00 | Close + open floor | Zheng Bao / Liang Yi |
 
 Each segment below has ~15-30 seconds of built-in slack for a click that's slower than expected. If you're running long, cut the second half of the AP segment (retry-logic demo) first - it's the most skippable without losing a business requirement.
@@ -37,7 +37,9 @@ Each segment below has ~15-30 seconds of built-in slack for a click that's slowe
 | Memo Review -> Pricing Match -> Invoice (Kwan Hua) | "Absence of an integrated digital operations loop connecting field ambulance crews directly to the finance team" - this is literally that loop closing | Reduction in AR manpower (target 30-50%) + clerical workload shifted to automation (target 30-50%) |
 | Vendor Invoice OCR -> Rebate check (Kwan Hua) | "Duplication of effort due to AR and AP functions being handled separately" + manual hand-keying of vendor bills | Reduction in AP manpower (target 30-50%) |
 | Xero sync, both AR and AP (Kwan Hua) | "Underutilization of Xero, treating it as a passive digital filing cabinet rather than leveraging its active automation features" | Turnaround time improvement (target 40-60%) |
-| Executive Dashboard (Liang Yi narrates / Jasper drives) | Management's anxiety over "staff turnover disrupting financial backlogs and causing critical data loss" - the fix is a live system view that doesn't depend on any one person's memory | This is the "executive command center for real-time fleet and overhead visibility" named directly in the in-scope list |
+| Executive Dashboard - Fleet/Expense (Liang Yi narrates / Jasper drives) | Management's anxiety over "staff turnover disrupting financial backlogs and causing critical data loss" - the fix is a live system view that doesn't depend on any one person's memory | This is the "executive command center for real-time fleet and overhead visibility" named directly in the in-scope list |
+| Reports (Liang Yi) | Gives the Managing Director self-serve access to "macro expense analytics" without waiting on someone to assemble a report - the Leakage History tab specifically is the auditable trail behind the revenue-leakage metric, not just a live alert | Prevention of revenue leakage - target **100%** (same metric as the memo surcharge fields, viewed historically instead of live) |
+| Accounts Management (Liang Yi) | The other half of the "staff turnover" anxiety line - not just losing visibility when someone leaves, but losing control of their access. Force Logout/Unlock/Remove let the Managing Director act on a departure immediately instead of filing an IT ticket | Directly supports the "executive command center" in-scope line - fleet/overhead visibility plus the account control to back it up |
 
 If a tutor asks "why does this screen exist" and you weren't the one who built it, point to this table's second column rather than guessing - it's a direct quote from the requirements doc, not an interpretation.
 
@@ -147,37 +149,43 @@ Don't linger on this slide - the point is to set up *why* each next screen matte
 
 ---
 
-## 25:00-27:30 - Executive Dashboard (Liang Yi narrates, Jasper drives)
+## 25:00-28:30 - Executive Dashboard: Fleet + Expense, then Reports & Accounts Management (Liang Yi drives)
 
 **Login:** `doris@efar.com.sg` / `Efar@2026`
 
 **Liang Yi opens:**
-> "This is the screen I originally designed the use cases and schema for - the Managing Director's real-time view into fleet activity and overhead cost. Jasper ended up building the implementation as part of picking up this wave, so I'll hand the keyboard to him, but I'll pick back up right after on what's still mine to finish."
+> "This is the screen I originally designed the use cases and schema for - the Managing Director's real-time view into fleet activity and overhead cost. Jasper built the Fleet and Expense tabs as part of picking up that wave, so I'll narrate those, then I'll drive the two screens I've since built myself: Reports and Accounts Management."
 
-**Jasper drives:**
+**Jasper built, Liang Yi narrates:**
 1. **Fleet tab** - 4 KPI cards, booking-status doughnut chart, and the revenue-leakage alert panel - tie this explicitly back to the "prevention of revenue leakage" success metric from the requirements doc.
 2. **Expense tab** - 3 KPI cards, interactive vendor bar chart, read-only vendor invoice table.
 
-**Say (Liang Yi, before handing to Jasper, or Jasper if it flows better):** "The reason this exists at all is in the problem statement directly - management described feeling anxious about staff turnover wiping out financial visibility, because so much of it lived in one person's head. This dashboard is the antidote: fleet status, overhead cost, and revenue leakage, live off the same database everyone else's screens write to, not a report someone assembles once a week."
+**Liang Yi built, Liang Yi drives:**
+3. **Reports** - four tabs (Revenue, Billing Cycle, Leakage History, Vendor Expenditure), a period selector, and working CSV/PDF export on each. Open Leakage History specifically and point out the Billing Status badges (Missing/Late/On Time) - built as readable badges with icons, not a raw database status string.
+4. **Accounts Management** - the User Directory: search/filter by role and status, the 3 KPI cards (Total Users, Currently Online, Security Alerts), and the row actions - Force Logout, Unlock, Remove. Open **Add New User** and show validation live: email restricted to `@efar.com.sg`, password requiring 8+ characters plus a number and a special character, and the show/hide password toggle. Then click **Remove** on a row to show the double-confirmation modal - it does not delete on the first click.
 
-Keep this tight - 90 seconds of screen time, because the next segment (gaps) needs the remaining runway and follows on directly from this same screen.
+**Say (Liang Yi):** "The reason any of this exists is in the problem statement directly - management described feeling anxious about staff turnover wiping out financial visibility, because so much of it lived in one person's head. Fleet and Expense are the live, always-current view that doesn't depend on someone's memory. Accounts Management is the direct answer to the other half of that same anxiety - when someone leaves or a credential needs to be pulled immediately, it's a Force Logout or Remove click, not an IT ticket."
+
+**One honest caveat to state here, briefly:** "Remove is wired to a real backend endpoint I built - `DELETE /api/users/:id` - confirmation-gated, and it genuinely deletes the row. What's still mock data is the *initial* five rows in the directory - there's no `GET /api/users` list endpoint yet, so today's starting list is seed data, not a live query. Any account created through Add New User in this session, though, is a real row you can remove for real."
+
+Keep this tight - about 3.5 minutes total, since the next segment (gaps) is shorter now that two of its former items are done.
 
 ---
 
-## 27:30-29:30 - Gaps & Completion Plan (Liang Yi)
+## 28:30-29:30 - Gaps & Completion Plan (Liang Yi)
 
 This is Liang Yi's segment to own outright - it's a strength, not a weakness, that the team can name its own gaps unprompted before being asked.
 
 **Say (adapt naturally, don't read verbatim):**
-> "I want to be upfront about exactly what's not done yet, because it's a short, specific list and every item has an owner and a plan.
+> "Quick update before the honest remaining list: **the two screens I flagged last time as not-yet-built - Reports and Accounts Management - are both done now, and you just saw them working.** Reports has all four tabs with working CSV/PDF export; Accounts Management has the full user directory plus Force Logout, Unlock, Remove, and a validated Add User flow, with Remove backed by a real `DELETE /api/users/:id` endpoint I built myself, not a frontend-only mock.
 >
-> **First, two screens under this same Executive Dashboard are still mine to build: Reports and Accounts Management.** Reports covers four tabs - revenue, billing cycle, leakage history, and vendor expenditure - with CSV/PDF export, and Accounts Management is the user directory with force-logout, unlock, and remove actions plus an add-user flow. Neither has a line of code yet; both are fully scoped from the use cases and API docs I wrote earlier in the project, and both read from data endpoints that already exist - the dashboard and invoice APIs Jasper and Kwan Hua built. My plan is Reports first, since it's more visible to a client, then Accounts Management, both targeted for completion well ahead of the final review.
+> **First, the User Directory's starting list is still seed data, not a live `GET /api/users` query** - a small, specific gap now, not a rebuild. Every account created or removed during a live session goes through the real backend; only the initial five rows shown are static.
 >
 > **Second, the public customer-facing intake form's frontend isn't wired up** - Zheng Bao has the backend endpoint live and tested; the form component itself is next on his list.
 >
 > **Third, Zheng Bao's full booking-management routes are still using two temporary read-only endpoints** we added just to unblock the field crew screens you saw earlier - creating, confirming/rejecting, and crew assignment need to move off those temporary routes onto the real ones.
 >
-> **Fourth, test coverage isn't even across the team yet.** Jasper and Kwan Hua have committed automated tests; Zheng Bao and I currently have documented test-case lists but haven't written the executable tests yet - that's happening before submission, not left to the end.
+> **Fourth, test coverage isn't even across the team yet.** Jasper and Kwan Hua have committed automated tests. I've now written and committed frontend tests for Accounts Management, but the backend half of that same feature - the new user controller and delete route - doesn't have automated tests yet, and that's next on my list. Zheng Bao currently has a documented test-case list but hasn't written the executable tests yet either - both are happening before submission, not left to the end.
 >
 > **Fifth, and I'll say this one plainly since you'll have noticed it during the AR and AP walkthrough: our Xero integration is simulation-only today.** We have not yet connected a real Xero organisation. The OAuth2 flow, encrypted token storage, and sync logic are fully built against Xero's actual API - switching it on is a config change plus registering a Xero developer sandbox app, not a rebuild - but we haven't done that step yet, so we're not going to claim a live connection we don't have. That's scheduled before the final review.
 >
@@ -201,7 +209,7 @@ This is Liang Yi's segment to own outright - it's a strength, not a weakness, th
 - [ ] Re-run seed scripts in order if the DB was reset recently: `db:sync` -> `db:seed` -> `db:seed:clients` -> `db:seed:intakes` -> `db:seed:bookings` -> `db:seed:xero` -> `db:seed:pricing`.
 - [ ] Pre-open 5 browser tabs/profiles logged in as each demo account (`camilla`, `ravi`, `sarah`, `chloe`, `doris`, all password `Efar@2026`) so no one fumbles a login live.
 - [ ] Have one already-submitted memo and one already-approved invoice sitting in the data, in addition to a fresh one you'll create live - so if the live pricing-match click hangs, you can pivot to the pre-made example without dead air.
-- [ ] Confirm who is physically driving the keyboard/screen-share for each segment vs. narrating, especially the Executive Dashboard handoff (Liang Yi narrates, Jasper drives).
+- [ ] Confirm who is physically driving the keyboard/screen-share for each segment vs. narrating, especially the Executive Dashboard segment (Liang Yi narrates Fleet/Expense, then drives Reports/Accounts Management directly - no handoff back to Jasper needed partway through).
 - [ ] Time a full dry run once. This script is paced to ~30 minutes with each segment already having slack built in; if the dry run runs long, cut from the AP retry-logic demo first (noted above), not from the gaps section.
 
 ---
@@ -213,6 +221,9 @@ It's simulated - say this plainly, don't hedge. We have not connected a real Xer
 
 **"What happens if a memo doesn't match any pricing contract?"**
 It lands in the invoice list with an "Unmatched" status rather than blocking or silently failing - this was a specific edge case we found and fixed (a `NOT NULL` constraint on `contract_id` was incorrectly blocking unmatched invoices from being created at all).
+
+**"When you clicked Remove in Accounts Management, did that really delete from the database?"**
+Yes, for any account created during the session - it calls a real `DELETE /api/users/:id` endpoint, guarded by the confirmation modal you saw, a check that blocks removing your own logged-in account, and a check that blocks removing a user who still has associated records (bookings, memos, invoices) rather than throwing a raw server error. The one honest caveat: the directory's *starting* five rows are seed data with no real database id, so Remove on those correctly refuses rather than silently faking a deletion.
 
 **"How is auth/security handled?"**
 JWT-based auth with role-based route protection on both the frontend (protected/role routes) and backend (middleware on every route file), bcrypt password hashing. No plaintext credentials anywhere, `.env` files are gitignored with `.env.example` placeholders committed instead.
