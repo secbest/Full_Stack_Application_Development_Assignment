@@ -7,7 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/context/ToastContext'
 import { listPendingMemos, getMemo, approveMemo, returnMemo } from '@/api/ar'
 
+// Abbreviated - used in the dense review-queue table below, which has a fixed h-12 row
+// height across 6 columns and no room for a long label without wrapping the row.
 const SERVICE_LABELS = { eas: 'EAS', mts: 'MTS', event_standby: 'Event Standby', workplace_standby: 'Workplace Standby' }
+// Full name - used in the Memo Review Detail panel's 2-column grid, which has the room.
+const SERVICE_LABELS_FULL = {
+  eas: 'Emergency Ambulance Services (EAS)',
+  mts: 'Medical Transport Services (MTS)',
+  event_standby: 'Event Standby',
+  workplace_standby: 'Workplace Standby',
+}
 const TRANSFER_LABELS = {
   one_way_hospital: 'One-Way Hospital', two_way_hospital: 'Two-Way Hospital', covid_19: 'COVID-19',
   imh_psychiatric: 'IMH / Psychiatric', airport_no_tarmac: 'Airport (No Tarmac)', airport_with_tarmac: 'Airport (With Tarmac)',
@@ -192,7 +201,7 @@ export default function ServiceMemoListPage() {
                 <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4">
                   <div className="text-xs font-semibold uppercase text-blue-700 mb-3">Pricing Engine Inputs</div>
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Service Type" value={SERVICE_LABELS[selected.service_type] || selected.service_type} highlight />
+                    <Field label="Service Type" value={SERVICE_LABELS_FULL[selected.service_type] || selected.service_type} highlight />
                     <Field label="Transfer Type" value={TRANSFER_LABELS[selected.transfer_type] || selected.transfer_type} highlight />
                     <Field label="Office Hours" value={yesNo(selected.is_office_hours)} />
                     <Field label="Oxygen Litres Used" value={selected.oxygen_litres_used} />

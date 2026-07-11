@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { FilePlus, Loader2 } from 'lucide-react'
+import { ArrowLeft, FilePlus, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/context/ToastContext'
@@ -37,6 +37,11 @@ export default function MemoWizardPage() {
   function mergeAndAdvance(values) {
     setWizardData((prev) => ({ ...prev, ...values }))
     setStep((s) => s + 1)
+  }
+
+  function handleBackToJobs() {
+    if (step > 1 && !window.confirm('Discard this memo and return to My Jobs?')) return
+    navigate('/jobs')
   }
 
   async function handleFinalSubmit(hospitalStampUrl) {
@@ -107,9 +112,14 @@ export default function MemoWizardPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-3xl mx-auto">
-      <div className="flex items-center gap-3">
-        <FilePlus className="w-5 h-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold text-foreground">New Service Memo</h1>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FilePlus className="w-5 h-5 text-muted-foreground" />
+          <h1 className="text-2xl font-semibold text-foreground">New Service Memo</h1>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleBackToJobs}>
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to My Jobs
+        </Button>
       </div>
 
       {bookingStatus === 'loading' && (

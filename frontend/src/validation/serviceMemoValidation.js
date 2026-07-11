@@ -77,8 +77,25 @@ export const step3Schema = Yup.object({
   is_waived: Yup.boolean().required(),
   signature_image_url: Yup.string().nullable(),
   waiver_reason: Yup.string().trim().nullable(),
-}).test(
-  'signature-required',
-  'A signature or a documented waiver reason is required.',
-  (value) => (value.is_waived ? !!value.waiver_reason : !!value.signature_image_url)
-)
+})
+  // Cross-field check, same shape as step1Schema's overtime-consistency test above - a bare
+  // object-level .test() without an explicit path produces an error Formik can't attach to
+  // any field, so it silently passes validation and the crew member sails through to Step 4
+  // before the backend rejects it. createError({path}) ties the failure to the actual field
+  // that's missing so the existing FieldError under that input lights up here on Step 3.
+  .test(
+    'signature-required',
+    'A signature or a documented waiver reason is required.',
+    function (value) {
+      if (value.is_waived) {
+        if (!value.waiver_reason) {
+          return this.createError({ path: 'waiver_reason', message: 'Waiver reason is required when the signature is unavailable.' })
+        }
+        return true
+      }
+      if (!value.signature_image_url) {
+        return this.createError({ path: 'signature_image_url', message: 'A drawn signature or a documented waiver is required.' })
+      }
+      return true
+    }
+  )

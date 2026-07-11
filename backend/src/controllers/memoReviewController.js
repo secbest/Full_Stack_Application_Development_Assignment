@@ -53,8 +53,8 @@ async function listPendingReview(req, res) {
         job_date: m.Booking ? m.Booking.scheduled_date : null,
         service_type: m.service_type,
         transfer_type: m.transfer_type,
-        submitted_at: m.created_at,
-        hours_since_submission: Math.round(((now - new Date(m.created_at).getTime()) / HOURS) * 10) / 10,
+        submitted_at: m.createdAt,
+        hours_since_submission: Math.round(((now - new Date(m.createdAt).getTime()) / HOURS) * 10) / 10,
       })),
       meta: { total: count, page: p, limit: l },
     })

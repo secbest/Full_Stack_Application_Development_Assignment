@@ -56,7 +56,7 @@ function serializeMemo(memo, signature) {
       is_waived: signature.is_waived,
       waiver_reason: signature.waiver_reason,
     },
-    created_at: memo.created_at,
+    created_at: memo.createdAt,
   }
 }
 
@@ -194,7 +194,7 @@ async function listServiceMemos(req, res) {
       service_type: memo.service_type,
       status: memo.status,
       has_hospital_stamp: !!memo.hospital_stamp_image_url,
-      created_at: memo.created_at,
+      created_at: memo.createdAt,
     })),
     pagination: {
       page,
@@ -252,8 +252,8 @@ async function getServiceMemoById(req, res) {
       is_waived: s.is_waived,
       waiver_reason: s.waiver_reason,
     })),
-    created_at: memo.created_at,
-    updated_at: memo.updated_at,
+    created_at: memo.createdAt,
+    updated_at: memo.updatedAt,
   })
 }
 

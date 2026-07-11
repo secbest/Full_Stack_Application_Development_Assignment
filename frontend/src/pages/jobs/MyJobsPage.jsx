@@ -16,7 +16,10 @@ const DATE_FILTERS = [
 ]
 
 const SERVICE_TYPE_LABELS = {
-  eas: 'EAS', mts: 'MTS', event_standby: 'Event Standby', workplace_standby: 'Workplace Standby',
+  eas: 'Emergency Ambulance Services (EAS)',
+  mts: 'Medical Transport Services (MTS)',
+  event_standby: 'Event Standby',
+  workplace_standby: 'Workplace Standby',
 }
 
 function JobCard({ job, onCreateMemo }) {
@@ -50,12 +53,12 @@ function JobCard({ job, onCreateMemo }) {
                 Start Job
               </Button>
             )}
-            {(job.status === 'in_progress' || job.status === 'completed') && (
+            {job.status === 'in_progress' && (
               <Button size="sm" onClick={() => onCreateMemo(job)}>
-                {job.status === 'in_progress' ? 'Start Job & Create Memo' : 'Create Memo'}
+                Start Job &amp; Create Memo
               </Button>
             )}
-            {job.status === 'invoiced' && (
+            {(job.status === 'completed' || job.status === 'invoiced') && (
               <span className="text-sm text-[#22C55E] font-medium">Memo Submitted</span>
             )}
           </div>

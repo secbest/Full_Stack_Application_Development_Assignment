@@ -130,13 +130,13 @@ export default function Step3Signature({ initialValues, onNext, onBack }) {
                 checked={formik.values.is_waived}
                 onChange={(e) => toggleWaived(e.target.checked)}
               />
-              <span className="text-sm">Signature Unavailable (e.g. patient unconscious)</span>
+              <span className="text-sm">Patient / client representative unable to sign (e.g. unconscious, no representative present)</span>
             </label>
 
             {formik.values.is_waived && (
               <div>
                 <RequiredLabel htmlFor="waiver_reason">Waiver Reason</RequiredLabel>
-                <Textarea id="waiver_reason" name="waiver_reason" value={formik.values.waiver_reason} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                <Textarea id="waiver_reason" name="waiver_reason" placeholder="e.g. Patient unconscious - ICU transfer" value={formik.values.waiver_reason} onChange={formik.handleChange} onBlur={formik.handleBlur} />
                 <FieldError formik={formik} name="waiver_reason" />
               </div>
             )}

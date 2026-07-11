@@ -8,7 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { FieldError } from '@/components/FieldError'
 import { step2Schema, SERVICE_TYPES, TRANSFER_TYPES } from '@/validation/serviceMemoValidation'
 
-const SERVICE_TYPE_LABELS = { eas: 'EAS', mts: 'MTS', event_standby: 'Event Standby', workplace_standby: 'Workplace Standby' }
+const SERVICE_TYPE_LABELS = {
+  eas: 'Emergency Ambulance Services (EAS)',
+  mts: 'Medical Transport Services (MTS)',
+  event_standby: 'Event Standby',
+  workplace_standby: 'Workplace Standby',
+}
 const TRANSFER_TYPE_LABELS = {
   one_way_hospital: 'One-Way Hospital', two_way_hospital: 'Two-Way Hospital', covid_19: 'COVID-19',
   imh_psychiatric: 'IMH Psychiatric', airport_no_tarmac: 'Airport (No Tarmac)', airport_with_tarmac: 'Airport (With Tarmac)',
