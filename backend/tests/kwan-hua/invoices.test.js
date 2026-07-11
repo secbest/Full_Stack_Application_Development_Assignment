@@ -115,6 +115,21 @@ describe('updateLineItem (UC-05)', () => {
     expect(invoice.status).toBe('adjusted')
     expect(res.status).toHaveBeenCalledWith(200)
   })
+
+  test('flips an unmatched invoice to adjusted, same as addLineItem', async () => {
+    const invoice = makeInvoice({ status: 'unmatched', subtotal: 0, total_amount: 0 })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    const item = { id: 1, invoice_id: 1, description: 'Manual price', quantity: 1, unit_price: 100, amount: 100 }
+    item.update = jest.fn(async (f) => Object.assign(item, f))
+    InvoiceLineItem.findOne.mockResolvedValue(item)
+    InvoiceLineItem.findAll.mockResolvedValue([{ amount: 120 }])
+
+    const res = mockRes()
+    await updateLineItem({ params: { invoiceId: 1, itemId: 1 }, body: { unit_price: 120 } }, res)
+
+    expect(invoice.status).toBe('adjusted')
+    expect(res.status).toHaveBeenCalledWith(200)
+  })
 })
 
 describe('deleteLineItem (UC-05)', () => {

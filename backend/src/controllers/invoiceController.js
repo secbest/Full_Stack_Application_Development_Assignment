@@ -193,7 +193,7 @@ async function updateLineItem(req, res) {
     updates.amount = round2(newQty * newPrice)
     await item.update(updates)
 
-    if (invoice.status === 'matched') await invoice.update({ status: 'adjusted' })
+    if (['matched', 'unmatched'].includes(invoice.status)) await invoice.update({ status: 'adjusted' })
     const totals = await recalcInvoiceTotals(invoice)
 
     return success(res, {
