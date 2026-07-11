@@ -12,6 +12,18 @@ const SERVICE_TYPE_LABELS = {
   workplace_standby: 'Workplace Standby',
 }
 
+// Backend stores status as a lowercase code. A naive "capitalize first letter, replace
+// underscore with space" (the previous approach) turns in_progress into "In progress"
+// (lowercase p) - which matches neither the "In Progress" filter buttons below nor the
+// STATUS_BADGE_CLASSES/STATUS_ROW_CLASSES keys, so in-progress bookings silently fell
+// through to the default/no-match styling. An explicit label map avoids that mismatch.
+const BOOKING_STATUS_LABELS = {
+  confirmed: 'Confirmed',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  invoiced: 'Invoiced',
+}
+
 // Status badge colors follow the CLAUDE.md status pattern: Confirmed/Info = blue,
 // In Progress/Warning = amber, Invoiced/Success = green, Completed = neutral slate.
 const STATUS_BADGE_CLASSES = {
@@ -126,7 +138,7 @@ export default function BookingListPage() {
         client: booking.client_name || 'Unknown client',
         serviceType: SERVICE_TYPE_LABELS[booking.service_type] || booking.service_type,
         tier: booking.service_tier.charAt(0).toUpperCase() + booking.service_tier.slice(1),
-        status: booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('_', ' '),
+        status: BOOKING_STATUS_LABELS[booking.status] || booking.status,
         tierNote: booking.original_service_tier ? `Adjusted from: ${booking.original_service_tier}` : '',
         scheduled: booking.scheduled_date && booking.scheduled_time ? `${booking.scheduled_date}, ${booking.scheduled_time}` : '',
         pickup: booking.pickup_location || '',
