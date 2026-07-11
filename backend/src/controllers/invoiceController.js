@@ -145,8 +145,10 @@ async function addLineItem(req, res) {
       is_manual_adjustment: true,
     })
 
-    // Adding a manual adjustment moves a matched invoice to 'adjusted'.
-    if (invoice.status === 'matched') await invoice.update({ status: 'adjusted' })
+    // Adding a manual adjustment moves a matched OR unmatched invoice to 'adjusted' -
+    // otherwise an unmatched invoice (no rate row / no contract) could never leave that
+    // status even after Sarah manually prices it, and would never become approvable.
+    if (['matched', 'unmatched'].includes(invoice.status)) await invoice.update({ status: 'adjusted' })
     const totals = await recalcInvoiceTotals(invoice)
 
     return created(res, {
@@ -191,7 +193,7 @@ async function updateLineItem(req, res) {
     updates.amount = round2(newQty * newPrice)
     await item.update(updates)
 
-    if (invoice.status === 'matched') await invoice.update({ status: 'adjusted' })
+    if (['matched', 'unmatched'].includes(invoice.status)) await invoice.update({ status: 'adjusted' })
     const totals = await recalcInvoiceTotals(invoice)
 
     return success(res, {
