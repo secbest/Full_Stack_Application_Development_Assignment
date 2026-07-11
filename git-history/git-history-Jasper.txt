@@ -1,3 +1,317 @@
+commit 4a767781f2e0474b8f5547838f83d1f9ebc7d717
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 10 23:52:34 2026 +0800
+
+    Add reusable seed script + fixture for a clean sample vendor invoice
+    
+    Root cause of "Unknown Vendor" rows in the AP Invoice Queue was a Cloudinary
+    account setting blocking public PDF delivery, plus a few test uploads of a
+    non-invoice PDF; both were fixed directly in the shared environment. This
+    adds seed-sample-vendor-invoice.js (+ bundled fixture PDF) so the team can
+    re-seed a fully-populated, OCR-bypassed sample invoice on demand, and a
+    .gitattributes to stop Git from corrupting binary assets via CRLF conversion.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 03ad4a37a1ea72a02cd66a0711cc153aedf91fad
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Fri Jul 10 23:20:22 2026 +0800
+
+    Add Accounts Management and Reports pages for Managing Director role
+    
+    Adds a Management page (create/list users, POST /api/auth/register) and
+    Report page for the MD dashboard, plus supporting nav routes and tests.
+    Merged with upstream Wave 3 AR/AP work (pricing contracts, vendor invoice
+    sync) pulled in the same commit.
+
+commit f61a73e8fb8ac79f83ce1b66d2dad79e63a424a4
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Fri Jul 10 23:16:54 2026 +0800
+
+    Create handoff-2026-06-02.md
+
+commit 38cfa57c082e386a69e3141a701b5a9cf8c86b85
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 10 23:01:20 2026 +0800
+
+    Updayed interim review demp
+    
+    Updayed interim review demo script with purpose of the features
+
+commit 5ffd123c941b66872560ebcb368c12a07ef2f929
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 10 21:56:54 2026 +0800
+
+    Interim Review Demo Script
+    
+    Script is created for interim (Mon)
+    Changed may be updated soon
+
+commit 617ddbe16204e6383cc163abde2b6a795879e9c4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 17:15:35 2026 +0800
+
+    Build AP Invoice Review, Xero Connection, and Xero Sync Status pages; fix xero_sync_logs FK bug
+    
+    Replaces the VendorInvoiceListPage/XeroConnectPage placeholders with real implementations
+    and adds the missing AP Invoice Review (two-panel PDF + OCR fields) and Xero Sync Status
+    (shared AP/AR retry panel) screens. Moves the Xero settings route to /settings/xero to
+    match the OAuth callback's hardcoded redirect target, which previously 404'd.
+    
+    Also fixes a schema bug where xero_sync_logs.entity_id had picked up a real foreign-key
+    constraint against invoices during db:sync, despite being a polymorphic key shared with
+    vendor_invoices - every AP sync was failing with a 500. Added constraints: false to both
+    associations in models/index.js.
+    
+    Updates README.md and design/feature-dependencies.md task allocation to state current
+    implementation ownership (Jasper = all of Wave 2, Kwan Hua = all of Wave 3) as the primary
+    record instead of layered patch-notes.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit da7feb3414f8817f975661f4347b251fd8ef2125
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 9 16:35:13 2026 +0800
+
+    Add Pricing Contracts test coverage and fix DEV_JWT_SECRET drift
+    
+    Backend: unit tests for contractValidators and contractController
+    (mocked Sequelize models/transaction) - the only automated coverage
+    of Jasper's owned Wave 2B controller. Frontend: adds PricingContractPage
+    and ContractDetailPage suites plus ContractFormPage edit-mode tests
+    (previously create-only). Sets up the missing Jest/Babel config the
+    frontend needed to run any test at all.
+    
+    Also fixes backend/.env.example's DEV_JWT_SECRET, which didn't match
+    the value the pre-signed dev tokens in design/jasper/api-documentation.md
+    were actually signed with, causing every request with those tokens to
+    fail as TOKEN_EXPIRED.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit b623d096b5b7768bbfb299358cc394e0443ae27b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 14:38:23 2026 +0800
+
+    Add controller-level test coverage for contracts, invoices, memo review, and vendor invoices
+    
+    Existing tests only covered pure logic (pricingService, xeroService,
+    calculateRebate). This adds mocked-model unit tests for the DB-touching
+    controller branches: contract CRUD + overlap/duplicate/audit-trail guards,
+    invoice line-item edits + batch approve/sync + retry, memo approve/return
+    (matched vs unmatched invoice generation), and vendor invoice update/approve/
+    reject flows. 72 new tests, 109 passing total.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit fe2361ace9752a1f901d5069697589616526b3db
+Merge: 033773a 52a5f33
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 14:23:19 2026 +0800
+
+    Merge wave-3-ap-sync: Wave 3 AR billing/pricing engine + AP invoice sync, Wave 2B pricing contracts
+    
+    Adds the pricing engine, memo review -> invoice generation, AR invoice list/detail
+    with Xero sync, AP vendor invoice review/approve/reject/sync-xero, and pricing
+    contract CRUD (backend + frontend). Backend: 37 passing tests. Frontend: build
+    verified. Fixes a stale NOT NULL constraint on invoices.contract_id.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 52a5f33ae8015a505154e9539668ddf3a4678ccd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 13:54:59 2026 +0800
+
+    Fix invoices.contract_id NOT NULL blocking unmatched invoices
+    
+    The Invoice model declares contract_id nullable so 'unmatched' invoices
+    (client has no active contract, or no rate matches the memo) can be saved
+    with a null contract_id. The live column was still NOT NULL - sync({alter:true})
+    does not reliably drop NOT NULL in Postgres - so approving such a memo failed
+    with a not-null constraint violation.
+    
+    Add an idempotent script that drops the constraint explicitly, matching the
+    existing sync-db.js pattern so teammates can reproduce the fix.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 033773aa2a728c4ab0a44a8ccb446b093a946c81
+Author: secbest <jastkc8@gmail.com>
+Date:   Thu Jul 9 10:07:03 2026 +0800
+
+    Updated git history and handoff summary
+    
+    git-history-main and handoff summary 2026-07-09 updated
+
+commit 75caed446436672cbf81690d2c3ea5fa89e81f63
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jul 8 23:20:06 2026 +0800
+
+    Add Wave 2B: Pricing Contracts feature (backend CRUD + frontend UI)
+    
+    Implements the pricing_contracts/pricing_rates/surcharge_schedules CRUD
+    endpoints and the Pricing Contracts List/Detail/Create-Edit screens per
+    design/jasper/api-documentation.md and use-cases.md, plus a minimal
+    read-only /api/clients endpoint needed for the contract form's client
+    picker. Includes a full review pass against the design docs: documented
+    error codes now returned correctly, UC-01's zero-rate warning, real Yup
+    validation on every rate/surcharge mini-form, a TOCTOU fix on contract
+    overlap detection, consistent invoice-status filtering across the
+    HAS_MATCHED_INVOICES/RATE_IN_USE checks, and sanitized Sequelize error
+    messages.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 17189a025496324944ebdd303543d09afba34671
+Author: secbest <jastkc8@gmail.com>
+Date:   Wed Jul 8 15:30:39 2026 +0800
+
+    "Design login screen for EFAR" & CLAUDE.md
+    
+    Updated "Design login screen for EFAR" figma make folder & CLAUDE.md with Account Management feature implemented for managing director
+
+commit 06a771b524d1bcb544e4c306cf3880865a078543
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 02:14:04 2026 +0800
+
+    Add Wave 3: AP invoice sync + AR billing/pricing engine, with real Xero API
+    
+    AP (own scope): Xero status/callback/disconnect, vendor invoice
+    review/approve/reject/reextract, line-item edit, sync-logs + retry.
+    
+    AR (Wave 3 takeover from Jasper; design remains in design/jasper/): pricing
+    engine, memo review (pending-review/approve/return), invoices (list/detail/
+    line-items/batch-approve/retry-xero) writing xero_sync_logs as ar_invoice,
+    seed-pricing, and the AR frontend screens (Memo Review, Invoice List/Detail).
+    
+    Xero: real OAuth2 token exchange + rotating refresh + AES-256-GCM token storage,
+    ACCPAY/ACCREC draft push with optional account codes; simulation mode is the
+    default so the app runs and demos without live credentials.
+    
+    Schema (db:sync alter): add ServiceMemo.ar_note; make Invoice.contract_id
+    nullable for unmatched invoices. Tests: 37 backend unit tests (pricing engine +
+    xero service). Contribution attribution recorded in README,
+    design/feature-dependencies.md, and my-project-ai/Tow_Kwan_Hwa/.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit e90a7cf7a1caff9bbc32cd0c1f3cd762b7e42a6d
+Merge: decd04d c06fce1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:15 2026 +0800
+
+    Merge wave-1-1b-xero-api into main
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit c06fce1395347cb7de2da46ef70bc291094dce8b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:08 2026 +0800
+
+    Pin Vite dev server to strict port 5173
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit eb6ae8aa20f9cc1a788ab192bb2a936ec1cd25bb
+Merge: 1efb131 decd04d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:03:30 2026 +0800
+
+    Merge main into wave-1-1b-xero-api
+    
+    Resolves conflicts from parallel development on main: combines image
+    upload middleware/service (signature, hospital stamp) with PDF upload
+    middleware/service (vendor invoices) in upload.js and cloudinaryService.js,
+    merges db:seed:bookings/db:seed:xero package.json scripts, and keeps both
+    Liang Yi's service-memo/dashboard validators and the new
+    vendorInvoiceUploadSchema in validators/index.js.
+
+commit decd04d01744b61294abb7131a873c6055cb8535
+Merge: 9aa5b29 881f371
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jul 6 15:50:47 2026 +0800
+
+    Merge main into wave-1-1A: reconcile booking management with Field Ops
+    
+    Main had independently merged Jasper's Wave 2A Field Operations work,
+    which added its own bookingController.js/bookingRoutes.js (listMyJobs,
+    getBookingById for the My Jobs / Memo Wizard screens) and its own
+    seed-bookings.js. Combined both feature sets so neither is lost:
+    
+    - bookingController.js/bookingRoutes.js now expose listMyJobs (Field
+      Crew, unchanged incl. its per-crew permission check) alongside
+      listBookings/updateBookingCrew (Quotations/AR/MD). getBookingById is
+      kept exactly as Field Ops built it (nested client: {id, name} shape,
+      field_crew-only-own-booking check) since the Memo Wizard's Booking
+      Summary panel depends on that exact shape.
+    - seed-bookings.js now seeds both BKG-TEST-* (Field Ops fixtures) and
+      BKG-2026-* (intake-linked bookings) in one script.
+    - routes/index.js and validators/index.js: combined both branches'
+      additive route/schema registrations.
+    - router/routes.js: combined ROLE_HOMES updates from both branches.
+    - layouts/AppLayout.jsx: kept main's version, which already corrected
+      the sidebar to CLAUDE.md's official #1E293B design token.
+    
+    Verified: frontend build passes; backend boots and connects to
+    Supabase; live smoke test as both Camilla (quotations_specialist -
+    intake queue, booking list with working intake link) and Ravi
+    (field_crew - my-jobs, booking detail in Memo Wizard shape) succeeds.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 9aa5b2922b2ab8212f824d240af30860749de40b
+Author: secbest <jastkc8@gmail.com>
+Date:   Mon Jul 6 15:38:13 2026 +0800
+
+    Fix intake/booking list pages failing to load and add booking seed data
+    
+    Both pages unwrapped the paginated API response one level too shallow
+    (data.data instead of data.data.data), so the array .map() threw and
+    was swallowed into a generic "Failed to load" toast. Also filled in
+    missing fields (intake_reference, pickup/destination/notes, creator
+    name) on the bookings list endpoint so the Linked Intake and detail
+    fields actually render. Adds seed-bookings.js to populate sample
+    bookings linked to the existing confirmed intake seed data.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 00f15072defc468569a60ae1ba8219ba4f5598a1
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Mon Jul 6 14:54:24 2026 +0800
+
+    Main intake and bookings
+
+commit 881f37167a3bf82cd470753250aede7d886c2f77
+Author: secbest <jastkc8@gmail.com>
+Date:   Fri Jul 3 13:47:37 2026 +0800
+
+    Documentation updated
+    
+    README.md, git history, handoff summary, test-cases updated
+
+commit 1efb1311b7a0892630c3879511ba66b3874ebbfd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 11:00:28 2026 +0800
+
+    Add Wave 1B Xero connect + vendor invoice upload endpoints
+    
+    Implements the two endpoints scoped to Wave 1B in the build order:
+    GET /api/xero/connect and POST /api/vendor-invoices (PDF upload ->
+    Cloudinary -> Gemini OCR -> rebate calc -> Sequelize create). Adds
+    supporting services, seed data for the 4 Xero/AP tables, and unit
+    tests for the rebate calculation and OAuth URL builder.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 71c23ae26d48b5a9c61d2891c26689eb6fa38580
+Merge: 1dfacf0 9e675c7
+Author: Tow Kwan Hwa <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:31:40 2026 +0800
+
+    Merge pull request #1 from secbest/wave-2-2A-field-operations
+    
+    Wave 2 2A field operations
+
 commit 9e675c737b08c2d98f111ac2ffcf49b8c8aa252a
 Merge: 3d769ce 1dfacf0
 Author: secbest <jastkc8@gmail.com>
