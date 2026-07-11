@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Users } from 'lucide-react';
+import { Search, Users, Eye, EyeOff } from 'lucide-react';
 import api from '../../api';
 import { useToast } from '../../context/ToastContext';
 
@@ -15,11 +15,11 @@ const ROLE_SLUGS = {
 };
 
 const INITIAL_ACCOUNTS = [
-  { name: "Camilla Cruz", email: "camilla@efar.com", role: "Quotations",        status: "Online",  lastLogin: "Active now"  },
-  { name: "Ravi Kumar",   email: "ravi@efar.com",    role: "Field Crew",        status: "Offline", lastLogin: "2 hours ago" },
-  { name: "Sarah Lee",    email: "sarah@efar.com",   role: "Accounts Receivable", status: "Online",  lastLogin: "15 mins ago" },
-  { name: "Chloe Wong",   email: "chloe@efar.com",   role: "Accounts Payable",  status: "Offline", lastLogin: "Yesterday"   },
-  { name: "Doris Tan",    email: "doris@efar.com",   role: "Managing Director", status: "Online",  lastLogin: "Active now"  },
+  { name: "Camilla Cruz", email: "camilla@efar.com.sg", role: "Quotations",        status: "Online",  lastLogin: "Active now"  },
+  { name: "Ravi Kumar",   email: "ravi@efar.com.sg",    role: "Field Crew",        status: "Offline", lastLogin: "2 hours ago" },
+  { name: "Sarah Lee",    email: "sarah@efar.com.sg",   role: "Accounts Receivable", status: "Online",  lastLogin: "15 mins ago" },
+  { name: "Chloe Wong",   email: "chloe@efar.com.sg",   role: "Accounts Payable",  status: "Offline", lastLogin: "Yesterday"   },
+  { name: "Doris Tan",    email: "doris@efar.com.sg",   role: "Managing Director", status: "Online",  lastLogin: "Active now"  },
 ];
 
 function AddUserModal({ onClose, onAdd }) {
@@ -31,13 +31,32 @@ function AddUserModal({ onClose, onAdd }) {
   const [fieldErrors, setFieldErrors] = useState({});
   const [generalError, setGeneralError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async () => {
     const errors = {};
     if (!name.trim()) errors.name = "Full name is required.";
-    if (!email.trim() || !email.includes("@")) errors.email = "A valid email is required.";
-    if (!password || password.length < 8) errors.password = "Password must be at least 8 characters.";
-    if (Object.keys(errors).length) { setFieldErrors(errors); setGeneralError(""); return; }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+      errors.email = "A valid email is required.";
+    } else if (!trimmedEmail.toLowerCase().endsWith("@efar.com.sg")) {
+      errors.email = "Invalid email. Only @efar.com.sg email addresses are allowed.";
+    }
+
+    const hasDigit = /\d/.test(password);
+    const hasSpecialChar = /[^A-Za-z0-9]/.test(password);
+    if (!password || password.length < 8 || !hasDigit || !hasSpecialChar) {
+      errors.password = "Password must be at least 8 characters long and contain at least one number and one special character.";
+    }
+
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setGeneralError("");
+      if (errors.email) toast.error(errors.email);
+      if (errors.password) toast.error(errors.password);
+      return;
+    }
 
     setFieldErrors({});
     setGeneralError("");
@@ -50,7 +69,7 @@ function AddUserModal({ onClose, onAdd }) {
         role: ROLE_SLUGS[role],
       });
       const newUser = data.data.user;
-      onAdd({ name: newUser.name, email: newUser.email, role, status: "Offline", lastLogin: "Just added" });
+      onAdd({ id: newUser.id, name: newUser.name, email: newUser.email, role, status: "Offline", lastLogin: "Just added" });
       toast.success(`Account created for ${newUser.name}.`);
       onClose();
     } catch (err) {
@@ -90,19 +109,38 @@ function AddUserModal({ onClose, onAdd }) {
           </div>
           <div>
             <label style={lbl}>Email Address</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. john@efar.com" style={inp(!!fieldErrors.email)} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. john@efar.com.sg" style={inp(!!fieldErrors.email)} />
             {fieldErrors.email && <p style={fieldErr}>{fieldErrors.email}</p>}
           </div>
           <div>
             <label style={lbl}>Temporary Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" style={inp(!!fieldErrors.password)} />
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Min. 8 chars, 1 number, 1 special character"
+                style={{ ...inp(!!fieldErrors.password), paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 6, borderRadius: 6, cursor: "pointer", color: "#94A3B8", display: "flex" }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             {fieldErrors.password && <p style={fieldErr}>{fieldErrors.password}</p>}
           </div>
           <div>
             <label style={lbl}>Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inp(!!fieldErrors.role), appearance: "none", cursor: "pointer" }}>
-              {ROLES.map((r) => <option key={r}>{r}</option>)}
-            </select>
+            <div style={{ position: "relative" }}>
+              <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inp(!!fieldErrors.role), appearance: "none", cursor: "pointer", paddingRight: 36 }}>
+                {ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
             {fieldErrors.role && <p style={fieldErr}>{fieldErrors.role}</p>}
           </div>
           {generalError && <p role="alert" style={{ fontSize: 12, color: "#EF4444", fontFamily: "'Inter', sans-serif", margin: 0, padding: "10px 12px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA" }}>{generalError}</p>}
@@ -116,14 +154,59 @@ function AddUserModal({ onClose, onAdd }) {
   );
 }
 
+const ACTION_BUTTON_VARIANTS = {
+  destructive: { color: "#EF4444", hoverBg: "rgba(239,68,68,0.1)" },
+  info:        { color: "#3B82F6", hoverBg: "rgba(59,130,246,0.1)" },
+  neutral:     { color: "#64748B", hoverBg: "#F1F5F9" },
+};
+
+function ActionButton({ variant, onClick, disabled, children }) {
+  const [hover, setHover] = useState(false);
+  const { color, hoverBg } = ACTION_BUTTON_VARIANTS[variant];
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ background: !disabled && hover ? hoverBg : "transparent", border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, fontSize: 13, fontWeight: 500, color, fontFamily: "'Inter', sans-serif", padding: "6px 12px", borderRadius: 6, transition: "background 0.15s", whiteSpace: "nowrap" }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function AccountsManagement() {
   const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
+  const toast = useToast();
 
   const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [removingEmail, setRemovingEmail] = useState(null);
+
+  // Only rows created via Add New User in this session carry a real backend `id` -
+  // the seeded demo rows above are UI mock data, not actual DB users, so removing
+  // them is correctly rejected by the backend rather than silently faked here.
+  async function handleRemove(row) {
+    if (!row.id) {
+      toast.error("This demo account isn't backed by a real user record, so it can't be removed.");
+      return;
+    }
+    setRemovingEmail(row.email);
+    try {
+      await api.delete(`/users/${row.id}`);
+      setAccounts((prev) => prev.filter((r) => r.email !== row.email));
+      toast.success(`${row.name}'s account was removed.`);
+    } catch (err) {
+      const message = err.response?.data?.message || "Something went wrong while removing this account. Please try again.";
+      toast.error(message);
+    } finally {
+      setRemovingEmail(null);
+    }
+  }
 
   const filtered = accounts.filter((r) => {
     const q = search.toLowerCase();
@@ -209,7 +292,7 @@ function AccountsManagement() {
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
               {["User Info", "Role", "Current Status", "Last Login", "Actions"].map((col) => (
-                <th key={col} style={{ padding: "11px 16px", textAlign: col === "Actions" ? "center" : "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", whiteSpace: "nowrap" }}>{col}</th>
+                <th key={col} style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", whiteSpace: "nowrap" }}>{col}</th>
               ))}
             </tr>
           </thead>
@@ -239,17 +322,16 @@ function AccountsManagement() {
                   </td>
                   <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.lastLogin}</td>
                   <td style={{ padding: "0 16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 16 }}>
+                      <ActionButton variant="neutral" disabled={removingEmail === row.email} onClick={() => handleRemove(row)}>
+                        {removingEmail === row.email ? "Removing…" : "Remove"}
+                      </ActionButton>
                       {row.status === "Online" && (
-                        <button onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}
-                          style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#EF4444", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Force Logout</button>
+                        <ActionButton variant="destructive" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}>Force Logout</ActionButton>
                       )}
                       {row.status === "Locked" && (
-                        <button onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline" } : r))}
-                          style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#3B82F6", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Unlock</button>
+                        <ActionButton variant="info" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline" } : r))}>Unlock</ActionButton>
                       )}
-                      <button onClick={() => setAccounts((prev) => prev.filter((r) => r.email !== row.email))}
-                        style={{ background: "none", border: "1px solid transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#64748B", fontFamily: "'Inter', sans-serif", padding: "4px 8px", borderRadius: 4 }}>Remove</button>
                     </div>
                   </td>
                 </tr>

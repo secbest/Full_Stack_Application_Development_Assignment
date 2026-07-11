@@ -15,6 +15,14 @@ const PERIODS = [
 
 const STATUS_COLORS = { confirmed: '#3B82F6', in_progress: '#F59E0B', completed: '#22C55E', invoiced: '#94A3B8' }
 
+// "in_progress" -> "In Progress" for the donut's legend/tooltip labels.
+function formatStatusLabel(status) {
+  return status
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 function KpiCard({ label, value, valueColor, borderColor }) {
   return (
     <Card className={borderColor ? 'border-l-4' : undefined} style={borderColor ? { borderLeftColor: borderColor } : undefined}>
@@ -61,9 +69,15 @@ export default function FleetOverviewTab() {
     )
   }
 
-  const pieData = overview.booking_status_breakdown.map((b) => ({
-    id: b.status, value: b.count, label: b.status, color: STATUS_COLORS[b.status],
-  }))
+  // Zero-count statuses are dropped rather than passed through as 0-value arcs -
+  // MUI still carves out a paddingAngle gap for each arc regardless of its value, so
+  // with e.g. 1 total booking the other 3 statuses' phantom slices ate most of the
+  // ring and left the real segment looking like a small wedge instead of a full circle.
+  const pieData = overview.booking_status_breakdown
+    .filter((b) => b.count > 0)
+    .map((b) => ({
+      id: b.status, value: b.count, label: formatStatusLabel(b.status), color: STATUS_COLORS[b.status],
+    }))
 
   return (
     <div className="space-y-4">
@@ -87,10 +101,13 @@ export default function FleetOverviewTab() {
         <Card>
           <CardHeader><CardTitle>Booking Status Distribution</CardTitle></CardHeader>
           <CardContent>
-            {pieData.every((d) => d.value === 0) ? (
+            {pieData.length === 0 ? (
               <p className="text-sm text-muted-foreground py-12 text-center">No bookings in this period.</p>
             ) : (
-              <PieChart series={[{ data: pieData, innerRadius: 50, outerRadius: 90, paddingAngle: 2 }]} height={260} />
+              <PieChart
+                series={[{ data: pieData, innerRadius: 50, outerRadius: 90, paddingAngle: pieData.length > 1 ? 2 : 0 }]}
+                height={260}
+              />
             )}
           </CardContent>
         </Card>

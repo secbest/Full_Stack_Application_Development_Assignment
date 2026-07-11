@@ -87,6 +87,7 @@ const {
   listServiceMemosQuerySchema,
 } = require('./serviceMemoValidators')
 const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashboardValidators')
+const { userIdParamSchema } = require('./userValidators')
 
 // Jasper - AR Billing, Pricing Engine & Invoice Sync (Wave 2B: pricing contracts)
 const {
@@ -117,6 +118,7 @@ module.exports = {
   listServiceMemosQuerySchema,
   fleetOverviewQuerySchema,
   vendorExpensesQuerySchema,
+  userIdParamSchema,
   createContractSchema,
   updateContractSchema,
   listContractsQuerySchema,

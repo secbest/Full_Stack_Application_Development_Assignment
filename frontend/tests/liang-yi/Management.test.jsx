@@ -47,10 +47,10 @@ async function fillForm({ name, email, password }) {
     await userEvent.type(screen.getByPlaceholderText('e.g. John Smith'), name);
   }
   if (email !== undefined) {
-    await userEvent.type(screen.getByPlaceholderText('e.g. john@efar.com'), email);
+    await userEvent.type(screen.getByPlaceholderText('e.g. john@efar.com.sg'), email);
   }
   if (password !== undefined) {
-    await userEvent.type(screen.getByPlaceholderText('Min. 8 characters'), password);
+    await userEvent.type(screen.getByPlaceholderText('Min. 8 chars, 1 number, 1 special character'), password);
   }
 }
 
@@ -64,13 +64,13 @@ describe('Accounts Management - Add New User form', () => {
       success: true,
       data: {
         token: 'fake-jwt',
-        user: { id: 99, name: 'Jane Doe', email: 'jane@efar.com', role: 'quotations_specialist' },
+        user: { id: 99, name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist' },
       },
     });
 
     renderPage();
     await openAddUserModal();
-    await fillForm({ name: 'Jane Doe', email: 'jane@efar.com', password: 'Efar@2026' });
+    await fillForm({ name: 'Jane Doe', email: 'jane@efar.com.sg', password: 'Efar@2026' });
     await submit();
 
     // Success message: this app shows all confirmations via in-app toast (per CLAUDE.md),
@@ -81,12 +81,12 @@ describe('Accounts Management - Add New User form', () => {
     expect(screen.queryByRole('heading', { name: 'Add New User' })).not.toBeInTheDocument();
 
     // New row appears in the User Directory table.
-    expect(screen.getByText('jane@efar.com')).toBeInTheDocument();
+    expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
 
     // Sanity-check the actual request payload axios-mock-adapter captured.
     expect(mock.history.post).toHaveLength(1);
     const body = JSON.parse(mock.history.post[0].data);
-    expect(body).toMatchObject({ name: 'Jane Doe', email: 'jane@efar.com', role: 'quotations_specialist' });
+    expect(body).toMatchObject({ name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist' });
   });
 
   test('server error (500) shows an error message and keeps the form open', async () => {
@@ -98,7 +98,7 @@ describe('Accounts Management - Add New User form', () => {
 
     renderPage();
     await openAddUserModal();
-    await fillForm({ name: 'John Smith', email: 'john@efar.com', password: 'Efar@2026' });
+    await fillForm({ name: 'John Smith', email: 'john@efar.com.sg', password: 'Efar@2026' });
     await submit();
 
     // The message renders twice - once in the modal's inline banner and once in the toast
@@ -129,5 +129,54 @@ describe('Accounts Management - Add New User form', () => {
 
     // Form stays open with the field error visible so the user can correct it.
     expect(screen.getByRole('heading', { name: 'Add New User' })).toBeInTheDocument();
+  });
+
+  test('rejects a non-@efar.com.sg email before calling the backend', async () => {
+    renderPage();
+    await openAddUserModal();
+    await fillForm({ name: 'Outsider', email: 'outsider@gmail.com', password: 'Efar@2026' });
+    await submit();
+
+    // Renders twice - once in the inline field error, once in the toast - so assert
+    // on the count rather than a single findByText match.
+    expect(await screen.findAllByText('Invalid email. Only @efar.com.sg email addresses are allowed.')).toHaveLength(2);
+
+    // Client-side check runs before any backend call is made.
+    expect(mock.history.post).toHaveLength(0);
+
+    // Form stays open so the user can correct the address.
+    expect(screen.getByRole('heading', { name: 'Add New User' })).toBeInTheDocument();
+  });
+
+  test('rejects a password missing a digit or special character before calling the backend', async () => {
+    renderPage();
+    await openAddUserModal();
+    await fillForm({ name: 'Weak Password', email: 'weak@efar.com.sg', password: 'nodigitsorspecials' });
+    await submit();
+
+    const expectedMessage = 'Password must be at least 8 characters long and contain at least one number and one special character.';
+    // Renders twice - once in the inline field error, once in the toast.
+    expect(await screen.findAllByText(expectedMessage)).toHaveLength(2);
+
+    // Client-side check runs before any backend call is made.
+    expect(mock.history.post).toHaveLength(0);
+
+    // Form stays open so the user can correct the password.
+    expect(screen.getByRole('heading', { name: 'Add New User' })).toBeInTheDocument();
+  });
+
+  test('password visibility toggle switches the input between hidden and visible', async () => {
+    renderPage();
+    await openAddUserModal();
+    await fillForm({ password: 'Efar@2026' });
+
+    const passwordInput = screen.getByPlaceholderText('Min. 8 chars, 1 number, 1 special character');
+    expect(passwordInput).toHaveAttribute('type', 'password');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }));
+    expect(passwordInput).toHaveAttribute('type', 'text');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide password' }));
+    expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });
