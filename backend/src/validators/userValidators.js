@@ -5,10 +5,13 @@ const userIdParamSchema = Yup.object({
 })
 
 // Field rules mirror registerSchema in backend/src/validators/index.js exactly, so a
-// value that would be rejected at registration is rejected the same way here.
+// value that would be rejected at registration is rejected the same way here - including
+// the @efar.com.sg domain restriction, since every account is an EFAR staff account.
+const EFAR_EMAIL_DOMAIN = /@efar\.com\.sg$/i
+
 const updateProfileSchema = Yup.object({
   name: Yup.string().min(2).max(100).required('Name is required'),
-  email: Yup.string().email('Must be a valid email').required('Email is required'),
+  email: Yup.string().email('Must be a valid email').matches(EFAR_EMAIL_DOMAIN, 'Email must be an @efar.com.sg address').required('Email is required'),
 })
 
 const updatePasswordSchema = Yup.object({

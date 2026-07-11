@@ -15,7 +15,7 @@ function makeToken(payload) {
   return `${base64url({ alg: 'HS256', typ: 'JWT' })}.${base64url(payload)}.fakesignature`
 }
 
-const CURRENT_USER = { sub: 7, name: 'Sarah Lim', email: 'sarah@efar.com', role: 'ar_specialist', exp: Math.floor(Date.now() / 1000) + 3600 }
+const CURRENT_USER = { sub: 7, name: 'Sarah Lim', email: 'sarah@efar.com.sg', role: 'ar_specialist', exp: Math.floor(Date.now() / 1000) + 3600 }
 
 let mock
 
@@ -47,7 +47,7 @@ describe('SettingsPage - Profile Information card', () => {
   test('pre-fills name and email from the logged-in user', () => {
     renderSettingsPage()
     expect(screen.getByLabelText(/^Name/i)).toHaveValue('Sarah Lim')
-    expect(screen.getByLabelText(/^Email/i)).toHaveValue('sarah@efar.com')
+    expect(screen.getByLabelText(/^Email/i)).toHaveValue('sarah@efar.com.sg')
   })
 
   test('successful update shows a success toast and stores the new token', async () => {
@@ -55,7 +55,7 @@ describe('SettingsPage - Profile Information card', () => {
     const newToken = makeToken({ ...CURRENT_USER, name: 'Sarah Lim-Tan' })
     mock.onPatch('/users/me').reply(200, {
       success: true,
-      data: { token: newToken, user: { id: 7, name: 'Sarah Lim-Tan', email: 'sarah@efar.com', role: 'ar_specialist' } },
+      data: { token: newToken, user: { id: 7, name: 'Sarah Lim-Tan', email: 'sarah@efar.com.sg', role: 'ar_specialist' } },
     })
     renderSettingsPage()
 
@@ -75,7 +75,7 @@ describe('SettingsPage - Profile Information card', () => {
     renderSettingsPage()
 
     await user.clear(screen.getByLabelText(/^Email/i))
-    await user.type(screen.getByLabelText(/^Email/i), 'taken@efar.com')
+    await user.type(screen.getByLabelText(/^Email/i), 'taken@efar.com.sg')
     await user.click(screen.getByRole('button', { name: /Save Profile/i }))
 
     await screen.findByText('An account with this email already exists.')
@@ -127,7 +127,7 @@ describe('SettingsPage - Change Password card', () => {
 describe('AppLayout sidebar entry point', () => {
   test('clicking the user footer navigates to /settings', async () => {
     const user = userEvent.setup()
-    localStorage.setItem('efar_token', makeToken({ sub: 1, name: 'Doris Tan', email: 'doris@efar.com', role: 'managing_director', exp: Math.floor(Date.now() / 1000) + 3600 }))
+    localStorage.setItem('efar_token', makeToken({ sub: 1, name: 'Doris Tan', email: 'doris@efar.com.sg', role: 'managing_director', exp: Math.floor(Date.now() / 1000) + 3600 }))
 
     render(
       <AuthProvider>
