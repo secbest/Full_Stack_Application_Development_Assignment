@@ -4,8 +4,8 @@ const router = require('express').Router()
 const authRoutes = require('./authRoutes')              // POST /auth/register, POST /auth/login
 router.use('/auth', authRoutes)
 
-// const userRoutes = require('./userRoutes')           // GET  /users?role=field_crew (crew list)
-// router.use('/users', userRoutes)
+const userRoutes = require('./userRoutes')              // PATCH /users/me, PATCH /users/me/password (self-service account settings)
+router.use('/users', userRoutes)
 
 // ─── Zheng Bao: Customer Intake & Booking Management ──────────────────────────
 const intakeRoutes = require('./intakeRoutes')
