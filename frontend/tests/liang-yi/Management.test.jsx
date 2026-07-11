@@ -263,3 +263,67 @@ describe('Accounts Management - Remove user confirmation', () => {
     expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
   });
 });
+
+describe('Accounts Management - Edit user', () => {
+  test('clicking Edit opens a pre-filled modal with no password field', async () => {
+    renderPage();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+
+    expect(screen.getByRole('heading', { name: 'Edit User' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Camilla Cruz')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('camilla@efar.com.sg')).toBeInTheDocument();
+
+    // Password resets are handled elsewhere - this modal has no password field at all.
+    expect(screen.queryByPlaceholderText('Min. 8 chars, 1 number, 1 special character')).not.toBeInTheDocument();
+  });
+
+  test('Save Changes updates the row in the table and closes the modal', async () => {
+    renderPage();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    const nameInput = screen.getByDisplayValue('Camilla Cruz');
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, 'Camilla Wong');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByText("Camilla Wong's account was updated.")).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Edit User' })).not.toBeInTheDocument();
+    expect(screen.getByText('Camilla Wong')).toBeInTheDocument();
+    expect(screen.queryByText('Camilla Cruz')).not.toBeInTheDocument();
+
+    // This is a placeholder implementation - no backend call is made yet.
+    expect(mock.history.patch).toHaveLength(0);
+    expect(mock.history.put).toHaveLength(0);
+  });
+
+  test('rejects a non-@efar.com.sg email before saving', async () => {
+    renderPage();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    const emailInput = screen.getByDisplayValue('camilla@efar.com.sg');
+    await userEvent.clear(emailInput);
+    await userEvent.type(emailInput, 'camilla@gmail.com');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findAllByText('Invalid email. Only @efar.com.sg email addresses are allowed.')).toHaveLength(2);
+
+    // Modal stays open; original row is unchanged.
+    expect(screen.getByRole('heading', { name: 'Edit User' })).toBeInTheDocument();
+    expect(screen.getByText('camilla@efar.com.sg')).toBeInTheDocument();
+  });
+
+  test('Cancel closes the modal without saving changes', async () => {
+    renderPage();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    const nameInput = screen.getByDisplayValue('Camilla Cruz');
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, 'Should Not Save');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('heading', { name: 'Edit User' })).not.toBeInTheDocument();
+    expect(screen.getByText('Camilla Cruz')).toBeInTheDocument();
+    expect(screen.queryByText('Should Not Save')).not.toBeInTheDocument();
+  });
+});

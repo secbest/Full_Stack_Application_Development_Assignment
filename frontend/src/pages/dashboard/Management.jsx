@@ -154,6 +154,91 @@ function AddUserModal({ onClose, onAdd }) {
   );
 }
 
+function EditUserModal({ user, onClose, onSave }) {
+  const toast = useToast();
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState(user.role);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [generalError, setGeneralError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleEditSubmit = async () => {
+    const errors = {};
+    if (!name.trim()) errors.name = "Full name is required.";
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+      errors.email = "A valid email is required.";
+    } else if (!trimmedEmail.toLowerCase().endsWith("@efar.com.sg")) {
+      errors.email = "Invalid email. Only @efar.com.sg email addresses are allowed.";
+    }
+
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setGeneralError("");
+      if (errors.email) toast.error(errors.email);
+      return;
+    }
+
+    setFieldErrors({});
+    setGeneralError("");
+    setSubmitting(true);
+    // Placeholder: no backend call yet, just commits the edit to local state so the
+    // UI reflects it immediately. Swap this for a real PATCH /api/users/:id call
+    // (mirroring how Remove already calls DELETE /api/users/:id) once that route exists.
+    onSave({ ...user, name: name.trim(), email: trimmedEmail, role });
+    toast.success(`${name.trim()}'s account was updated.`);
+    setSubmitting(false);
+    onClose();
+  };
+
+  const inp = (hasError) => ({ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: `1px solid ${hasError ? "#EF4444" : "#E2E8F0"}`, background: "#F8FAFC", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", boxSizing: "border-box" });
+  const lbl = { fontSize: 12, fontWeight: 500, color: "#64748B", fontFamily: "'Inter', sans-serif", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: "0.04em" };
+  const fieldErr = { fontSize: 12, color: "#EF4444", fontFamily: "'Inter', sans-serif", margin: "6px 0 0" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="edit-user-heading" style={{ background: "#FFFFFF", borderRadius: 16, width: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.18)", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 id="edit-user-heading" style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Edit User</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 4, borderRadius: 6, display: "flex" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={lbl}>Full Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. John Smith" style={inp(!!fieldErrors.name)} />
+            {fieldErrors.name && <p style={fieldErr}>{fieldErrors.name}</p>}
+          </div>
+          <div>
+            <label style={lbl}>Email Address</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. john@efar.com.sg" style={inp(!!fieldErrors.email)} />
+            {fieldErrors.email && <p style={fieldErr}>{fieldErrors.email}</p>}
+          </div>
+          {/* Password resets are handled elsewhere - this modal only edits profile fields. */}
+          <div>
+            <label style={lbl}>Role</label>
+            <div style={{ position: "relative" }}>
+              <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inp(!!fieldErrors.role), appearance: "none", cursor: "pointer", paddingRight: 36 }}>
+                {ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            {fieldErrors.role && <p style={fieldErr}>{fieldErrors.role}</p>}
+          </div>
+          {generalError && <p role="alert" style={{ fontSize: 12, color: "#EF4444", fontFamily: "'Inter', sans-serif", margin: 0, padding: "10px 12px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA" }}>{generalError}</p>}
+        </div>
+        <div style={{ padding: "16px 24px", borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} disabled={submitting} style={{ height: 36, padding: "0 16px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, fontWeight: 500, color: "#64748B", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>Cancel</button>
+          <button onClick={handleEditSubmit} disabled={submitting} style={{ height: 36, padding: "0 20px", borderRadius: 8, border: "none", background: "#1E293B", fontSize: 13, fontWeight: 600, color: "#FFFFFF", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1, fontFamily: "'Inter', sans-serif" }}>{submitting ? "Saving…" : "Save Changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmDeleteModal({ user, deleting, onCancel, onConfirm }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onCancel}>
@@ -186,21 +271,21 @@ function ConfirmDeleteModal({ user, deleting, onCancel, onConfirm }) {
 }
 
 const ACTION_BUTTON_VARIANTS = {
-  destructive: { color: "#EF4444", hoverBg: "rgba(239,68,68,0.1)" },
-  info:        { color: "#3B82F6", hoverBg: "rgba(59,130,246,0.1)" },
-  neutral:     { color: "#64748B", hoverBg: "#F1F5F9" },
+  destructive: { color: "#EF4444", bg: "rgba(239,68,68,0.08)",  hoverBg: "rgba(239,68,68,0.16)" },
+  info:        { color: "#3B82F6", bg: "rgba(59,130,246,0.08)", hoverBg: "rgba(59,130,246,0.16)" },
+  neutral:     { color: "#64748B", bg: "rgba(100,116,139,0.08)", hoverBg: "rgba(100,116,139,0.16)" },
 };
 
 function ActionButton({ variant, onClick, disabled, children }) {
   const [hover, setHover] = useState(false);
-  const { color, hoverBg } = ACTION_BUTTON_VARIANTS[variant];
+  const { color, bg, hoverBg } = ACTION_BUTTON_VARIANTS[variant];
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ background: !disabled && hover ? hoverBg : "transparent", border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, fontSize: 13, fontWeight: 500, color, fontFamily: "'Inter', sans-serif", padding: "6px 12px", borderRadius: 6, transition: "background 0.15s", whiteSpace: "nowrap" }}
+      style={{ background: !disabled && hover ? hoverBg : bg, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, fontSize: 13, fontWeight: 500, color, fontFamily: "'Inter', sans-serif", padding: "6px 12px", borderRadius: 6, transition: "background 0.15s", whiteSpace: "nowrap" }}
     >
       {children}
     </button>
@@ -216,6 +301,7 @@ function AccountsManagement() {
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [userToEdit, setUserToEdit] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -263,6 +349,14 @@ function AccountsManagement() {
         <AddUserModal
           onClose={() => setShowAddModal(false)}
           onAdd={(u) => setAccounts((prev) => [u, ...prev])}
+        />
+      )}
+
+      {userToEdit && (
+        <EditUserModal
+          user={userToEdit}
+          onClose={() => setUserToEdit(null)}
+          onSave={(updated) => setAccounts((prev) => prev.map((r) => r.email === userToEdit.email ? updated : r))}
         />
       )}
 
@@ -371,6 +465,7 @@ function AccountsManagement() {
                         text lines up with the "Actions" header above rather than sitting
                         12px further right than it. */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 16, marginLeft: -12 }}>
+                      <ActionButton variant="info" onClick={() => setUserToEdit(row)}>Edit</ActionButton>
                       <ActionButton variant="neutral" onClick={() => setUserToDelete(row)}>Remove</ActionButton>
                       {row.status === "Online" && (
                         <ActionButton variant="destructive" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}>Force Logout</ActionButton>
