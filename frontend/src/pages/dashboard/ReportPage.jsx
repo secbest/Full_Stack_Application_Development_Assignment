@@ -17,22 +17,22 @@ const CLIENT_BARS = [
 ];
 
 const SERVICE_DONUT = [
-  { label: "EAS",               value: 38940, color: "#1E293B" },
-  { label: "MTS",               value: 10820, color: "#3B82F6" },
-  { label: "Event Standby",     value: 3100,  color: "#F59E0B" },
-  { label: "Workplace Standby", value: 1350,  color: "#22C55E" },
+  { label: "Emergency Ambulance Services (EAS)", value: 38940, color: "#1E293B" },
+  { label: "Medical Transport Service (MTS)",    value: 10820, color: "#3B82F6" },
+  { label: "Event Standby",                      value: 3100,  color: "#F59E0B" },
+  { label: "Workplace Standby",                  value: 1350,  color: "#22C55E" },
 ];
 
 const REPORT_INVOICES = [
-  { id: "INV-004", bkg: "BKG-004", client: "TTSH",    svc: "MTS", amount: 1200.00, syncedAt: "14 Jun 2026" },
-  { id: "INV-003", bkg: "BKG-003", client: "TTSH",    svc: "EAS", amount: 1570.00, syncedAt: "13 Jun 2026" },
-  { id: "INV-001", bkg: "BKG-001", client: "TTSH",    svc: "EAS", amount: 850.00,  syncedAt: "10 Jun 2026" },
-  { id: "INV-009", bkg: "BKG-009", client: "CGH",     svc: "EAS", amount: 2100.00, syncedAt: "9 Jun 2026"  },
-  { id: "INV-010", bkg: "BKG-010", client: "CGH",     svc: "MTS", amount: 980.00,  syncedAt: "8 Jun 2026"  },
-  { id: "INV-011", bkg: "BKG-011", client: "ABC Corp", svc: "EAS", amount: 3100.00, syncedAt: "7 Jun 2026"  },
+  { id: "INV-004", bkg: "BKG-004", client: "TTSH",    svc: "Medical Transport Service", amount: 1200.00, syncedAt: "14 Jun 2026" },
+  { id: "INV-003", bkg: "BKG-003", client: "TTSH",    svc: "Emergency Ambulance Services", amount: 1570.00, syncedAt: "13 Jun 2026" },
+  { id: "INV-001", bkg: "BKG-001", client: "TTSH",    svc: "Emergency Ambulance Services", amount: 850.00,  syncedAt: "10 Jun 2026" },
+  { id: "INV-009", bkg: "BKG-009", client: "CGH",     svc: "Emergency Ambulance Services", amount: 2100.00, syncedAt: "9 Jun 2026"  },
+  { id: "INV-010", bkg: "BKG-010", client: "CGH",     svc: "Medical Transport Service", amount: 980.00,  syncedAt: "8 Jun 2026"  },
+  { id: "INV-011", bkg: "BKG-011", client: "ABC Corp", svc: "Emergency Ambulance Services", amount: 3100.00, syncedAt: "7 Jun 2026"  },
   { id: "INV-012", bkg: "BKG-012", client: "ABC Corp", svc: "Workplace Standby", amount: 1350.00, syncedAt: "5 Jun 2026" },
-  { id: "INV-013", bkg: "BKG-013", client: "SingHealth", svc: "EAS", amount: 2180.00, syncedAt: "3 Jun 2026" },
-  { id: "INV-014", bkg: "BKG-014", client: "SingHealth", svc: "MTS", amount: 2180.00, syncedAt: "2 Jun 2026" },
+  { id: "INV-013", bkg: "BKG-013", client: "SingHealth", svc: "Emergency Ambulance Services", amount: 2180.00, syncedAt: "3 Jun 2026" },
+  { id: "INV-014", bkg: "BKG-014", client: "SingHealth", svc: "Medical Transport Service", amount: 2180.00, syncedAt: "2 Jun 2026" },
   { id: "INV-015", bkg: "BKG-015", client: "TTSH",    svc: "Event Standby", amount: 3100.00, syncedAt: "1 Jun 2026" },
 ];
 
