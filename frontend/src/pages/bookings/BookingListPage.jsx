@@ -43,8 +43,40 @@ const STATUS_ROW_CLASSES = {
 }
 
 function getRowBackground(booking) {
-  if (!booking.assignedCrew) return 'bg-amber-200/60'
+  if (!booking.assignedCrew) return 'bg-red-200/60'
   return STATUS_ROW_CLASSES[booking.status] || 'bg-white'
+}
+
+// Booking.js documents each stage as driven by a different team: Confirmed (Quotations),
+// In Progress (crew assignment, since there's no separate "Start Job" action yet),
+// Completed (field crew's memo submission), Invoiced (AR's Xero sync). The timeline
+// below reads directly off the real booking.status instead of always showing
+// "Confirmed" as the only reached stage.
+const STATUS_STAGES = ['Confirmed', 'In Progress', 'Completed', 'Invoiced']
+
+// Labels for the Linked Records panel - service_memos.status and invoices.status are
+// both lowercase backend enums.
+const MEMO_STATUS_LABELS = {
+  submitted: 'Submitted - pending AR review',
+  reviewed: 'Reviewed by AR',
+  invoiced: 'Invoiced',
+}
+const INVOICE_STATUS_LABELS = {
+  matched: 'Matched',
+  adjusted: 'Adjusted',
+  approved: 'Approved',
+  synced_to_xero: 'Synced to Xero',
+  failed: 'Failed to sync',
+  unmatched: 'Unmatched',
+}
+
+function getStageNote(stage, booking, reached) {
+  if (!reached) return 'Pending'
+  if (stage === 'Confirmed') return booking.created
+  if (stage === 'In Progress') return booking.assignedCrew ? `Crew assigned: ${booking.assignedCrew}` : 'Reached'
+  if (stage === 'Completed') return 'Service memo submitted by field crew'
+  if (stage === 'Invoiced') return 'Synced to Xero by AR'
+  return 'Reached'
 }
 
 const INITIAL_BOOKINGS = []
@@ -68,6 +100,8 @@ export default function BookingListPage() {
   const [crewMenuOpen, setCrewMenuOpen] = useState(false)
   const [crewSearch, setCrewSearch] = useState('')
   const crewMenuRef = useRef(null)
+  const [viewedIntake, setViewedIntake] = useState(null)
+  const [viewedIntakeLoading, setViewedIntakeLoading] = useState(false)
 
   // Derived counts used for the stats cards at the top of the page.
   const totalCount = bookings.length
@@ -135,6 +169,7 @@ export default function BookingListPage() {
         created: new Date(booking.created_at).toLocaleString('en-SG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
         createdBy: booking.created_by_name || booking.created_by,
         linkedIntake: booking.intake_reference || booking.intake_submission_id,
+        intakeSubmissionId: booking.intake_submission_id,
         client: booking.client_name || 'Unknown client',
         serviceType: SERVICE_TYPE_LABELS[booking.service_type] || booking.service_type,
         tier: booking.service_tier.charAt(0).toUpperCase() + booking.service_tier.slice(1),
@@ -145,6 +180,10 @@ export default function BookingListPage() {
         destination: booking.destination || '',
         internalNotes: booking.notes || '',
         assignedCrew: booking.assigned_crew_name || '',
+        hasMemo: booking.has_memo,
+        memoStatus: booking.memo_status,
+        hasInvoice: booking.has_invoice,
+        invoiceStatus: booking.invoice_status,
       })))
     } catch (err) {
       setAssignmentNotification({ type: 'error', message: 'Failed to load bookings. Please refresh.' })
@@ -181,6 +220,19 @@ export default function BookingListPage() {
     crew.name.toLowerCase().includes(crewSearch.trim().toLowerCase())
   )
 
+  async function handleViewLinkedIntake(intakeSubmissionId) {
+    if (!intakeSubmissionId) return
+    setViewedIntakeLoading(true)
+    try {
+      const { data } = await api.get(`/intake/${intakeSubmissionId}`)
+      setViewedIntake(data.data)
+    } catch (err) {
+      setAssignmentNotification({ type: 'error', message: 'Failed to load linked intake submission.' })
+    } finally {
+      setViewedIntakeLoading(false)
+    }
+  }
+
   async function handleSaveAssignment(bookingRef) {
     try {
       bookingAssignmentSchema.validateSync({ assignedCrew })
@@ -189,9 +241,13 @@ export default function BookingListPage() {
       const selected = crewOptions.find((crew) => crew.name === assignedCrew)
       if (!selected) throw new Error('Selected crew member is invalid.')
 
-      await api.patch(`/bookings/${booking.id}/crew`, { assigned_crew_id: selected.id })
-      setBookings((bs) => bs.map((b) => (b.ref === bookingRef ? { ...b, assignedCrew } : b)))
-      if (selectedBooking && selectedBooking.ref === bookingRef) setSelectedBooking({ ...selectedBooking, assignedCrew })
+      const { data } = await api.patch(`/bookings/${booking.id}/crew`, { assigned_crew_id: selected.id })
+      // Assigning crew to a 'confirmed' booking flips it to 'in_progress' server-side
+      // (see bookingController.updateBookingCrew) - reflect that status change locally too,
+      // so the Status Timeline updates immediately instead of needing a refetch.
+      const status = BOOKING_STATUS_LABELS[data.data.status] || data.data.status
+      setBookings((bs) => bs.map((b) => (b.ref === bookingRef ? { ...b, assignedCrew, status } : b)))
+      if (selectedBooking && selectedBooking.ref === bookingRef) setSelectedBooking({ ...selectedBooking, assignedCrew, status })
       setAssignmentNotification({ type: 'success', message: `Assigned ${assignedCrew} to ${bookingRef}` })
       setCrewMenuOpen(false)
       setCrewSearch('')
@@ -225,7 +281,7 @@ export default function BookingListPage() {
       </div>
 
       {assignmentNotification ? (
-        <div className={`fixed bottom-5 right-5 z-60 w-full max-w-sm rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-2xl transition-all duration-300 ease-out ${notificationVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8'}`}>
+        <div className={`fixed bottom-5 right-5 z-[60] w-full max-w-sm rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-2xl transition-all duration-300 ease-out ${notificationVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8'}`}>
           <div className={`text-sm font-medium ${assignmentNotification.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
             {assignmentNotification.message}
           </div>
@@ -418,41 +474,36 @@ export default function BookingListPage() {
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Linked Intake</div>
-                    <div className="text-sm text-blue-600 underline cursor-pointer">{selectedBooking.linkedIntake}</div>
+                    {selectedBooking.intakeSubmissionId ? (
+                      <button
+                        type="button"
+                        onClick={() => handleViewLinkedIntake(selectedBooking.intakeSubmissionId)}
+                        className="text-sm text-blue-600 underline cursor-pointer hover:text-blue-800"
+                      >
+                        {selectedBooking.linkedIntake}
+                      </button>
+                    ) : (
+                      <div className="text-sm text-slate-400">Not linked to an intake submission</div>
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-xs font-medium uppercase text-slate-500">Status Timeline</div>
                   <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 h-3 w-3 rounded-full bg-slate-900"></div>
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">Confirmed</div>
-                        <div className="text-xs text-slate-500">{selectedBooking.created}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 h-3 w-3 rounded-full border border-slate-300 bg-white"></div>
-                      <div>
-                        <div className="text-sm font-semibold text-slate-500">In Progress</div>
-                        <div className="text-xs text-slate-400">Pending</div>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 h-3 w-3 rounded-full border border-slate-300 bg-white"></div>
-                      <div>
-                        <div className="text-sm font-semibold text-slate-500">Completed</div>
-                        <div className="text-xs text-slate-400">Pending</div>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 h-3 w-3 rounded-full border border-slate-300 bg-white"></div>
-                      <div>
-                        <div className="text-sm font-semibold text-slate-500">Invoiced</div>
-                        <div className="text-xs text-slate-400">Pending</div>
-                      </div>
-                    </div>
+                    {STATUS_STAGES.map((stage) => {
+                      const currentIndex = STATUS_STAGES.indexOf(selectedBooking.status)
+                      const reached = STATUS_STAGES.indexOf(stage) <= currentIndex
+                      return (
+                        <div className="flex items-start gap-3" key={stage}>
+                          <div className={`mt-1 h-3 w-3 rounded-full ${reached ? 'bg-slate-900' : 'border border-slate-300 bg-white'}`}></div>
+                          <div>
+                            <div className={`text-sm font-semibold ${reached ? 'text-slate-900' : 'text-slate-500'}`}>{stage}</div>
+                            <div className={`text-xs ${reached ? 'text-slate-500' : 'text-slate-400'}`}>{getStageNote(stage, selectedBooking, reached)}</div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -550,11 +601,15 @@ export default function BookingListPage() {
                     <div className="mt-2 space-y-2 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <span>Service Memo</span>
-                        <span className="text-slate-500">Not yet submitted</span>
+                        <span className={selectedBooking.hasMemo ? 'font-medium text-slate-900' : 'text-slate-500'}>
+                          {selectedBooking.hasMemo ? (MEMO_STATUS_LABELS[selectedBooking.memoStatus] || selectedBooking.memoStatus) : 'Not yet submitted'}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <span>Invoice</span>
-                        <span className="text-slate-500">Not yet generated</span>
+                        <span className={selectedBooking.hasInvoice ? 'font-medium text-slate-900' : 'text-slate-500'}>
+                          {selectedBooking.hasInvoice ? (INVOICE_STATUS_LABELS[selectedBooking.invoiceStatus] || selectedBooking.invoiceStatus) : 'Not yet generated'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -563,6 +618,85 @@ export default function BookingListPage() {
             </div>
             <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-right">
               <button onClick={() => setSelectedBooking(null)} className="h-10 rounded-md bg-slate-900 px-4 text-sm text-white hover:bg-slate-800">Close</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {viewedIntakeLoading || viewedIntake ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-900">Linked Intake (read-only)</div>
+                {viewedIntake ? (
+                  <div className="text-sm text-slate-500">{viewedIntake.reference_number} · {viewedIntake.status}</div>
+                ) : null}
+              </div>
+              <button onClick={() => setViewedIntake(null)} className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100">
+                <span className="text-xl leading-none">×</span>
+              </button>
+            </div>
+            <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-6 py-6">
+              {viewedIntakeLoading ? (
+                <div className="py-10 text-center text-sm text-slate-400">Loading intake submission…</div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Customer Name</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.customer_name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Organisation</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.organisation || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Email</div>
+                    <div className="text-sm text-slate-900 break-all">{viewedIntake.contact_email}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Phone</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.contact_phone}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Service Type</div>
+                    <div className="text-sm text-slate-900">{SERVICE_TYPE_LABELS[viewedIntake.service_type] || viewedIntake.service_type}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Service Tier</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.service_tier.charAt(0).toUpperCase() + viewedIntake.service_tier.slice(1)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Preferred Date</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.preferred_date}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase text-slate-500">Preferred Time</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.preferred_time}</div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <div className="text-xs font-medium uppercase text-slate-500">Pickup Location</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.pickup_location}</div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <div className="text-xs font-medium uppercase text-slate-500">Destination</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.destination}</div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <div className="text-xs font-medium uppercase text-slate-500">Additional Notes</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.additional_notes || '-'}</div>
+                  </div>
+                  {viewedIntake.rejection_reason ? (
+                    <div className="sm:col-span-2">
+                      <div className="text-xs font-medium uppercase text-slate-500">Rejection Reason</div>
+                      <div className="text-sm text-slate-900">{viewedIntake.rejection_reason}</div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-right">
+              <button onClick={() => setViewedIntake(null)} className="h-10 rounded-md bg-slate-900 px-4 text-sm text-white hover:bg-slate-800">Close</button>
             </div>
           </div>
         </div>
