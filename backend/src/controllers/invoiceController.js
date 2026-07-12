@@ -64,7 +64,7 @@ async function listInvoices(req, res) {
         status: inv.status,
         xero_invoice_id: inv.xero_invoice_id,
         approved_at: inv.approved_at,
-        created_at: inv.created_at,
+        created_at: inv.createdAt,
       })),
       meta: { total: count, page: p, limit: l },
     })
