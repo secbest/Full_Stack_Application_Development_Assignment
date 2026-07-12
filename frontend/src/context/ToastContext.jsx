@@ -3,9 +3,9 @@ import { CheckCircle2, XCircle } from 'lucide-react'
 
 const ToastContext = createContext(null)
 
-// Per CLAUDE.md: all confirmations use in-app toasts (bottom-right, 3s auto-dismiss,
+// Per CLAUDE.md: all confirmations use in-app toasts (bottom-right, auto-dismiss,
 // green success / red error) - there is no email service anywhere in this stack.
-const AUTO_DISMISS_MS = 3000
+const AUTO_DISMISS_MS = 8000
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])

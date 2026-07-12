@@ -35,18 +35,16 @@ cp frontend/.env.example frontend/.env
 
 See the environment variable tables below for what each variable does.
 
-### 3. Create database tables (run once per new environment)
+### 3. Create tables and seed demo data (run once per new environment, or any time before a demo to reset to a known state)
 
 ```bash
 cd backend
-npm run db:sync
+npm run db:setup
 ```
 
-### 4. Seed demo users (run once)
+This chains `db:sync` (create tables) with every seeder in dependency order: `db:seed` (users) -> `db:seed:clients` -> `db:seed:intakes` -> `db:seed:bookings` -> `db:seed:xero` -> `db:seed:pricing`. Each seeder uses `findOrCreate`, so it's safe to re-run.
 
-```bash
-npm run db:seed
-```
+To run an individual step instead (e.g. after adding a new seeder), the underlying scripts are still available separately: `db:sync`, `db:seed`, `db:seed:clients`, `db:seed:intakes`, `db:seed:bookings`, `db:seed:xero`, `db:seed:pricing`.
 
 Demo accounts (password: `Efar@2026`):
 
@@ -58,7 +56,7 @@ Demo accounts (password: `Efar@2026`):
 | camilla@efar.com.sg | Quotations Specialist |
 | ravi@efar.com.sg | Field Crew |
 
-### 5. Start the servers
+### 4. Start the servers
 
 ```bash
 # Terminal 1 - backend

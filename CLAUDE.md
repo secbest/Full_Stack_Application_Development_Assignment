@@ -250,7 +250,7 @@ These override the use case documents where they conflict:
 
 4. **Evacuation vs inconvenience** - The memo wizard must show BOTH: a numeric `evacuation_floors` field (documentation only, does not affect billing) AND a separate boolean toggle "Were stairs or elevator access required?" that maps to `has_inconvenience_fee` (flat $50 surcharge). One does not replace the other.
 
-5. **No email confirmations** - There is no email service in the stack. All confirmations use in-app toast notifications (bottom-right, 3s auto-dismiss, green success / red error). Never show "confirmation email sent" language.
+5. **No email confirmations** - There is no email service in the stack. All confirmations use in-app toast notifications (bottom-right, 8s auto-dismiss, green success / red error). Never show "confirmation email sent" language.
 
 ### Navigation Map Summary
 

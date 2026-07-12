@@ -7,6 +7,21 @@ function buildReference(prefix, nextNumber) {
   return `${prefix}-${String(nextNumber).padStart(5, '0')}`
 }
 
+// Derives the next sequence number from the highest existing reference_number's
+// numeric suffix, not from the row's id. Seeded/manually-inserted rows can leave a
+// gap between id and reference_number (e.g. id 8 holding "EFAR-2026-00010" while id 7
+// holds "EFAR-2026-00009") - deriving from id then collides with an already-used
+// reference_number and every subsequent submission 500s on a unique constraint violation.
+async function nextReferenceNumber(Model, prefix) {
+  const last = await Model.findOne({
+    where: { reference_number: { [Op.like]: `${prefix}-%` } },
+    order: [['reference_number', 'DESC']],
+  })
+  if (!last) return 1
+  const match = last.reference_number.match(/(\d+)$/)
+  return match ? parseInt(match[1], 10) + 1 : 1
+}
+
 async function createIntake(req, res) {
   try {
     const body = await intakeCreateSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
@@ -22,10 +37,7 @@ async function createIntake(req, res) {
       return error(res, 'A similar intake submission was received recently.', 'DUPLICATE_SUBMISSION', 409)
     }
 
-    const last = await IntakeSubmission.findOne({
-      order: [['id', 'DESC']],
-    })
-    const nextNumber = last ? last.id + 1 : 1
+    const nextNumber = await nextReferenceNumber(IntakeSubmission, 'EFAR-2026')
     const intake = await IntakeSubmission.create({
       reference_number: buildReference('EFAR-2026', nextNumber),
       status: 'pending',
@@ -150,8 +162,7 @@ async function confirmIntake(req, res) {
       defaults: { name: clientName, contact_email: clientEmail, contact_phone: intake.contact_phone },
     })
 
-    const lastBooking = await Booking.findOne({ order: [['id', 'DESC']] })
-    const nextBookingNumber = lastBooking ? lastBooking.id + 1 : 1
+    const nextBookingNumber = await nextReferenceNumber(Booking, 'BKG-2026')
     const booking = await Booking.create({
       reference_number: buildReference('BKG-2026', nextBookingNumber),
       intake_submission_id: intake.id,

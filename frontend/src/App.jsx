@@ -16,6 +16,10 @@ import NotFoundPage from './pages/NotFoundPage'
 // Auth
 import LoginPage from './pages/auth/LoginPage'
 
+// Public intake portal (no login required - see design/figma-make-prompts.md's
+// "Public Intake Form Note"; POST /api/intake is unauthenticated on the backend)
+import PublicIntakeFormPage from './pages/intake/PublicIntakeFormPage'
+
 // Managing Director
 import DashboardPage from './pages/dashboard/DashboardPage'
 import ReportPage from './pages/dashboard/ReportPage'
@@ -59,9 +63,10 @@ export default function App() {
   return (
     <Routes>
       {/* ── Public ─────────────────────────────────────────────────────────── */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/403"   element={<ForbiddenPage />} />
-      <Route path="/404"   element={<NotFoundPage />} />
+      <Route path="/login"  element={<LoginPage />} />
+      <Route path="/intake" element={<PublicIntakeFormPage />} />
+      <Route path="/403"    element={<ForbiddenPage />} />
+      <Route path="/404"    element={<NotFoundPage />} />
 
       {/* Dev only */}
       <Route path="/ui-test" element={<UITestPage />} />
