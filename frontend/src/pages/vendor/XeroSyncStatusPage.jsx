@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
 import { useAuth } from '@/hooks'
+import { getRoleHome } from '@/router/routes'
 import { listSyncLogs, retrySyncLog } from '@/api/xero'
 
 const MAX_ATTEMPTS = 3
@@ -65,8 +66,11 @@ export default function XeroSyncStatusPage() {
 
   return (
     <div className="p-6 space-y-4 font-sans">
-      <button onClick={() => navigate(user?.role === 'ap_specialist' ? '/vendor-invoices' : '/invoices')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={14} /> {user?.role === 'ap_specialist' ? 'Back to Vendor Invoices' : 'Back to Invoices'}
+      {/* This page is shared by three roles (managing_director/ap_specialist/ar_specialist),
+          but only ar_specialist can reach '/invoices' - navigating there from any other
+          role 403s. getRoleHome() always resolves to a route the current role can access. */}
+      <button onClick={() => navigate(getRoleHome(user?.role))} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+        <ArrowLeft size={14} /> Back to Dashboard
       </button>
 
       <div className="flex items-center gap-3">
@@ -88,7 +92,7 @@ export default function XeroSyncStatusPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Sync History</CardTitle>
+          <CardTitle>Sync Backlogs</CardTitle>
           <CardDescription>Unified sync log across AP vendor bills and AR invoices. Failed syncs can be retried up to {MAX_ATTEMPTS} times.</CardDescription>
         </CardHeader>
         <CardContent>
