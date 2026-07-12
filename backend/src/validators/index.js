@@ -2,9 +2,13 @@ const Yup = require('yup')
 
 const ROLES = ['managing_director', 'ar_specialist', 'ap_specialist', 'quotations_specialist', 'field_crew']
 
+// Every account on this platform is an EFAR staff account, so registration is
+// restricted to the company's own email domain.
+const EFAR_EMAIL_DOMAIN = /@efar\.com\.sg$/i
+
 const registerSchema = Yup.object({
   name: Yup.string().min(2).max(100).required('Name is required'),
-  email: Yup.string().email('Must be a valid email').required('Email is required'),
+  email: Yup.string().email('Must be a valid email').matches(EFAR_EMAIL_DOMAIN, 'Email must be an @efar.com.sg address').required('Email is required'),
   password: Yup.string().min(8, 'Password must be at least 8 characters').required('Password is required'),
   role: Yup.string().oneOf(ROLES, `Role must be one of: ${ROLES.join(', ')}`).required('Role is required'),
 })

@@ -1,15 +1,21 @@
 const { updateProfileSchema, updatePasswordSchema } = require('../../src/validators/userValidators')
 
 describe('updateProfileSchema', () => {
-  test('accepts a valid name and email', async () => {
+  test('accepts a valid name and an @efar.com.sg email', async () => {
     await expect(
-      updateProfileSchema.validate({ name: 'Jasper Tan', email: 'jasper@efar.com' })
-    ).resolves.toEqual({ name: 'Jasper Tan', email: 'jasper@efar.com' })
+      updateProfileSchema.validate({ name: 'Jasper Tan', email: 'jasper@efar.com.sg' })
+    ).resolves.toEqual({ name: 'Jasper Tan', email: 'jasper@efar.com.sg' })
+  })
+
+  test('accepts an @efar.com.sg email regardless of case', async () => {
+    await expect(
+      updateProfileSchema.validate({ name: 'Jasper Tan', email: 'jasper@EFAR.COM.SG' })
+    ).resolves.toEqual({ name: 'Jasper Tan', email: 'jasper@EFAR.COM.SG' })
   })
 
   test('rejects a missing name', async () => {
     await expect(
-      updateProfileSchema.validate({ email: 'jasper@efar.com' })
+      updateProfileSchema.validate({ email: 'jasper@efar.com.sg' })
     ).rejects.toThrow('Name is required')
   })
 
@@ -17,6 +23,12 @@ describe('updateProfileSchema', () => {
     await expect(
       updateProfileSchema.validate({ name: 'Jasper Tan', email: 'not-an-email' })
     ).rejects.toThrow('Must be a valid email')
+  })
+
+  test('rejects a validly-formatted email outside the efar.com.sg domain', async () => {
+    await expect(
+      updateProfileSchema.validate({ name: 'Jasper Tan', email: 'jasper@gmail.com' })
+    ).rejects.toThrow('Email must be an @efar.com.sg address')
   })
 })
 

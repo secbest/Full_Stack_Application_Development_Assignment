@@ -188,9 +188,9 @@ export default function IntakeQueuePage() {
                     onChange={(e) => setQuery(e.target.value)}
                     onFocus={() => setSearchFocused(true)}
                     onBlur={() => setSearchFocused(false)}
-                    placeholder="Search by name, reference, or organisation…"
-                    className={`w-full h-[38px] pl-[34px] pr-3.5 rounded-lg border bg-white text-xs text-slate-800 outline-none transition-colors ${
-                      searchFocused ? 'border-blue-500' : 'border-slate-200'
+                    placeholder="Search by name, reference, or organisation"
+                    className={`w-full h-[38px] pl-[34px] pr-3.5 rounded-lg border-2 bg-white text-xs text-slate-800 outline-none transition-colors ${
+                      searchFocused ? 'border-blue-500' : 'border-slate-300 hover:border-slate-400'
                     }`}
                   />
                 </div>
@@ -203,24 +203,24 @@ export default function IntakeQueuePage() {
                 </div>
 
                 <div className="relative">
-                  <select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} className="h-[38px] pl-3 pr-8 rounded-lg border bg-white text-xs outline-none appearance-none cursor-pointer text-slate-400">
+                  <select value={serviceTypeFilter} onChange={(e) => setServiceTypeFilter(e.target.value)} className={`h-[38px] pl-3 pr-8 rounded-lg border-2 bg-white text-xs font-medium outline-none appearance-none cursor-pointer transition-colors hover:border-slate-400 focus:border-blue-500 ${serviceTypeFilter ? 'border-slate-300 text-slate-800' : 'border-slate-200 text-slate-500'}`}>
                     <option value="">All Service Types</option>
                     <option value="EAS">EAS</option>
                     <option value="MTS">MTS</option>
                     <option value="Event Standby">Event Standby</option>
                     <option value="Workplace Standby">Workplace Standby</option>
                   </select>
-                  <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
 
                 <div className="relative">
-                  <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className="h-[38px] pl-3 pr-8 rounded-lg border bg-white text-xs outline-none appearance-none cursor-pointer text-slate-400">
+                  <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className={`h-[38px] pl-3 pr-8 rounded-lg border-2 bg-white text-xs font-medium outline-none appearance-none cursor-pointer transition-colors hover:border-slate-400 focus:border-blue-500 ${tierFilter ? 'border-slate-300 text-slate-800' : 'border-slate-200 text-slate-500'}`}>
                     <option value="">All Tiers</option>
                     <option value="Basic">Basic</option>
                     <option value="Advanced">Advanced</option>
                     <option value="Critical">Critical</option>
                   </select>
-                  <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
               </div>
 
@@ -306,7 +306,7 @@ export default function IntakeQueuePage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Email</div>
-                    <div className="text-sm text-slate-900">{selectedIntake.email}</div>
+                    <div className="text-sm text-slate-900 break-all">{selectedIntake.email}</div>
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Phone</div>

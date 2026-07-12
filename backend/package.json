@@ -11,6 +11,7 @@
     "db:seed": "node src/scripts/seed-users.js",
     "db:seed:clients": "node src/scripts/seed-clients.js",
     "db:seed:intakes": "node src/scripts/seed-intakes.js",
+    "db:reset:intakes": "node src/scripts/reset-demo-intakes.js",
     "db:seed:bookings": "node src/scripts/seed-bookings.js",
     "db:seed:xero": "node src/scripts/seed-xero.js",
     "db:seed:pricing": "node src/scripts/seed-pricing.js",
