@@ -306,7 +306,7 @@ export default function IntakeQueuePage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Email</div>
-                    <div className="text-sm text-slate-900">{selectedIntake.email}</div>
+                    <div className="text-sm text-slate-900 break-all">{selectedIntake.email}</div>
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Phone</div>
