@@ -1,5 +1,5 @@
 const { Op } = require('sequelize')
-const { Booking, Client, User, IntakeSubmission } = require('../models')
+const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice } = require('../models')
 const { success, error, notFound, forbidden } = require('../utils')
 const { bookingCrewSchema } = require('../validators')
 
@@ -76,6 +76,8 @@ async function listBookings(req, res) {
         { model: User, as: 'assignedCrew', attributes: ['id', 'name'] },
         { model: User, as: 'createdBy', attributes: ['id', 'name'] },
         { model: IntakeSubmission, attributes: ['reference_number'] },
+        { model: ServiceMemo, attributes: ['id', 'status'] },
+        { model: Invoice, attributes: ['id', 'status'] },
       ],
       order: [['created_at', 'DESC']],
       limit: Number(limit),
@@ -102,8 +104,10 @@ async function listBookings(req, res) {
         created_by: booking.created_by,
         created_by_name: booking.createdBy?.name || null,
         status: booking.status,
-        has_memo: false,
-        has_invoice: false,
+        has_memo: !!booking.ServiceMemo,
+        memo_status: booking.ServiceMemo?.status || null,
+        has_invoice: !!booking.Invoice,
+        invoice_status: booking.Invoice?.status || null,
         memo_pending_hours: null,
         created_at: booking.createdAt,
       })),
@@ -157,7 +161,14 @@ async function updateBookingCrew(req, res) {
       assignedCrewId = crew.id
     }
 
-    await booking.update({ assigned_crew_id: assignedCrewId })
+    const updates = { assigned_crew_id: assignedCrewId }
+    // Assigning crew to a still-'confirmed' booking is what kicks off the job - there's
+    // no separate "Start Job" action for the field crew yet, so this is the one real
+    // trigger for the confirmed -> in_progress transition (see Booking.js status comment).
+    if (assignedCrewId && booking.status === 'confirmed') {
+      updates.status = 'in_progress'
+    }
+    await booking.update(updates)
     await booking.reload({ include: [{ model: User, as: 'assignedCrew', attributes: ['id', 'name'] }] })
 
     return success(res, {

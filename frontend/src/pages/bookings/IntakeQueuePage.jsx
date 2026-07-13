@@ -31,6 +31,18 @@ function formatDate(dateString) {
   return date.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Row tint follows the CLAUDE.md status pattern: Pending/Warning = amber,
+// Confirmed/Info = blue, Rejected/Error = red.
+const STATUS_ROW_CLASSES = {
+  Pending: 'bg-amber-100/70',
+  Confirmed: 'bg-blue-100/70',
+  Rejected: 'bg-red-100/70',
+}
+
+function getRowBackground(intake) {
+  return STATUS_ROW_CLASSES[intake.status] || 'bg-white'
+}
+
 export default function IntakeQueuePage() {
   const [intakes, setIntakes] = useState([])
   const [query, setQuery] = useState('')
@@ -59,7 +71,10 @@ export default function IntakeQueuePage() {
   async function fetchIntakes() {
     setLoading(true)
     try {
-      const { data } = await api.get('/intake', { params: { status: 'pending', limit: 50 } })
+      // status: '' fetches every status - the Pending/Confirmed/Rejected filter pills and
+      // stat cards below are client-side, so a confirmed or rejected submission needs to
+      // stay in `intakes` (with its updated status) instead of disappearing from the list.
+      const { data } = await api.get('/intake', { params: { status: '', limit: 50 } })
       setIntakes(data.data.data.map((item) => ({
         ref: item.reference_number,
         submitted: new Date(item.created_at).toLocaleString('en-SG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -133,7 +148,7 @@ export default function IntakeQueuePage() {
   return (
     <div className="p-6 space-y-4 font-sans">
       {toast ? (
-        <div className={`fixed bottom-5 right-5 z-50 w-full max-w-sm rounded-2xl border px-4 py-3 shadow-2xl transition ${toast.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+        <div className={`fixed bottom-5 right-5 z-[60] w-full max-w-sm rounded-2xl border px-4 py-3 shadow-2xl transition ${toast.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
           {toast.message}
         </div>
       ) : null}
@@ -240,8 +255,8 @@ export default function IntakeQueuePage() {
                           <td colSpan={8} className="px-4 py-16 text-center text-slate-400 text-sm">No intake submissions found.</td>
                         </tr>
                       ) : (
-                        filteredIntakes.map((it, i) => (
-                          <tr key={it.ref} className={`h-12 hover:bg-slate-50/80 transition-colors ${i % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'}`}>
+                        filteredIntakes.map((it) => (
+                          <tr key={it.ref} className={`h-12 hover:bg-slate-100/80 transition-colors ${getRowBackground(it)}`}>
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{it.ref}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{it.name}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{it.org}</span></td>
@@ -277,7 +292,7 @@ export default function IntakeQueuePage() {
                 <div className="text-lg font-semibold text-slate-900">Review Submission</div>
                 <div className="text-sm text-slate-500">{selectedIntake.ref} · {selectedIntake.status}</div>
               </div>
-              <button onClick={() => { setShowDetails(false); setSelectedIntake(null); setActionTier(''); setInternalNotes('') }} className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100">
+              <button onClick={() => { setShowDetails(false); setSelectedIntake(null); setActionTier(''); setInternalNotes(''); setRejectionReason('') }} className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100">
                 <X size={16} />
               </button>
             </div>
@@ -362,9 +377,13 @@ export default function IntakeQueuePage() {
                   <label className="text-xs font-medium uppercase text-slate-500">Internal Notes</label>
                   <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" rows={4} />
                 </div>
+                <div>
+                  <label className="text-xs font-medium uppercase text-slate-500">Rejection Reason</label>
+                  <textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Required if rejecting this submission" className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" rows={3} />
+                </div>
                 <div className="space-y-2">
                   <button onClick={() => { handleConfirmBooking(selectedIntake); }} className="w-full rounded-lg bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-950">Confirm Booking</button>
-                  <button onClick={() => { handleReject(selectedIntake); setShowDetails(false); setSelectedIntake(null); setActionTier(''); setInternalNotes('') }} className="w-full rounded-lg bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600">Reject Submission</button>
+                  <button onClick={() => { handleReject(selectedIntake); }} className="w-full rounded-lg bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600">Reject Submission</button>
                 </div>
               </div>
             </div>

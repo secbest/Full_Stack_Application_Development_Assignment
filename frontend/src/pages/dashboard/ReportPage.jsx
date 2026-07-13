@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Calendar, Download, CheckCircle2, AlertTriangle, XCircle, FileBarChart } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, Download, AlertTriangle, XCircle, FileBarChart } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { listInvoices as fetchInvoices } from '../../api/ar';
 
 const REPORT_TABS = [
   { id: "revenue", label: "Revenue" },
@@ -9,13 +10,10 @@ const REPORT_TABS = [
   { id: "vendor",  label: "Vendor Expenditure" },
 ];
 
-const CLIENT_BARS = [
-  { client: "Tan Tock Seng Hospital", short: "TTSH",      amount: 22400, opacity: 1.0 },
-  { client: "Changi General Hospital",short: "CGH",       amount: 18350, opacity: 0.8 },
-  { client: "ABC Corporation",        short: "ABC Corp",  amount: 9100,  opacity: 0.6 },
-  { client: "SingHealth Group",       short: "SingHealth",amount: 4360,  opacity: 0.4 },
-];
-
+// Revenue by Service Type has no backing field yet - GET /api/invoices doesn't join
+// in the service memo's service_type, so this chart stays illustrative until that's
+// added. Everything else on the Revenue tab (KPIs, Revenue by Client, Invoice
+// Breakdown) is now computed from real fetched invoices - see ReportRevenue below.
 const SERVICE_DONUT = [
   { label: "Emergency Ambulance Services (EAS)", value: 38940, color: "#1E293B" },
   { label: "Medical Transport Service (MTS)",    value: 10820, color: "#3B82F6" },
@@ -23,18 +21,54 @@ const SERVICE_DONUT = [
   { label: "Workplace Standby",                  value: 1350,  color: "#22C55E" },
 ];
 
-const REPORT_INVOICES = [
-  { id: "INV-004", bkg: "BKG-004", client: "TTSH",    svc: "Medical Transport Service", amount: 1200.00, syncedAt: "14 Jun 2026" },
-  { id: "INV-003", bkg: "BKG-003", client: "TTSH",    svc: "Emergency Ambulance Services", amount: 1570.00, syncedAt: "13 Jun 2026" },
-  { id: "INV-001", bkg: "BKG-001", client: "TTSH",    svc: "Emergency Ambulance Services", amount: 850.00,  syncedAt: "10 Jun 2026" },
-  { id: "INV-009", bkg: "BKG-009", client: "CGH",     svc: "Emergency Ambulance Services", amount: 2100.00, syncedAt: "9 Jun 2026"  },
-  { id: "INV-010", bkg: "BKG-010", client: "CGH",     svc: "Medical Transport Service", amount: 980.00,  syncedAt: "8 Jun 2026"  },
-  { id: "INV-011", bkg: "BKG-011", client: "ABC Corp", svc: "Emergency Ambulance Services", amount: 3100.00, syncedAt: "7 Jun 2026"  },
-  { id: "INV-012", bkg: "BKG-012", client: "ABC Corp", svc: "Workplace Standby", amount: 1350.00, syncedAt: "5 Jun 2026" },
-  { id: "INV-013", bkg: "BKG-013", client: "SingHealth", svc: "Emergency Ambulance Services", amount: 2180.00, syncedAt: "3 Jun 2026" },
-  { id: "INV-014", bkg: "BKG-014", client: "SingHealth", svc: "Medical Transport Service", amount: 2180.00, syncedAt: "2 Jun 2026" },
-  { id: "INV-015", bkg: "BKG-015", client: "TTSH",    svc: "Event Standby", amount: 3100.00, syncedAt: "1 Jun 2026" },
-];
+// Real AR invoice statuses (backend VALID_STATUSES in invoiceController.js), mapped to
+// the app's standard status-badge colors (see CLAUDE.md's status badge pattern).
+const INVOICE_STATUS_CONFIG = {
+  matched:        { label: "Matched",   bg: "rgba(59,130,246,0.12)",  color: "#3B82F6" },
+  adjusted:       { label: "Adjusted",  bg: "rgba(245,158,11,0.12)",  color: "#F59E0B" },
+  approved:       { label: "Approved",  bg: "rgba(34,197,94,0.12)",   color: "#22C55E" },
+  synced_to_xero: { label: "Synced",    bg: "rgba(34,197,94,0.12)",   color: "#22C55E" },
+  failed:         { label: "Failed",    bg: "rgba(239,68,68,0.12)",   color: "#EF4444" },
+  unmatched:      { label: "Unmatched", bg: "rgba(148,163,184,0.15)", color: "#64748B" },
+};
+
+// Computes the [startDate, endDate) JS Date range for a given Period button, or reads
+// the custom range straight from the two date inputs when period === "Custom".
+function getPeriodDateRange(period, customFrom, customTo) {
+  const now = new Date();
+  if (period === "This Month") {
+    return {
+      startDate: new Date(now.getFullYear(), now.getMonth(), 1),
+      endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
+    };
+  }
+  if (period === "Last Month") {
+    return {
+      startDate: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      endDate: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999),
+    };
+  }
+  if (period === "This Quarter") {
+    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+    return {
+      startDate: new Date(now.getFullYear(), quarterStartMonth, 1),
+      endDate: new Date(now.getFullYear(), quarterStartMonth + 3, 0, 23, 59, 59, 999),
+    };
+  }
+  if (period === "This Year") {
+    return {
+      startDate: new Date(now.getFullYear(), 0, 1),
+      endDate: new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999),
+    };
+  }
+  if (period === "Custom") {
+    return {
+      startDate: customFrom ? new Date(customFrom) : null,
+      endDate: customTo ? new Date(`${customTo}T23:59:59.999`) : null,
+    };
+  }
+  return { startDate: null, endDate: null };
+}
 
 const BILLING_ROWS = [
   { bkg: "BKG-008", jobDate: "5 Jul 2026",  memoAt: "5 Jul 2026",  invAt: "6 Jul 2026",  syncAt: "6 Jul 2026",  days: 1 },
@@ -75,12 +109,19 @@ function BillingStatusBadge({ status }) {
   );
 }
 
-function getReportTableData(reportTab) {
+function getReportTableData(reportTab, invoices) {
   if (reportTab === "revenue") {
     return {
       title: "Revenue Report",
-      headers: ["Invoice ID", "Booking Ref", "Client", "Service Type", "Total Amount", "Status", "Synced At"],
-      rows: REPORT_INVOICES.map((inv) => [inv.id, inv.bkg, inv.client, inv.svc, `$${inv.amount.toFixed(2)}`, "Synced", inv.syncedAt]),
+      headers: ["Invoice ID", "Booking Ref", "Client", "Total Amount", "Status", "Created At"],
+      rows: (invoices || []).map((inv) => [
+        `INV-${inv.id}`,
+        inv.booking_reference || "—",
+        inv.client_name || "—",
+        `$${Number(inv.total_amount).toFixed(2)}`,
+        INVOICE_STATUS_CONFIG[inv.status]?.label || inv.status,
+        new Date(inv.created_at).toLocaleDateString(),
+      ]),
     };
   }
   if (reportTab === "billing") {
@@ -109,8 +150,8 @@ function escapeHtml(val) {
   return String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function exportReportCSV(reportTab, period) {
-  const data = getReportTableData(reportTab);
+function exportReportCSV(reportTab, period, invoices) {
+  const data = getReportTableData(reportTab, invoices);
   if (!data) {
     alert("No data available to export for this report yet.");
     return;
@@ -127,8 +168,8 @@ function exportReportCSV(reportTab, period) {
   URL.revokeObjectURL(url);
 }
 
-function exportReportPDF(reportTab, period) {
-  const data = getReportTableData(reportTab);
+function exportReportPDF(reportTab, period, invoices) {
+  const data = getReportTableData(reportTab, invoices);
   if (!data) {
     alert("No data available to export for this report yet.");
     return;
@@ -166,10 +207,10 @@ function exportReportPDF(reportTab, period) {
   }
 }
 
-function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab }) {
+function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading }) {
   const [dfFocus, setDfFocus] = useState(false);
   const [dtFocus, setDtFocus] = useState(false);
-  const exportDisabled = !getReportTableData(reportTab);
+  const exportDisabled = !getReportTableData(reportTab, invoices) || (reportTab === "revenue" && invoicesLoading);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 16px", flexWrap: "wrap" }}>
@@ -201,13 +242,13 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
       )}
       <div style={{ flex: 1 }} />
       <div style={{ display: "flex", gap: 8 }}>
-        <button disabled={exportDisabled} onClick={() => exportReportCSV(reportTab, period)}
+        <button disabled={exportDisabled} onClick={() => exportReportCSV(reportTab, period, invoices)}
           style={{ height: 36, padding: "0 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#FFFFFF", color: "#1E293B", fontSize: 13, fontWeight: 500, cursor: exportDisabled ? "not-allowed" : "pointer", opacity: exportDisabled ? 0.5 : 1, fontFamily: "'Inter', sans-serif", display: "flex", alignItems: "center", gap: 6 }}
           onMouseEnter={(e) => { if (!exportDisabled) e.currentTarget.style.borderColor = "#1E293B"; }}
           onMouseLeave={(e) => e.currentTarget.style.borderColor = "#E2E8F0"}>
           <Download size={13} /> Export CSV
         </button>
-        <button disabled={exportDisabled} onClick={() => exportReportPDF(reportTab, period)}
+        <button disabled={exportDisabled} onClick={() => exportReportPDF(reportTab, period, invoices)}
           style={{ height: 36, padding: "0 14px", borderRadius: 8, background: "#1E293B", color: "#FFFFFF", border: "none", fontSize: 13, fontWeight: 600, cursor: exportDisabled ? "not-allowed" : "pointer", opacity: exportDisabled ? 0.5 : 1, fontFamily: "'Inter', sans-serif", display: "flex", alignItems: "center", gap: 6, transition: "background 0.12s" }}
           onMouseEnter={(e) => { if (!exportDisabled) e.currentTarget.style.background = "#0F172A"; }}
           onMouseLeave={(e) => e.currentTarget.style.background = "#1E293B"}>
@@ -218,18 +259,54 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
   );
 }
 
-function ReportRevenue() {
+function ReportRevenue({ invoices, loading, error, period }) {
   const [activeClientIdx, setActiveClientIdx] = useState(null);
   const [invPage, setInvPage] = useState(1);
   const PER_PAGE = 10;
-  const totalRevenue = SERVICE_DONUT.reduce((s, d) => s + d.value, 0);
 
-  const filteredInvoices = activeClientIdx !== null
-    ? REPORT_INVOICES.filter((inv) => inv.client === CLIENT_BARS[activeClientIdx].short || (CLIENT_BARS[activeClientIdx].short === "TTSH" && inv.client === "TTSH"))
-    : REPORT_INVOICES;
+  // A newly-fetched invoice set (new period/date range) may no longer match the
+  // previously selected client bar or page number - reset both rather than risk
+  // landing on an empty page or a filter that silently matches nothing.
+  useEffect(() => {
+    setActiveClientIdx(null);
+    setInvPage(1);
+  }, [invoices]);
 
   const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
   const thS = { padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", fontFamily: "'Inter', sans-serif" };
+
+  if (loading) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Loading revenue data…</p></div>;
+  }
+  if (error) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif" }}>{error}</p></div>;
+  }
+
+  const totalRevenue = invoices.reduce((s, inv) => s + Number(inv.total_amount), 0);
+  const avgInvoiceValue = invoices.length ? totalRevenue / invoices.length : 0;
+
+  // Revenue by Client - grouped live from the fetched invoices (real client_name),
+  // sorted descending so the biggest bar is always first.
+  const clientTotals = new Map();
+  invoices.forEach((inv) => {
+    const name = inv.client_name || "Unknown Client";
+    clientTotals.set(name, (clientTotals.get(name) || 0) + Number(inv.total_amount));
+  });
+  const clientBars = [...clientTotals.entries()]
+    .map(([client, amount]) => ({ client, amount }))
+    .sort((a, b) => b.amount - a.amount);
+  const maxClientAmt = Math.max(1, ...clientBars.map((c) => c.amount));
+
+  const largestClient = clientBars[0];
+  const largestClientInvoiceCount = largestClient
+    ? invoices.filter((inv) => (inv.client_name || "Unknown Client") === largestClient.client).length
+    : 0;
+
+  const filteredInvoices = activeClientIdx !== null
+    ? invoices.filter((inv) => (inv.client_name || "Unknown Client") === clientBars[activeClientIdx].client)
+    : invoices;
+
+  const totalRevenueDonut = SERVICE_DONUT.reduce((s, d) => s + d.value, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -237,20 +314,19 @@ function ReportRevenue() {
       {/* Row 1: KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
-          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Revenue (This Quarter)</p>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>$54,210.00</span>
-          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif", marginBottom: 6 }}>Across 38 invoices.</p>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 5, background: "rgba(34,197,94,0.10)", color: "#22C55E", fontSize: 12, fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>↑ +8% vs last quarter</span>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Revenue ({period})</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>${totalRevenue.toFixed(2)}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Across {invoices.length} invoice{invoices.length === 1 ? "" : "s"}.</p>
         </div>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Average Invoice Value</p>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>$1,426.58</span>
-          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Based on synced invoices only.</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>${avgInvoiceValue.toFixed(2)}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Across all statuses in this period.</p>
         </div>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Largest Client This Period</p>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4, lineHeight: 1.2 }}>Tan Tock Seng Hospital</span>
-          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>$22,400.00 · 14 invoices</p>
+          <span style={{ fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4, lineHeight: 1.2 }}>{largestClient ? largestClient.client : "—"}</span>
+          <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{largestClient ? `$${largestClient.amount.toFixed(2)} · ${largestClientInvoiceCount} invoice${largestClientInvoiceCount === 1 ? "" : "s"}` : "No invoices in this period."}</p>
         </div>
       </div>
 
@@ -269,26 +345,27 @@ function ReportRevenue() {
             )}
           </div>
           <div style={{ padding: "20px 24px" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {(() => {
-                const maxAmt = Math.max(...CLIENT_BARS.map((c) => c.amount));
-                return CLIENT_BARS.map((entry, i) => {
+            {clientBars.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>No invoices in this period.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {clientBars.map((entry, i) => {
                   const isActive = activeClientIdx === i;
                   const isDimmed = activeClientIdx !== null && !isActive;
-                  const pct = (entry.amount / maxAmt) * 100;
+                  const pct = (entry.amount / maxClientAmt) * 100;
                   return (
-                    <div key={i} onClick={() => setActiveClientIdx(activeClientIdx === i ? null : i)}
+                    <div key={entry.client} onClick={() => setActiveClientIdx(activeClientIdx === i ? null : i)}
                       style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                      <span style={{ width: 80, fontSize: 12, color: isDimmed ? "#CBD5E1" : "#64748B", fontFamily: "'Inter', sans-serif", textAlign: "right", flexShrink: 0, transition: "color 0.15s" }}>{entry.short}</span>
+                      <span style={{ width: 90, fontSize: 12, color: isDimmed ? "#CBD5E1" : "#64748B", fontFamily: "'Inter', sans-serif", textAlign: "right", flexShrink: 0, transition: "color 0.15s", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.client}</span>
                       <div style={{ flex: 1, background: "#F1F5F9", borderRadius: 6, height: 28, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 6, background: isDimmed ? "rgba(30,41,59,0.15)" : isActive ? "#1E293B" : `rgba(30,41,59,${entry.opacity})`, transition: "background 0.15s, width 0.3s" }} />
+                        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 6, background: isDimmed ? "rgba(30,41,59,0.15)" : isActive ? "#1E293B" : "rgba(30,41,59,0.85)", transition: "background 0.15s, width 0.3s" }} />
                       </div>
                       <span style={{ width: 70, fontSize: 12, fontWeight: 600, color: isDimmed ? "#CBD5E1" : "#1E293B", fontFamily: "'Inter', sans-serif", flexShrink: 0, transition: "color 0.15s" }}>${(entry.amount / 1000).toFixed(1)}k</span>
                     </div>
                   );
-                });
-              })()}
-            </div>
+                })}
+              </div>
+            )}
             <p style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif", marginTop: 14, textAlign: "center" }}>Click a bar to filter the invoice table below</p>
           </div>
         </div>
@@ -297,6 +374,7 @@ function ReportRevenue() {
         <div style={{ ...cardBase, padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Revenue by Service Type</h2>
+            <span style={{ fontSize: 11, color: "#94A3B8", fontStyle: "italic", fontFamily: "'Inter', sans-serif" }}>Illustrative - per-invoice service type isn't in the API response yet</span>
           </div>
           <div style={{ padding: "16px 24px" }}>
             <div style={{ height: 180 }}>
@@ -318,7 +396,7 @@ function ReportRevenue() {
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${d.value.toLocaleString()}</span>
-                    <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{Math.round((d.value / totalRevenue) * 100)}%</span>
+                    <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{Math.round((d.value / totalRevenueDonut) * 100)}%</span>
                   </div>
                 </div>
               ))}
@@ -337,33 +415,39 @@ function ReportRevenue() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-                {["Invoice ID", "Booking Ref", "Client", "Service Type", "Total Amount", "Status", "Synced At"].map((col) => (
+                {["Invoice ID", "Booking Ref", "Client", "Total Amount", "Status", "Created At"].map((col) => (
                   <th key={col} style={thS}>{col}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filteredInvoices.slice((invPage - 1) * PER_PAGE, invPage * PER_PAGE).map((inv, i) => (
-                <tr key={inv.id} style={{ borderBottom: i < Math.min(filteredInvoices.length, PER_PAGE) - 1 ? "1px solid #F1F5F9" : "none", height: 48, background: i % 2 === 1 ? "#F8FAFC" : "#FFFFFF" }}>
-                  <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{inv.id}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{inv.bkg}</td>
-                  <td style={{ padding: "0 16px", fontSize: 14, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{inv.client}</td>
-                  <td style={{ padding: "0 16px", fontSize: 14, color: "#1E293B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{inv.svc}</td>
-                  <td style={{ padding: "0 16px", fontSize: 14, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>${inv.amount.toFixed(2)}</td>
-                  <td style={{ padding: "0 16px" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: "rgba(34,197,94,0.12)", color: "#22C55E", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>
-                      <CheckCircle2 size={11} strokeWidth={2.5} /> Synced ✓
-                    </span>
-                  </td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{inv.syncedAt}</td>
+              {filteredInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: "40px 16px", textAlign: "center", fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>No invoices in this period.</td>
                 </tr>
-              ))}
+              ) : filteredInvoices.slice((invPage - 1) * PER_PAGE, invPage * PER_PAGE).map((inv, i) => {
+                const statusInfo = INVOICE_STATUS_CONFIG[inv.status] || { label: inv.status, bg: "rgba(148,163,184,0.15)", color: "#64748B" };
+                return (
+                  <tr key={inv.id} style={{ borderBottom: i < Math.min(filteredInvoices.length, PER_PAGE) - 1 ? "1px solid #F1F5F9" : "none", height: 48, background: i % 2 === 1 ? "#F8FAFC" : "#FFFFFF" }}>
+                    <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>INV-{inv.id}</td>
+                    <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{inv.booking_reference || "—"}</td>
+                    <td style={{ padding: "0 16px", fontSize: 14, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{inv.client_name || "—"}</td>
+                    <td style={{ padding: "0 16px", fontSize: 14, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>${Number(inv.total_amount).toFixed(2)}</td>
+                    <td style={{ padding: "0 16px" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: statusInfo.bg, color: statusInfo.color, fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>
+                        {statusInfo.label}
+                      </span>
+                    </td>
+                    <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{new Date(inv.created_at).toLocaleDateString()}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         <div style={{ padding: "12px 16px", borderTop: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>
-            Showing {Math.min((invPage - 1) * PER_PAGE + 1, filteredInvoices.length)}–{Math.min(invPage * PER_PAGE, filteredInvoices.length)} of {filteredInvoices.length} invoices · <strong>Total: $54,210.00</strong>
+            Showing {filteredInvoices.length === 0 ? 0 : Math.min((invPage - 1) * PER_PAGE + 1, filteredInvoices.length)}–{Math.min(invPage * PER_PAGE, filteredInvoices.length)} of {filteredInvoices.length} invoices · <strong>Total: ${filteredInvoices.reduce((s, inv) => s + Number(inv.total_amount), 0).toFixed(2)}</strong>
           </span>
           <div style={{ display: "flex", gap: 4 }}>
             <button disabled={invPage === 1} onClick={() => setInvPage((p) => p - 1)}
@@ -373,7 +457,8 @@ function ReportRevenue() {
             <button style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid #1E293B", background: "#1E293B", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ fontSize: 12, color: "#FFF", fontFamily: "'Inter', sans-serif" }}>{invPage}</span>
             </button>
-            <button style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={() => setInvPage((p) => p + 1)}>
+            <button disabled={invPage * PER_PAGE >= filteredInvoices.length} onClick={() => setInvPage((p) => p + 1)}
+              style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: invPage * PER_PAGE >= filteredInvoices.length ? "not-allowed" : "pointer", opacity: invPage * PER_PAGE >= filteredInvoices.length ? 0.4 : 1 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </div>
@@ -491,6 +576,47 @@ export default function ReportsScreen() {
   const [period, setPeriod] = useState("This Quarter");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [dateRange, setDateRange] = useState(() => getPeriodDateRange("This Quarter"));
+  const [invoices, setInvoices] = useState([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [invoicesError, setInvoicesError] = useState("");
+
+  // Recompute the concrete start/end Date objects whenever the active period button
+  // (or, for Custom, either date input) changes.
+  useEffect(() => {
+    setDateRange(getPeriodDateRange(period, dateFrom, dateTo));
+  }, [period, dateFrom, dateTo]);
+
+  // Fetch real AR invoices for the selected range from GET /api/invoices, which already
+  // supports from_date/to_date filtering via Sequelize's Op.gte/Op.lte on created_at
+  // (see backend/src/controllers/invoiceController.js) - no need for a new endpoint.
+  // Skipped while a Custom range is only half-picked, so it doesn't fire an unfiltered request.
+  useEffect(() => {
+    if (period === "Custom" && (!dateRange.startDate || !dateRange.endDate)) return;
+
+    let cancelled = false;
+    setInvoicesLoading(true);
+    setInvoicesError("");
+    fetchInvoices({
+      from_date: dateRange.startDate ? dateRange.startDate.toISOString() : undefined,
+      to_date: dateRange.endDate ? dateRange.endDate.toISOString() : undefined,
+      limit: 100,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setInvoices(res.data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setInvoicesError(err.response?.data?.message || "Failed to load revenue data.");
+        setInvoices([]);
+      })
+      .finally(() => {
+        if (!cancelled) setInvoicesLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [dateRange, period]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: 32, background: "#F8FAFC", minHeight: "100%" }}>
@@ -511,10 +637,10 @@ export default function ReportsScreen() {
       </div>
 
       {/* Period bar */}
-      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} />
+      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} />
 
       {/* Tab content */}
-      {reportTab === "revenue" && <ReportRevenue />}
+      {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} />}
       {reportTab === "billing" && <ReportBillingCycle />}
       {reportTab === "leakage" && <ReportLeakage />}
       {reportTab === "vendor" && <ExpenseSummary />}
