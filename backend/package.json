@@ -15,7 +15,9 @@
     "db:seed:bookings": "node src/scripts/seed-bookings.js",
     "db:seed:xero": "node src/scripts/seed-xero.js",
     "db:seed:pricing": "node src/scripts/seed-pricing.js",
-    "db:setup": "npm run db:sync && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing"
+    "db:seed:vendor-invoice": "node src/scripts/seed-sample-vendor-invoice.js",
+    "db:reset:vendor-invoice-sync": "node src/scripts/reset-demo-vendor-invoice-sync.js",
+    "db:setup": "npm run db:sync && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing && npm run db:seed:vendor-invoice && npm run db:reset:vendor-invoice-sync"
   },
   "dependencies": {
     "@google/generative-ai": "^0.17.1",
