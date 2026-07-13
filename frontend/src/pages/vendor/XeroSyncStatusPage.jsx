@@ -7,8 +7,6 @@ import { History, RefreshCw, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
-import { useAuth } from '@/hooks'
-import { getRoleHome } from '@/router/routes'
 import { listSyncLogs, retrySyncLog } from '@/api/xero'
 
 const MAX_ATTEMPTS = 3
@@ -18,7 +16,6 @@ const ENTITY_LABELS = { vendor_invoice: 'AP - Vendor Invoice', ar_invoice: 'AR I
 export default function XeroSyncStatusPage() {
   const toast = useToast()
   const navigate = useNavigate()
-  const { user } = useAuth()
   const [rows, setRows] = useState([])
   const [xeroConnected, setXeroConnected] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -66,11 +63,8 @@ export default function XeroSyncStatusPage() {
 
   return (
     <div className="p-6 space-y-4 font-sans">
-      {/* This page is shared by three roles (managing_director/ap_specialist/ar_specialist),
-          but only ar_specialist can reach '/invoices' - navigating there from any other
-          role 403s. getRoleHome() always resolves to a route the current role can access. */}
-      <button onClick={() => navigate(getRoleHome(user?.role))} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={14} /> Back to Dashboard
+      <button onClick={() => navigate('/settings/xero')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+        <ArrowLeft size={14} /> Back to Xero Connection
       </button>
 
       <div className="flex items-center gap-3">
