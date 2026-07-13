@@ -2,14 +2,21 @@
 // Invoice Detail (screen 10): line items (Auto/Manual badges), adjustments, approve & sync, retry.
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, UploadCloud, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, UploadCloud, RefreshCw, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
 import { getInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
+import { SURCHARGE_TYPES } from '@/validation/contractValidation'
+import { SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS } from '@/lib/contractLabels'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
 const LOCKED = ['approved', 'synced_to_xero']
+// 'other' isn't a real surcharge_type - it just tells the form to leave description/
+// unit_price blank for manual entry instead of auto-filling from the published schedule.
+const ADJUSTMENT_TYPE_OPTIONS = [...SURCHARGE_TYPES, 'other']
+const ADJUSTMENT_TYPE_LABELS = { ...SURCHARGE_TYPE_LABELS, other: 'Other (custom)' }
 
 export default function InvoiceDetailPage() {
   const { id } = useParams()
@@ -19,6 +26,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [adjustmentType, setAdjustmentType] = useState('')
   const [form, setForm] = useState({ description: '', quantity: '1', unit_price: '' })
 
   async function load() {
@@ -36,6 +44,18 @@ export default function InvoiceDetailPage() {
 
   const locked = invoice && LOCKED.includes(invoice.status)
 
+  // Picking a published surcharge type pre-fills description + its default amount as a
+  // starting point (still editable below) - "other" leaves both blank for a genuinely
+  // ad-hoc charge, since this form exists precisely for cases the pricing engine didn't cover.
+  function handleTypeChange(type) {
+    setAdjustmentType(type)
+    if (type === 'other') {
+      setForm({ description: '', quantity: '1', unit_price: '' })
+    } else {
+      setForm({ description: SURCHARGE_TYPE_LABELS[type], quantity: '1', unit_price: String(SURCHARGE_DEFAULT_AMOUNTS[type] ?? '') })
+    }
+  }
+
   async function handleAdd() {
     const quantity = Number(form.quantity)
     const unit_price = Number(form.unit_price)
@@ -48,6 +68,7 @@ export default function InvoiceDetailPage() {
       await addLineItem(invoice.id, { description: form.description.trim(), quantity, unit_price })
       toast.success('Manual adjustment added.')
       setForm({ description: '', quantity: '1', unit_price: '' })
+      setAdjustmentType('')
       setAdding(false)
       await load()
     } catch (err) {
@@ -55,6 +76,12 @@ export default function InvoiceDetailPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function handleCloseAdjustment() {
+    setAdding(false)
+    setAdjustmentType('')
+    setForm({ description: '', quantity: '1', unit_price: '' })
   }
 
   async function handleDelete(itemId) {
@@ -147,16 +174,31 @@ export default function InvoiceDetailPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Line Items</CardTitle>
             {!locked && (
-              <button onClick={() => setAdding((v) => !v)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium">
-                <Plus size={12} /> Add Adjustment
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setAdding((v) => !v)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium">
+                  <Plus size={12} /> Add Adjustment
+                </button>
+                {adding && (
+                  <button onClick={handleCloseAdjustment} className="inline-flex items-center gap-1 h-8 px-3 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs font-medium">
+                    <X size={12} /> Close
+                  </button>
+                )}
+              </div>
             )}
           </CardHeader>
           <CardContent>
             {locked && <div className="mb-3 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-500">This invoice is {invoice.status.replace(/_/g, ' ')} - line items are locked.</div>}
 
             {adding && !locked && (
-              <div className="mb-3 grid grid-cols-[2fr_0.7fr_0.9fr_auto] gap-2 items-end rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-3 grid grid-cols-[1.3fr_1.7fr_0.7fr_0.9fr_auto] gap-2 items-end rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <label className="text-xs text-slate-500">Type
+                  <Select value={adjustmentType} onValueChange={handleTypeChange}>
+                    <SelectTrigger className="mt-1 h-9"><SelectValue placeholder="Select…" /></SelectTrigger>
+                    <SelectContent>
+                      {ADJUSTMENT_TYPE_OPTIONS.map((t) => <SelectItem key={t} value={t}>{ADJUSTMENT_TYPE_LABELS[t]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
                 <label className="text-xs text-slate-500">Description
                   <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
                 </label>
