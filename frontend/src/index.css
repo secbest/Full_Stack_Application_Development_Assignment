@@ -53,6 +53,13 @@
   * {
     @apply border-border;
   }
+  /* Base font size: the whole rem-based type scale keys off this root value.
+     We scale it fluidly from 14px on smaller laptop screens up to 16px on large
+     desktops - ~14px at 1024px wide, hitting 16px around 1920px - so text stays
+     comfortable on both without touching individual utility classes. */
+  html {
+    font-size: clamp(14px, 0.223vw + 11.72px, 16px);
+  }
   body {
     @apply bg-background text-foreground;
   }
