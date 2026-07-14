@@ -18,6 +18,10 @@ frontend/build/
 # Accidental root-level lockfile
 /package-lock.json
 
+# Accidental clone of the anthropics/skills marketplace repo - belongs in
+# ~/.claude/skills, never in the project tree
+backend/skills/
+
 # Logs
 *.log
 npm-debug.log*

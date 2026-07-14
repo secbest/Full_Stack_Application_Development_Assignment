@@ -1,3 +1,315 @@
+commit 7441677294b82ee20761e311e6ea006941cd8a68
+Merge: 4dbb216 da8864b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 05:40:47 2026 +0800
+
+    Merge branch 'feature/sidebar-two-line-nav-and-font-sizing'
+    
+    Collapsible sidebar with animation, two-line nav list items, and
+    fluid 14-16px font sizing across laptop/desktop widths.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit da8864b4e0cfcb732e461f4d58b9a7b28fd6f395
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 05:40:26 2026 +0800
+
+    Add collapsible sidebar, two-line nav items, and fluid font sizing
+    
+    - Sidebar collapses to a 68px icon-only rail with a smooth width
+      transition; state persists in localStorage. Collapsed links show
+      hover tooltips; footer condenses to user initial + icon actions.
+    - Nav links become Material-style two-line list items (label + a
+      secondary supporting line driven by a new `sub` field on NAV_ROUTES).
+    - Root font-size scales fluidly from 14px to 16px across laptop-to-
+      desktop widths via clamp(), keeping body text comfortable.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 4dbb216075d995562f1106cc85e716bc3ffc5521
+Merge: 53d54f9 3983760
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 12:26:35 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 53d54f9bb952149b614df7c80c51663202eb4f92
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 12:25:36 2026 +0800
+
+    Hotfix
+
+commit aa0eb3d4dc1e08da67a4883b789a19019c727446
+Merge: 3ba9d45 ec5349c
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 11:47:42 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 3ba9d459c0ca97566446ce17079c98799cacc946
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 11:47:36 2026 +0800
+
+    hotfix/invoice
+
+commit 42514109580ad3d78657c8d7e3a1235bbc6105c9
+Merge: 17ce1e8 a33522e
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 21:20:05 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 17ce1e80d4ba46bba937e045f4be7055f1e54df2
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 21:19:14 2026 +0800
+
+    Add public intake form, fix reference-number collision, add db:setup
+    
+    - Build the missing public /intake form page (no auth) - PublicIntakeFormPage,
+      intake.js API helper, intakeValidation.js Yup schema - wired against the
+      already-working POST /api/intake endpoint and routed outside ProtectedRoute.
+    - Fix a live bug in intakeController.js: buildReference() derived the next
+      reference_number from the row's id instead of the highest existing
+      reference_number, so any gap between the two (seeded data has one) caused
+      a unique-constraint collision and a 500 on every subsequent submission.
+      Added nextReferenceNumber() to derive it from the reference_number sequence
+      instead, fixing both intake submissions and bookings.
+    - Bump toast auto-dismiss from 3s to 8s (ToastContext.jsx), matching CLAUDE.md.
+    - Add backend db:setup script chaining db:sync + all seeders in dependency
+      order for one-command pre-demo setup; documented in deployment.md.
+    - Update interim-review-demo-script.md to reflect the intake form now being
+      live, the db:setup shortcut, and leftover QA test rows to avoid demoing.
+
+commit d19926e39f1671cc8730ec5cda8548511666ffda
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 00:06:25 2026 +0800
+
+    Fix xeroController.retrySync mishandling AR invoice sync retries
+    
+    - retrySync always called pushBill() (the AP/ACCPAY path) regardless of
+      entity_type, using a fake placeholder object for ar_invoice logs instead of
+      the real Invoice, and never updated the real invoice's status either way.
+      Now routes ar_invoice through pushArInvoice with the real Invoice/Client/
+      line items, mirroring invoiceController.retryXero's correct behavior.
+    - resolveEntityReference read Invoice.invoice_number, a column that doesn't
+      exist on that model, so the AR reference always silently fell back. Now
+      resolves the client name via the Client association instead.
+    - Add xeroSyncRetry.test.js: no controller-level test existed for
+      xeroController at all before this, which is how both bugs shipped unnoticed.
+
+commit a6daec8140ee5c23da184a27b10b3ee3e4c80073
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 23:21:34 2026 +0800
+
+    Add QA test-case doc, REST Client suite, and InvoiceDetailPage test
+    
+    - design/kwan-hua/test-cases.md: manual test-plan tables (backend + frontend)
+      derived from use-cases.md and api-documentation.md for the Xero Foundation/
+      OCR/AP Processing feature area.
+    - backend/xero-ap.http: REST Client requests covering all 14 endpoints in that
+      same API doc, with chained login tokens per role.
+    - frontend/tests/kwan-hua/InvoiceDetailPage.test.jsx: axios-mock-adapter tests
+      for the invoice line-item add flow (201 success, 500 server error, 400
+      validation error surfaced via toast).
+
+commit f3c0c7b547ea96f2f0cc5f3b916935c936ae6cea
+Merge: c724330 5852c4f
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 22:32:01 2026 +0800
+
+    Merge hotfix-wave-3: unmatched-invoice manual adjustment fix, predev port guard
+    
+    Fixes the manual-adjustment flow so an unmatched invoice can be priced
+    and approved (addLineItem and updateLineItem both flip status to
+    adjusted), adds a predev check that refuses to start a second backend
+    dev server on an in-use port, and small UI polish (contract rates
+    table Actions header, Xero sync status back-button label).
+
+commit 5852c4f1875f9b3ec275b7d75236b3ea814d4266
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 22:31:33 2026 +0800
+
+    Fix updateLineItem to also flip unmatched invoices to adjusted
+    
+    Mirrors the addLineItem fix so editing a line item on an unmatched
+    invoice doesn't leave it permanently unmatched/unapprovable.
+
+commit 9e587a866b55c5218357fd476e4deceec8c083c7
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 00:57:47 2026 +0800
+
+    Fix unmatched-invoice manual adjustment flow and add predev port check
+    
+    - invoiceController: manual adjustments on unmatched invoices now move status to adjusted, so unmatched invoices become approvable after manual pricing
+    - memoReviewController: clarify unmatched-invoice error messages with resolution steps
+    - Add backend/src/scripts/check-port-free.js as a predev check
+    - Minor UI label fixes on ContractDetailPage and XeroSyncStatusPage
+
+commit 617ddbe16204e6383cc163abde2b6a795879e9c4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 17:15:35 2026 +0800
+
+    Build AP Invoice Review, Xero Connection, and Xero Sync Status pages; fix xero_sync_logs FK bug
+    
+    Replaces the VendorInvoiceListPage/XeroConnectPage placeholders with real implementations
+    and adds the missing AP Invoice Review (two-panel PDF + OCR fields) and Xero Sync Status
+    (shared AP/AR retry panel) screens. Moves the Xero settings route to /settings/xero to
+    match the OAuth callback's hardcoded redirect target, which previously 404'd.
+    
+    Also fixes a schema bug where xero_sync_logs.entity_id had picked up a real foreign-key
+    constraint against invoices during db:sync, despite being a polymorphic key shared with
+    vendor_invoices - every AP sync was failing with a 500. Added constraints: false to both
+    associations in models/index.js.
+    
+    Updates README.md and design/feature-dependencies.md task allocation to state current
+    implementation ownership (Jasper = all of Wave 2, Kwan Hua = all of Wave 3) as the primary
+    record instead of layered patch-notes.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit b623d096b5b7768bbfb299358cc394e0443ae27b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 14:38:23 2026 +0800
+
+    Add controller-level test coverage for contracts, invoices, memo review, and vendor invoices
+    
+    Existing tests only covered pure logic (pricingService, xeroService,
+    calculateRebate). This adds mocked-model unit tests for the DB-touching
+    controller branches: contract CRUD + overlap/duplicate/audit-trail guards,
+    invoice line-item edits + batch approve/sync + retry, memo approve/return
+    (matched vs unmatched invoice generation), and vendor invoice update/approve/
+    reject flows. 72 new tests, 109 passing total.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit fe2361ace9752a1f901d5069697589616526b3db
+Merge: 033773a 52a5f33
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 14:23:19 2026 +0800
+
+    Merge wave-3-ap-sync: Wave 3 AR billing/pricing engine + AP invoice sync, Wave 2B pricing contracts
+    
+    Adds the pricing engine, memo review -> invoice generation, AR invoice list/detail
+    with Xero sync, AP vendor invoice review/approve/reject/sync-xero, and pricing
+    contract CRUD (backend + frontend). Backend: 37 passing tests. Frontend: build
+    verified. Fixes a stale NOT NULL constraint on invoices.contract_id.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 52a5f33ae8015a505154e9539668ddf3a4678ccd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 9 13:54:59 2026 +0800
+
+    Fix invoices.contract_id NOT NULL blocking unmatched invoices
+    
+    The Invoice model declares contract_id nullable so 'unmatched' invoices
+    (client has no active contract, or no rate matches the memo) can be saved
+    with a null contract_id. The live column was still NOT NULL - sync({alter:true})
+    does not reliably drop NOT NULL in Postgres - so approving such a memo failed
+    with a not-null constraint violation.
+    
+    Add an idempotent script that drops the constraint explicitly, matching the
+    existing sync-db.js pattern so teammates can reproduce the fix.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 06a771b524d1bcb544e4c306cf3880865a078543
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 02:14:04 2026 +0800
+
+    Add Wave 3: AP invoice sync + AR billing/pricing engine, with real Xero API
+    
+    AP (own scope): Xero status/callback/disconnect, vendor invoice
+    review/approve/reject/reextract, line-item edit, sync-logs + retry.
+    
+    AR (Wave 3 takeover from Jasper; design remains in design/jasper/): pricing
+    engine, memo review (pending-review/approve/return), invoices (list/detail/
+    line-items/batch-approve/retry-xero) writing xero_sync_logs as ar_invoice,
+    seed-pricing, and the AR frontend screens (Memo Review, Invoice List/Detail).
+    
+    Xero: real OAuth2 token exchange + rotating refresh + AES-256-GCM token storage,
+    ACCPAY/ACCREC draft push with optional account codes; simulation mode is the
+    default so the app runs and demos without live credentials.
+    
+    Schema (db:sync alter): add ServiceMemo.ar_note; make Invoice.contract_id
+    nullable for unmatched invoices. Tests: 37 backend unit tests (pricing engine +
+    xero service). Contribution attribution recorded in README,
+    design/feature-dependencies.md, and my-project-ai/Tow_Kwan_Hwa/.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit e90a7cf7a1caff9bbc32cd0c1f3cd762b7e42a6d
+Merge: decd04d c06fce1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:15 2026 +0800
+
+    Merge wave-1-1b-xero-api into main
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit c06fce1395347cb7de2da46ef70bc291094dce8b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:23:08 2026 +0800
+
+    Pin Vite dev server to strict port 5173
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit eb6ae8aa20f9cc1a788ab192bb2a936ec1cd25bb
+Merge: 1efb131 decd04d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 8 01:03:30 2026 +0800
+
+    Merge main into wave-1-1b-xero-api
+    
+    Resolves conflicts from parallel development on main: combines image
+    upload middleware/service (signature, hospital stamp) with PDF upload
+    middleware/service (vendor invoices) in upload.js and cloudinaryService.js,
+    merges db:seed:bookings/db:seed:xero package.json scripts, and keeps both
+    Liang Yi's service-memo/dashboard validators and the new
+    vendorInvoiceUploadSchema in validators/index.js.
+
+commit 1efb1311b7a0892630c3879511ba66b3874ebbfd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 11:00:28 2026 +0800
+
+    Add Wave 1B Xero connect + vendor invoice upload endpoints
+    
+    Implements the two endpoints scoped to Wave 1B in the build order:
+    GET /api/xero/connect and POST /api/vendor-invoices (PDF upload ->
+    Cloudinary -> Gemini OCR -> rebate calc -> Sequelize create). Adds
+    supporting services, seed data for the 4 Xero/AP tables, and unit
+    tests for the rebate calculation and OAuth URL builder.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 71c23ae26d48b5a9c61d2891c26689eb6fa38580
+Merge: 1dfacf0 9e675c7
+Author: Tow Kwan Hwa <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:31:40 2026 +0800
+
+    Merge pull request #1 from secbest/wave-2-2A-field-operations
+    
+    Wave 2 2A field operations
+
+commit 1dfacf0caaf192f0aad4eeb86c4593a161403ee4
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 3 10:19:41 2026 +0800
+
+    Update READ.me/Handoff.md
+
+commit 79dfe0c577e99f2eebd9a8f1e3598afc5466bb75
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:52:32 2026 +0800
+
+    Update file directory
+
+commit 62bccbab06eae1e9c95a7baa4f626431c31b8929
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 2 15:47:24 2026 +0800
+
+    Update: Ai Logs/Git-History
+
 commit d67241e0723c450cc632943026f2065c59ff63e4
 Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
 Date:   Wed Jul 1 10:19:31 2026 +0800

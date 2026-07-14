@@ -1,3 +1,403 @@
+commit 7441677294b82ee20761e311e6ea006941cd8a68
+Merge: 4dbb216 da8864b
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 05:40:47 2026 +0800
+
+    Merge branch 'feature/sidebar-two-line-nav-and-font-sizing'
+    
+    Collapsible sidebar with animation, two-line nav list items, and
+    fluid 14-16px font sizing across laptop/desktop widths.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit da8864b4e0cfcb732e461f4d58b9a7b28fd6f395
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 05:40:26 2026 +0800
+
+    Add collapsible sidebar, two-line nav items, and fluid font sizing
+    
+    - Sidebar collapses to a 68px icon-only rail with a smooth width
+      transition; state persists in localStorage. Collapsed links show
+      hover tooltips; footer condenses to user initial + icon actions.
+    - Nav links become Material-style two-line list items (label + a
+      secondary supporting line driven by a new `sub` field on NAV_ROUTES).
+    - Root font-size scales fluidly from 14px to 16px across laptop-to-
+      desktop widths via clamp(), keeping body text comfortable.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 4dbb216075d995562f1106cc85e716bc3ffc5521
+Merge: 53d54f9 3983760
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 12:26:35 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 53d54f9bb952149b614df7c80c51663202eb4f92
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 12:25:36 2026 +0800
+
+    Hotfix
+
+commit 3983760c7722a6f955c7b41920e36295eaaafed7
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Mon Jul 13 12:03:05 2026 +0800
+
+    Point Xero Sync Status back-button to Xero Connection page
+
+commit aa0eb3d4dc1e08da67a4883b789a19019c727446
+Merge: 3ba9d45 ec5349c
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 11:47:42 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 3ba9d459c0ca97566446ce17079c98799cacc946
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Mon Jul 13 11:47:36 2026 +0800
+
+    hotfix/invoice
+
+commit ec5349c82089b76f7521b199c6a9f50447064314
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Mon Jul 13 01:39:45 2026 +0800
+
+    Fix Xero Sync Status back-button 403 and rename Sync History
+    
+    The back button hardcoded non-AP roles to /invoices, which only
+    ar_specialist can access - a managing_director viewing this shared
+    page would 403 on click. Routes via getRoleHome(user.role) instead so
+    it always lands somewhere the current role can reach, and relabels it
+    "Back to Dashboard". Also renames the "Sync History" heading to "Sync
+    Backlogs".
+
+commit 33c31de2608a73e36aeb843fd60dd67f83a35b9a
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Mon Jul 13 01:39:25 2026 +0800
+
+    Wire the Reports Period filter to real invoice data
+    
+    Adds getPeriodDateRange() to compute start/end dates for each period
+    button and fetches live invoices from GET /api/invoices (from_date/
+    to_date, already built) instead of static mock arrays. KPI cards,
+    Revenue by Client, and the Invoice Breakdown table are now all derived
+    from the fetched data; Revenue by Service Type stays illustrative
+    since per-invoice service type isn't in that response yet.
+    
+    Also fixes invoiceController.listInvoices returning created_at as
+    undefined (read inv.created_at instead of the actual Sequelize
+    instance property inv.createdAt), and adds a seed script giving five
+    more already-seeded clients an invoice so Revenue by Client isn't
+    just two bars.
+
+commit 1f8204ca1a0514f4a5661fb97e68ae024fe75276
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 22:17:07 2026 +0800
+
+    Fix for status timeline
+
+commit 42514109580ad3d78657c8d7e3a1235bbc6105c9
+Merge: 17ce1e8 a33522e
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 21:20:05 2026 +0800
+
+    Merge branch 'main' of https://github.com/secbest/Full_Stack_Application_Development_Assignment
+
+commit 17ce1e80d4ba46bba937e045f4be7055f1e54df2
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 21:19:14 2026 +0800
+
+    Add public intake form, fix reference-number collision, add db:setup
+    
+    - Build the missing public /intake form page (no auth) - PublicIntakeFormPage,
+      intake.js API helper, intakeValidation.js Yup schema - wired against the
+      already-working POST /api/intake endpoint and routed outside ProtectedRoute.
+    - Fix a live bug in intakeController.js: buildReference() derived the next
+      reference_number from the row's id instead of the highest existing
+      reference_number, so any gap between the two (seeded data has one) caused
+      a unique-constraint collision and a 500 on every subsequent submission.
+      Added nextReferenceNumber() to derive it from the reference_number sequence
+      instead, fixing both intake submissions and bookings.
+    - Bump toast auto-dismiss from 3s to 8s (ToastContext.jsx), matching CLAUDE.md.
+    - Add backend db:setup script chaining db:sync + all seeders in dependency
+      order for one-command pre-demo setup; documented in deployment.md.
+    - Update interim-review-demo-script.md to reflect the intake form now being
+      live, the db:setup shortcut, and leftover QA test rows to avoid demoing.
+
+commit a33522eeed64edf772f2f2e197f1971ff5113b82
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 21:11:31 2026 +0800
+
+    Update IntakeQueuePage.jsx
+    
+    small fix for the email over lapping
+
+commit 520c4271cd1c643ba474b8a5bad1165d09029fa2
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 20:54:17 2026 +0800
+
+    added cmd reset for intake to show for the demo
+
+commit 13287f71bfb62756c6d406ca98292af9c077e62b
+Merge: 8c2f8ad cf0d3cc
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 04:05:53 2026 +0800
+
+    Merge hotfix/wave-1-1A: Bookings fixes, crew assignment via real users, filter visibility
+
+commit cf0d3cc8bf3fda488ed09f1a5937de3d7bf68228
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 03:58:15 2026 +0800
+
+    Fix in_progress booking status mismatching filter/badge/row-tint keys
+    
+    booking.status.charAt(0).toUpperCase() + .slice(1).replace('_',' ') turned
+    in_progress into "In progress" (lowercase p), which matched neither the
+    "In Progress" filter button nor the new STATUS_BADGE_CLASSES/STATUS_ROW_CLASSES
+    keys - confirmed against live data, which has a real in_progress booking.
+    Replaced with an explicit BOOKING_STATUS_LABELS map, same pattern as
+    SERVICE_TYPE_LABELS.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 8c2f8ad7adc35c036a376dd46c6e6deeaf91fad8
+Merge: b843aaa d19926e
+Author: secbest <jastkc8@gmail.com>
+Date:   Sun Jul 12 00:07:55 2026 +0800
+
+    Merge remote-tracking branch 'origin/main'
+
+commit b843aaa165eb7c4ea626fc916e3df96999ad7cec
+Merge: 0b9f672 1db5efe
+Author: secbest <jastkc8@gmail.com>
+Date:   Sun Jul 12 00:06:55 2026 +0800
+
+    Merge branch 'hotfix/general'
+
+commit d19926e39f1671cc8730ec5cda8548511666ffda
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sun Jul 12 00:06:25 2026 +0800
+
+    Fix xeroController.retrySync mishandling AR invoice sync retries
+    
+    - retrySync always called pushBill() (the AP/ACCPAY path) regardless of
+      entity_type, using a fake placeholder object for ar_invoice logs instead of
+      the real Invoice, and never updated the real invoice's status either way.
+      Now routes ar_invoice through pushArInvoice with the real Invoice/Client/
+      line items, mirroring invoiceController.retryXero's correct behavior.
+    - resolveEntityReference read Invoice.invoice_number, a column that doesn't
+      exist on that model, so the AR reference always silently fell back. Now
+      resolves the client name via the Client association instead.
+    - Add xeroSyncRetry.test.js: no controller-level test existed for
+      xeroController at all before this, which is how both bugs shipped unnoticed.
+
+commit 1db5efec6e1acf83aea3cac618ceb4b662945bb3
+Author: secbest <jastkc8@gmail.com>
+Date:   Sun Jul 12 00:04:29 2026 +0800
+
+    Restrict account emails to the @efar.com.sg domain
+    
+    Every account on this platform is an EFAR staff account, so registration
+    and the Settings profile-edit form now reject emails outside efar.com.sg,
+    matching backend and frontend Yup schemas.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 0b9f672a016a6cf894963b2e12dd8130552976b3
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sun Jul 12 00:03:02 2026 +0800
+
+    Update Liang Yi's interim demo script segments
+    
+    Reports and Accounts Management had shipped since this script was
+    last written, so the Gaps segment was describing them as unbuilt.
+    Updated the Run of Show, feature-alignment table, Executive Dashboard
+    walkthrough, and Gaps segment to reflect what's actually live now.
+
+commit f4b9a81b3eb1e91e1f800fe7f74587b9780e5350
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sun Jul 12 00:02:53 2026 +0800
+
+    Add Edit User modal and give action buttons a resting background
+    
+    Edit opens a pre-filled modal (name/email/role, no password field,
+    same @efar.com.sg validation) and commits changes to local state via
+    a placeholder handleEditSubmit pending a real PATCH /api/users/:id
+    call. Also gives Edit/Remove/Force Logout/Unlock a visible tint at
+    rest instead of only on hover.
+
+commit 273ab54977d597d9df4ff3d44794b43ef7c46472
+Merge: a6daec8 4250171
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:38:49 2026 +0800
+
+    Merge branch 'hotfix/general'
+    
+    # Conflicts:
+    #       backend/src/controllers/userController.js
+    #       backend/src/routes/index.js
+    #       backend/src/routes/userRoutes.js
+    #       backend/src/validators/userValidators.js
+
+commit 4250171a76811beaf4ad54f56f0abd02707d6d85
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:29:40 2026 +0800
+
+    Favicon Added
+    
+    EFAR Favicon implemented
+
+commit 3bc60ea52a7ded0af3e7fdc41f93e0b92151f76a
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sat Jul 11 23:27:23 2026 +0800
+
+    Create handoff-2026-07-11.md
+
+commit 8b99a3feaf7eaf205f31583203e88b9c6568ee9c
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:23:36 2026 +0800
+
+    Exclude password-change endpoint from the global 401 auto-logout redirect
+
+commit a6daec8140ee5c23da184a27b10b3ee3e4c80073
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 23:21:34 2026 +0800
+
+    Add QA test-case doc, REST Client suite, and InvoiceDetailPage test
+    
+    - design/kwan-hua/test-cases.md: manual test-plan tables (backend + frontend)
+      derived from use-cases.md and api-documentation.md for the Xero Foundation/
+      OCR/AP Processing feature area.
+    - backend/xero-ap.http: REST Client requests covering all 14 endpoints in that
+      same API doc, with chained login tokens per role.
+    - frontend/tests/kwan-hua/InvoiceDetailPage.test.jsx: axios-mock-adapter tests
+      for the invoice line-item add flow (201 success, 500 server error, 400
+      validation error surfaced via toast).
+
+commit 14c8816fc640567b37499c6721db7c461351e562
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:19:45 2026 +0800
+
+    Add Settings page with profile edit and password change
+    
+    Task 4 of the account-settings-page plan: SettingsPage.jsx (Profile
+    Information + Change Password cards), the /settings route in App.jsx
+    (no RoleRoute - every role can reach it), and the AppLayout sidebar
+    user footer wrapped in a NavLink as the page's only entry point.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 458fc851b81318189e88469a78325ec1d8305477
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sat Jul 11 23:15:44 2026 +0800
+
+    Hotfix for wave-1-1A
+
+commit 54a7b3bb8a05c11533ca887b447a7ab267ffea9a
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:11:20 2026 +0800
+
+    Add updateUser, users API client, and validation schemas for settings
+
+commit c1d62d751e07bcebf2ef20c7eacf801b1829e5e3
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:06:38 2026 +0800
+
+    Add PATCH /api/users/me and /api/users/me/password endpoints
+
+commit 8c10d95e6a1ad1f6deb0a2e05bc7516124242a33
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 23:01:58 2026 +0800
+
+    Add profile/password validators for account settings
+
+commit abcd7556239e9b1388d62019e631e04ee3ede065
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 22:56:46 2026 +0800
+
+    Add implementation plan for account settings page
+    
+    Task-by-task TDD plan covering backend PATCH endpoints, AuthContext token
+    refresh, and the shared SettingsPage consumed by all 5 roles.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit be0ef4eeddd6febf5dc298f730083e7d1e34b9c7
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 22:49:07 2026 +0800
+
+    Add design spec for account settings page
+    
+    Scopes a shared /settings page (profile edit + password change) accessible
+    from every role via the sidebar user footer, plus the backend PATCH
+    endpoints it needs.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 6e437e8c321b02d04eb3887518e11764435c0649
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sat Jul 11 22:48:00 2026 +0800
+
+    Spell out EAS/MTS service names in Revenue report
+    
+    Revenue by Service Type donut and Invoice Breakdown table showed only
+    the raw abbreviations; both now show the full service name so the
+    report reads clearly without prior knowledge of the acronyms.
+
+commit f924e8ab1d36efed4eb8decd8818ad754012ffa1
+Merge: f3c0c7b 837d408
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sat Jul 11 22:36:37 2026 +0800
+
+    Merge hotfix/wave-4-managing-director: Accounts Management + Reports pages, DELETE /users/:id, donut chart fixes
+
+commit 837d408282f6b90ed8d8ec8d26273854239a115b
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sat Jul 11 22:34:58 2026 +0800
+
+    Add double confirmation modal before removing a user
+    
+    Force Logout/Remove could previously delete an account with a single
+    click. Remove now opens a confirmation dialog (name + "cannot be
+    undone" warning) and only calls the delete endpoint after the admin
+    confirms; the modal stays open on failure so they can retry or cancel.
+
+commit f3c0c7b547ea96f2f0cc5f3b916935c936ae6cea
+Merge: c724330 5852c4f
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 22:32:01 2026 +0800
+
+    Merge hotfix-wave-3: unmatched-invoice manual adjustment fix, predev port guard
+    
+    Fixes the manual-adjustment flow so an unmatched invoice can be priced
+    and approved (addLineItem and updateLineItem both flip status to
+    adjusted), adds a predev check that refuses to start a second backend
+    dev server on an in-use port, and small UI polish (contract rates
+    table Actions header, Xero sync status back-button label).
+
+commit 5852c4f1875f9b3ec275b7d75236b3ea814d4266
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 22:31:33 2026 +0800
+
+    Fix updateLineItem to also flip unmatched invoices to adjusted
+    
+    Mirrors the addLineItem fix so editing a line item on an unmatched
+    invoice doesn't leave it permanently unmatched/unapprovable.
+
+commit 98bc2e1f8d8335e50ab5ed5eff73d6c4a649b27b
+Author: liang yi <254664X@mymail.nyp.edu.sg>
+Date:   Sat Jul 11 18:43:51 2026 +0800
+
+    fix error LiangYi
+
+commit c724330bdd76bc44690a0aaeba20022787fe700d
+Author: secbest <jastkc8@gmail.com>
+Date:   Sat Jul 11 16:04:46 2026 +0800
+
+    Updated git history
+    
+    Updated history for myself and the main
+
 commit c0f794de6c2b014d1b9b616a2249206cd89f08f0
 Author: secbest <jastkc8@gmail.com>
 Date:   Sat Jul 11 15:56:53 2026 +0800
@@ -27,6 +427,17 @@ Date:   Sat Jul 11 15:56:53 2026 +0800
     - Add Jest regression tests for all of the above.
     
     Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 9e587a866b55c5218357fd476e4deceec8c083c7
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Jul 11 00:57:47 2026 +0800
+
+    Fix unmatched-invoice manual adjustment flow and add predev port check
+    
+    - invoiceController: manual adjustments on unmatched invoices now move status to adjusted, so unmatched invoices become approvable after manual pricing
+    - memoReviewController: clarify unmatched-invoice error messages with resolution steps
+    - Add backend/src/scripts/check-port-free.js as a predev check
+    - Minor UI label fixes on ContractDetailPage and XeroSyncStatusPage
 
 commit 4a767781f2e0474b8f5547838f83d1f9ebc7d717
 Author: secbest <jastkc8@gmail.com>
