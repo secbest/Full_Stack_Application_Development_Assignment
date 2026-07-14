@@ -15,23 +15,28 @@ import {
 
 // NAV_ROUTES drives both the sidebar nav in AppLayout and the route tree in App.jsx.
 // To add a new route: add an entry here, then add the <Route> in App.jsx.
+// `sub` is the secondary supporting line rendered under `label` as a two-line
+// list item in the sidebar (Material-style primary + secondary text).
 export const NAV_ROUTES = [
   // ── Managing Director ────────────────────────────────────────────────────────
   {
     path: '/dashboard',
     label: 'Dashboard',
+    sub: 'Executive overview',
     Icon: LayoutDashboard,
     roles: ['managing_director'],
   },
   {
     path: '/reports',
     label: 'Reports',
+    sub: 'Revenue & expense',
     Icon: FileBarChart,
     roles: ['managing_director'],
   },
   {
     path: '/management',
     label: 'Accounts Management',
+    sub: 'Users & access',
     Icon: Users,
     roles: ['managing_director'],
   },
@@ -40,18 +45,21 @@ export const NAV_ROUTES = [
   {
     path: '/invoices',
     label: 'Invoices',
+    sub: 'Match & sync to Xero',
     Icon: Receipt,
     roles: ['ar_specialist'],
   },
   {
     path: '/service-memos',
     label: 'Memo Review',
+    sub: 'Approve & match',
     Icon: ClipboardList,
     roles: ['ar_specialist'],
   },
   {
     path: '/pricing-contracts',
     label: 'Pricing Contracts',
+    sub: 'Rates & surcharges',
     Icon: BadgeDollarSign,
     roles: ['ar_specialist'],
   },
@@ -60,6 +68,7 @@ export const NAV_ROUTES = [
   {
     path: '/vendor-invoices',
     label: 'Vendor Invoices',
+    sub: 'OCR & rebates',
     Icon: Building2,
     roles: ['ap_specialist'],
   },
@@ -70,12 +79,14 @@ export const NAV_ROUTES = [
   {
     path: '/settings/xero',
     label: 'Xero Connection',
+    sub: 'Integration settings',
     Icon: Plug,
     roles: ['managing_director', 'ap_specialist', 'ar_specialist'],
   },
   {
     path: '/xero/sync-status',
     label: 'Xero Sync Status',
+    sub: 'Retry & status',
     Icon: History,
     roles: ['ap_specialist', 'ar_specialist'],
   },
@@ -84,12 +95,14 @@ export const NAV_ROUTES = [
   {
     path: '/intake-queue',
     label: 'Intake Queue',
+    sub: 'Review requests',
     Icon: CalendarDays,
     roles: ['quotations_specialist'],
   },
   {
     path: '/bookings',
     label: 'Bookings',
+    sub: 'Manage & assign',
     Icon: BookOpen,
     roles: ['quotations_specialist'],
   },
@@ -98,12 +111,14 @@ export const NAV_ROUTES = [
   {
     path: '/jobs',
     label: 'My Jobs',
+    sub: 'Assigned jobs',
     Icon: Briefcase,
     roles: ['field_crew'],
   },
   {
     path: '/memos/history',
     label: 'Memo History',
+    sub: 'Past submissions',
     Icon: History,
     roles: ['field_crew'],
   },
