@@ -1,3 +1,41 @@
+commit 6a6025ad021eecc5cfc932cad9fa346e66d6beac
+Merge: b2064b9 51c929c
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 11:58:48 2026 +0800
+
+    Merge branch 'feature/font-size-large-screen-tuning'
+    
+    Base font scale now floors at 16px (to ~1440px) and scales up to an
+    18px cap on very large screens.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 51c929c98ffb7a626da40ea0919a947c4e54cf17
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 11:57:55 2026 +0800
+
+    Tune base font scale to 16-18px floor/cap
+    
+    Raise the root font-size floor to 16px (holding up to ~1440px) and let
+    it scale up to an 18px cap on very large screens (~1850px+), replacing
+    the previous 14-16px range. Updates the accompanying comment to match.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b2064b986a311ba8a24144f7354733cd4d6427ae
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 05:45:37 2026 +0800
+
+    Update handoff log and git-history exports
+    
+    - Add 2026-07-15 progress entry (collapsible sidebar, two-line nav,
+      fluid font sizing) to Kwan Hua's handoff log
+    - Regenerate git-history-main.txt and git-history-Kwan-Hua.txt from
+      current git log
+    - Ignore accidental backend/skills/ marketplace clone
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 commit 7441677294b82ee20761e311e6ea006941cd8a68
 Merge: 4dbb216 da8864b
 Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
