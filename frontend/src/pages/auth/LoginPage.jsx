@@ -85,7 +85,7 @@ export default function LoginPage() {
         />
         {/* Blue radial glow */}
         <div
-          className="absolute pointer-events-none"
+          className="absolute pointer-events-none efar-glow"
           style={{
             width: 480,
             height: 480,
@@ -101,6 +101,7 @@ export default function LoginPage() {
         <div className="relative z-10 flex flex-col items-center gap-6 select-none">
           {/* Medical cross icon */}
           <div
+            className="efar-fade-up"
             style={{
               width: 72,
               height: 72,
@@ -118,7 +119,7 @@ export default function LoginPage() {
           </div>
 
           {/* Name + tagline */}
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-2 efar-fade-up" style={{ animationDelay: '0.12s' }}>
             <span
               style={{
                 fontSize: 40,
@@ -143,24 +144,51 @@ export default function LoginPage() {
             </span>
           </div>
 
-          <div style={{ width: 40, height: 1, background: 'rgba(255,255,255,0.20)' }} />
+          <div
+            className="efar-fade-up"
+            style={{ width: 40, height: 1, background: 'rgba(255,255,255,0.20)', animationDelay: '0.22s' }}
+          />
 
           <p
+            className="efar-fade-up"
             style={{
               fontSize: 13,
               color: 'rgba(255,255,255,0.40)',
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
+              animationDelay: '0.3s',
             }}
           >
             Ambulance · Dispatch · Billing
           </p>
+
+          {/* Signature moment: a vital-sign trace, drawn once on load - the one
+              piece of "characterful" motion, everything else is quiet by design. */}
+          <svg
+            className="efar-fade-up"
+            width="220"
+            height="28"
+            viewBox="0 0 220 32"
+            fill="none"
+            aria-hidden="true"
+            style={{ animationDelay: '0.4s' }}
+          >
+            <path
+              className="efar-ekg-path"
+              d="M0 16 H40 L48 2 L56 30 L64 16 H100 L108 2 L116 30 L124 16 H220"
+              stroke="rgba(45,212,191,0.7)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ animationDelay: '0.4s' }}
+            />
+          </svg>
         </div>
 
         {/* Copyright */}
         <div
-          className="absolute bottom-8 left-0 right-0 flex justify-center"
-          style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.05em' }}
+          className="absolute bottom-8 left-0 right-0 flex justify-center efar-fade-up"
+          style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.05em', animationDelay: '0.5s' }}
         >
           © 2026 EFAR. All rights reserved.
         </div>
@@ -169,11 +197,22 @@ export default function LoginPage() {
       {/* ── Right form panel ────────────────────────────────────────────────── */}
       <div
         className="flex flex-col items-center justify-center flex-1"
-        style={{ backgroundColor: '#FFFFFF', padding: 48 }}
+        style={{ backgroundColor: '#F8FAFC', padding: 48 }}
       >
-        <div style={{ width: '100%', maxWidth: 360 }}>
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 360,
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: 12,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            padding: 32,
+            boxSizing: 'border-box',
+          }}
+        >
           {/* Heading */}
-          <div style={{ marginBottom: 32 }}>
+          <div className="efar-fade-up" style={{ marginBottom: 32, animationDelay: '0.1s' }}>
             <h1
               style={{
                 fontSize: 24,
@@ -190,7 +229,8 @@ export default function LoginPage() {
 
           <form
             onSubmit={handleSubmit}
-            style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+            className="efar-fade-up"
+            style={{ display: 'flex', flexDirection: 'column', gap: 20, animationDelay: '0.22s' }}
           >
             {/* Email */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -219,7 +259,8 @@ export default function LoginPage() {
                   color: '#1E293B',
                   outline: 'none',
                   fontFamily: 'inherit',
-                  transition: 'border-color 0.15s',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                  boxShadow: emailFocused ? '0 0 0 3px rgba(59,130,246,0.15)' : 'none',
                 }}
               />
               {emailError && (
@@ -256,7 +297,8 @@ export default function LoginPage() {
                     color: '#1E293B',
                     outline: 'none',
                     fontFamily: 'inherit',
-                    transition: 'border-color 0.15s',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                    boxShadow: passwordFocused ? '0 0 0 3px rgba(59,130,246,0.15)' : 'none',
                     boxSizing: 'border-box',
                   }}
                 />
@@ -288,6 +330,7 @@ export default function LoginPage() {
             {/* Inline error */}
             {errorMsg && (
               <div
+                className="efar-error-shake"
                 style={{
                   padding: '10px 14px',
                   borderRadius: 8,
@@ -305,6 +348,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
+              className="efar-submit-btn"
               style={{
                 height: 48,
                 borderRadius: 8,
@@ -320,7 +364,7 @@ export default function LoginPage() {
                 justifyContent: 'center',
                 gap: 8,
                 marginTop: 4,
-                transition: 'background-color 0.15s',
+                transition: 'background-color 0.15s, transform 0.15s, box-shadow 0.15s',
               }}
             >
               {loading ? (
@@ -348,14 +392,63 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p style={{ marginTop: 16, fontSize: 12, color: '#64748B', textAlign: 'center' }}>
+          <p
+            className="efar-fade-up"
+            style={{ marginTop: 16, fontSize: 12, color: '#64748B', textAlign: 'center', animationDelay: '0.32s' }}
+          >
             Forgot password?{' '}
             <span style={{ color: '#94A3B8' }}>Contact your administrator.</span>
           </p>
         </div>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .efar-fade-up { animation: fadeUp 0.6s ease-out both; }
+
+        @keyframes glowPulse {
+          0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+          50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.06); }
+        }
+        .efar-glow { animation: glowPulse 6s ease-in-out infinite; }
+
+        @keyframes ekgDraw { to { stroke-dashoffset: 0; } }
+        .efar-ekg-path {
+          stroke-dasharray: 300;
+          stroke-dashoffset: 300;
+          animation: ekgDraw 1s ease-out forwards;
+        }
+
+        @keyframes shake {
+          10%, 90% { transform: translateX(-1px); }
+          20%, 80% { transform: translateX(2px); }
+          30%, 50%, 70% { transform: translateX(-4px); }
+          40%, 60% { transform: translateX(4px); }
+        }
+        .efar-error-shake { animation: shake 0.4s ease-in-out; }
+
+        .efar-submit-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(30,41,59,0.28);
+        }
+        .efar-submit-btn:active:not(:disabled) {
+          transform: translateY(0) scale(0.98);
+          box-shadow: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .efar-fade-up, .efar-glow, .efar-ekg-path, .efar-error-shake { animation: none !important; }
+          .efar-submit-btn { transition: none !important; }
+          .efar-submit-btn:hover:not(:disabled), .efar-submit-btn:active:not(:disabled) {
+            transform: none !important; box-shadow: none !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

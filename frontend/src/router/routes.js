@@ -11,6 +11,7 @@ import {
   History,
   FileBarChart,
   Users,
+  Settings,
 } from 'lucide-react'
 
 // NAV_ROUTES drives both the sidebar nav in AppLayout and the route tree in App.jsx.
@@ -29,7 +30,7 @@ export const NAV_ROUTES = [
   {
     path: '/reports',
     label: 'Reports',
-    sub: 'Revenue & expense',
+    sub: 'Revenue & expenses',
     Icon: FileBarChart,
     roles: ['managing_director'],
   },
@@ -121,6 +122,15 @@ export const NAV_ROUTES = [
     sub: 'Past submissions',
     Icon: History,
     roles: ['field_crew'],
+  },
+
+  // ── Shared: Account Settings (every role) ─────────────────────────────────────
+  {
+    path: '/settings',
+    label: 'Settings',
+    sub: 'Profile & password',
+    Icon: Settings,
+    roles: ['managing_director', 'ar_specialist', 'ap_specialist', 'quotations_specialist', 'field_crew'],
   },
 ]
 

@@ -50,7 +50,7 @@ export default function AppLayout() {
             collapsed ? 'justify-center' : 'gap-2.5'
           }`}
         >
-          <Activity className="w-4 h-4 text-teal-400 flex-shrink-0" />
+          <Activity className={`${collapsed ? 'w-5 h-5' : 'w-4 h-4'} text-teal-400 flex-shrink-0`} />
           {!collapsed && (
             <>
               <span className="text-sm font-semibold tracking-wide text-white whitespace-nowrap">
@@ -79,7 +79,7 @@ export default function AppLayout() {
               title="Expand sidebar"
               className="p-2 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
             >
-              <PanelLeftOpen className="w-4 h-4" />
+              <PanelLeftOpen className="w-5 h-5" />
             </button>
           </div>
         )}
@@ -91,6 +91,7 @@ export default function AppLayout() {
             <NavLink
               key={path}
               to={path}
+              end={path === '/settings'}
               title={collapsed ? label : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
@@ -104,7 +105,7 @@ export default function AppLayout() {
             >
               {({ isActive }) => (
                 <>
-                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <Icon className={`${collapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0`} />
                   {!collapsed && (
                     <span className="flex flex-col min-w-0 leading-tight">
                       <span className="text-sm font-medium truncate">{label}</span>
@@ -121,10 +122,11 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        {/* User footer - the only entry point to /settings (no NAV_ROUTES item) */}
+        {/* User footer - also links to /settings, alongside the NAV_ROUTES entry above */}
         <div className="px-3 py-3 border-t border-white/10 space-y-2">
           <NavLink
             to="/settings"
+            end
             title={collapsed ? user?.name : undefined}
             className={({ isActive }) =>
               `block rounded-md transition-colors ${collapsed ? 'p-2' : 'px-3 py-1'} ${
@@ -155,7 +157,7 @@ export default function AppLayout() {
               collapsed ? 'justify-center px-0' : 'justify-start'
             }`}
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className={collapsed ? 'w-5 h-5' : 'w-4 h-4'} />
             {!collapsed && 'Sign out'}
           </Button>
         </div>
