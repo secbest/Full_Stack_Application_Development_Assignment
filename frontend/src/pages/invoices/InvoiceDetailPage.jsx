@@ -6,12 +6,16 @@ import { ArrowLeft, Plus, Trash2, UploadCloud, RefreshCw, X } from 'lucide-react
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StatusBadge } from '@/components/StatusBadge'
+import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
 import { getInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
 import { SURCHARGE_TYPES } from '@/validation/contractValidation'
 import { SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS } from '@/lib/contractLabels'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
+// Realistic ceilings for a manual adjustment - mirror backend/src/controllers/invoiceController.js.
+const MAX_UNIT_PRICE = 50000
+const MAX_QUANTITY = 999
 const LOCKED = ['approved', 'synced_to_xero']
 // 'other' isn't a real surcharge_type - it just tells the form to leave description/
 // unit_price blank for manual entry instead of auto-filling from the published schedule.
@@ -52,7 +56,8 @@ export default function InvoiceDetailPage() {
     if (type === 'other') {
       setForm({ description: '', quantity: '1', unit_price: '' })
     } else {
-      setForm({ description: SURCHARGE_TYPE_LABELS[type], quantity: '1', unit_price: String(SURCHARGE_DEFAULT_AMOUNTS[type] ?? '') })
+      const preset = SURCHARGE_DEFAULT_AMOUNTS[type]
+      setForm({ description: SURCHARGE_TYPE_LABELS[type], quantity: '1', unit_price: preset != null ? preset.toFixed(2) : '' })
     }
   }
 
@@ -61,6 +66,14 @@ export default function InvoiceDetailPage() {
     const unit_price = Number(form.unit_price)
     if (!form.description.trim() || !(quantity > 0) || !(unit_price > 0)) {
       toast.error('Enter a description and positive quantity and unit price.')
+      return
+    }
+    if (quantity > MAX_QUANTITY) {
+      toast.error(`Quantity cannot exceed ${MAX_QUANTITY}.`)
+      return
+    }
+    if (unit_price > MAX_UNIT_PRICE) {
+      toast.error(`Unit price cannot exceed $${MAX_UNIT_PRICE.toLocaleString()}.`)
       return
     }
     setBusy(true)
@@ -203,10 +216,10 @@ export default function InvoiceDetailPage() {
                   <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
                 </label>
                 <label className="text-xs text-slate-500">Qty
-                  <input type="number" min="0" step="0.01" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
+                  <NumberStepper value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} min={0} max={MAX_QUANTITY} step={1} bigStep={10} ariaLabel="Quantity" className="mt-1 w-full h-9" />
                 </label>
                 <label className="text-xs text-slate-500">Unit Price
-                  <input type="number" min="0" step="0.01" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
+                  <NumberStepper value={form.unit_price} onChange={(v) => setForm({ ...form, unit_price: v })} min={0} max={MAX_UNIT_PRICE} step={1} bigStep={10} decimals={2} placeholder="0.00" ariaLabel="Unit price" className="mt-1 w-full h-9" />
                 </label>
                 <button onClick={handleAdd} disabled={busy} className="h-9 px-4 rounded-md bg-slate-900 text-white text-sm hover:bg-slate-800 disabled:opacity-40">Add</button>
               </div>

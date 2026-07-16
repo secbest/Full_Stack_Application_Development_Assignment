@@ -14,9 +14,10 @@ import { RequiredLabel } from '@/components/RequiredLabel'
 import { FieldError } from '@/components/FieldError'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MiniSelect } from '@/components/MiniSelect'
+import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
 import { getContract, createContract, updateContract, listClients } from '@/api/contracts'
-import { createContractSchema, editContractSchema, rateSchema, updateSurchargeSchema, SERVICE_TYPES, TRANSFER_TYPES, TIME_OF_DAY, SURCHARGE_TYPES } from '@/validation/contractValidation'
+import { createContractSchema, editContractSchema, rateSchema, updateSurchargeSchema, SERVICE_TYPES, TRANSFER_TYPES, TIME_OF_DAY, SURCHARGE_TYPES, MAX_RATE_AMOUNT, MAX_SURCHARGE_AMOUNT } from '@/validation/contractValidation'
 import { SERVICE_TYPE_LABELS, TRANSFER_TYPE_LABELS, TIME_OF_DAY_LABELS, SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS } from '@/lib/contractLabels'
 
 const EMPTY_NEW_RATE = { service_type: '', transfer_type: '', time_of_day: '', base_amount: '' }
@@ -299,8 +300,12 @@ export default function ContractFormPage() {
                         <td className="p-2"><MiniSelect value={newRate.transfer_type} onChange={(v) => setNewRate({ ...newRate, transfer_type: v })} options={TRANSFER_TYPES} labels={TRANSFER_TYPE_LABELS} placeholder="Transfer type" /></td>
                         <td className="p-2"><MiniSelect value={newRate.time_of_day} onChange={(v) => setNewRate({ ...newRate, time_of_day: v })} options={TIME_OF_DAY} labels={TIME_OF_DAY_LABELS} placeholder="Time of day" /></td>
                         <td className="p-2">
-                          <input type="number" min="0" step="0.01" placeholder="0.00" value={newRate.base_amount} onChange={(e) => setNewRate({ ...newRate, base_amount: e.target.value })}
-                            className="w-full h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500" />
+                          <NumberStepper
+                            value={newRate.base_amount}
+                            onChange={(v) => setNewRate({ ...newRate, base_amount: v })}
+                            min={0} max={MAX_RATE_AMOUNT} step={1} bigStep={10}
+                            placeholder="0.00" ariaLabel="Base amount" className="w-full h-9"
+                          />
                         </td>
                         <td className="p-2 text-right">
                           <button type="button" onClick={addRate} className="h-9 px-3 rounded-md bg-green-600 text-white text-xs font-semibold hover:bg-green-700">Add</button>
@@ -328,11 +333,11 @@ export default function ContractFormPage() {
                     <span className="text-sm text-slate-600">{SURCHARGE_TYPE_LABELS[s.surcharge_type]}</span>
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-slate-400">$</span>
-                      <input
-                        type="number" min="0" step="0.01"
+                      <NumberStepper
                         value={s.amount}
-                        onChange={(e) => setSurcharges((prev) => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
-                        className="w-24 h-8 rounded-md border border-slate-200 px-2 text-sm text-right outline-none focus:border-blue-500"
+                        onChange={(v) => setSurcharges((prev) => prev.map((x, i) => i === idx ? { ...x, amount: v } : x))}
+                        min={0} max={MAX_SURCHARGE_AMOUNT} step={1} bigStep={10}
+                        ariaLabel={`${SURCHARGE_TYPE_LABELS[s.surcharge_type]} amount`} className="w-28 h-8"
                       />
                     </div>
                   </div>

@@ -29,11 +29,19 @@ export const SURCHARGE_TYPES = [
   'cancellation',
 ]
 
+// Realistic ceilings so the amount fields can't be saved with absurd values (e.g. a
+// mistyped extra zero). Seeded rates run $450-$1,800 and surcharges $1-$320, so these
+// caps sit well above any genuine figure - including a pricey air-evacuation base rate -
+// while still blocking obvious fat-finger errors. Mirrored in backend/src/validators/
+// contractValidators.js; keep the two in sync.
+export const MAX_RATE_AMOUNT = 50000
+export const MAX_SURCHARGE_AMOUNT = 10000
+
 export const rateSchema = Yup.object({
   service_type: Yup.string().oneOf(SERVICE_TYPES, 'Select a valid service type').required('Service type is required'),
   transfer_type: Yup.string().oneOf(TRANSFER_TYPES, 'Select a valid transfer type').required('Transfer type is required'),
   time_of_day: Yup.string().oneOf(TIME_OF_DAY, 'Select a valid time of day').required('Time of day is required'),
-  base_amount: Yup.number().typeError('Must be a number').positive('Base amount must be a positive number').required('Base amount is required'),
+  base_amount: Yup.number().typeError('Must be a number').positive('Base amount must be a positive number').max(MAX_RATE_AMOUNT, `Base amount cannot exceed $${MAX_RATE_AMOUNT.toLocaleString()}`).required('Base amount is required'),
 })
 
 // Create form: rates/surcharges are handled as their own field arrays in Formik
@@ -79,9 +87,9 @@ export const editContractSchema = Yup.object({
 })
 
 export const updateRateSchema = Yup.object({
-  base_amount: Yup.number().typeError('Must be a number').positive('Base amount must be a positive number').required('Base amount is required'),
+  base_amount: Yup.number().typeError('Must be a number').positive('Base amount must be a positive number').max(MAX_RATE_AMOUNT, `Base amount cannot exceed $${MAX_RATE_AMOUNT.toLocaleString()}`).required('Base amount is required'),
 })
 
 export const updateSurchargeSchema = Yup.object({
-  amount: Yup.number().typeError('Must be a number').min(0, 'Amount cannot be negative').required('Amount is required'),
+  amount: Yup.number().typeError('Must be a number').min(0, 'Amount cannot be negative').max(MAX_SURCHARGE_AMOUNT, `Amount cannot exceed $${MAX_SURCHARGE_AMOUNT.toLocaleString()}`).required('Amount is required'),
 })

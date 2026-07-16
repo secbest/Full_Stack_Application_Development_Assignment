@@ -12,6 +12,13 @@ const round2 = (n) => Math.round(n * 100) / 100
 const VALID_STATUSES = ['matched', 'adjusted', 'approved', 'synced_to_xero', 'failed', 'unmatched']
 const LOCKED_STATUSES = ['approved', 'synced_to_xero']
 
+// Realistic ceilings for a manual adjustment line so a fat-finger (e.g. an extra zero)
+// can't be persisted. Unit price mirrors the pricing contract's MAX_RATE_AMOUNT; a
+// single adjustment line rarely needs more than a handful of units. Mirrored in the
+// frontend's InvoiceDetailPage add-adjustment form.
+const MAX_LINE_ITEM_UNIT_PRICE = 50000
+const MAX_LINE_ITEM_QUANTITY = 999
+
 // Recomputes subtotal/total from the current line items and persists it.
 async function recalcInvoiceTotals(invoice) {
   const items = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id } })
@@ -135,6 +142,12 @@ async function addLineItem(req, res) {
     if (!description || !description.trim() || !(qty > 0) || !(price > 0)) {
       return error(res, '`description` is required and `quantity`/`unit_price` must be positive numbers.', 'VALIDATION_ERROR', 400)
     }
+    if (qty > MAX_LINE_ITEM_QUANTITY) {
+      return error(res, `\`quantity\` cannot exceed ${MAX_LINE_ITEM_QUANTITY}.`, 'VALIDATION_ERROR', 400)
+    }
+    if (price > MAX_LINE_ITEM_UNIT_PRICE) {
+      return error(res, `\`unit_price\` cannot exceed ${MAX_LINE_ITEM_UNIT_PRICE}.`, 'VALIDATION_ERROR', 400)
+    }
 
     const item = await InvoiceLineItem.create({
       invoice_id: invoice.id,
@@ -183,6 +196,8 @@ async function updateLineItem(req, res) {
     const { description, quantity, unit_price } = req.body
     if (quantity !== undefined && Number(quantity) < 0) return error(res, 'Negative quantity is not allowed.', 'VALIDATION_ERROR', 400)
     if (unit_price !== undefined && Number(unit_price) < 0) return error(res, 'Negative unit_price is not allowed.', 'VALIDATION_ERROR', 400)
+    if (quantity !== undefined && Number(quantity) > MAX_LINE_ITEM_QUANTITY) return error(res, `\`quantity\` cannot exceed ${MAX_LINE_ITEM_QUANTITY}.`, 'VALIDATION_ERROR', 400)
+    if (unit_price !== undefined && Number(unit_price) > MAX_LINE_ITEM_UNIT_PRICE) return error(res, `\`unit_price\` cannot exceed ${MAX_LINE_ITEM_UNIT_PRICE}.`, 'VALIDATION_ERROR', 400)
 
     const updates = {}
     if (description !== undefined) updates.description = description

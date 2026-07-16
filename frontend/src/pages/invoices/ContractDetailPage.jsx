@@ -8,9 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/StatusBadge'
 import { MiniSelect } from '@/components/MiniSelect'
+import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
 import { getContract, updateContract, addRate, updateRate, deleteRate, updateSurcharge } from '@/api/contracts'
-import { SERVICE_TYPES, TRANSFER_TYPES, TIME_OF_DAY, rateSchema, updateRateSchema, updateSurchargeSchema } from '@/validation/contractValidation'
+import { SERVICE_TYPES, TRANSFER_TYPES, TIME_OF_DAY, rateSchema, updateRateSchema, updateSurchargeSchema, MAX_RATE_AMOUNT, MAX_SURCHARGE_AMOUNT } from '@/validation/contractValidation'
 import { SERVICE_TYPE_LABELS, TRANSFER_TYPE_LABELS, TIME_OF_DAY_LABELS, SURCHARGE_TYPE_LABELS, getContractDisplayStatus } from '@/lib/contractLabels'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
@@ -278,11 +279,11 @@ export default function ContractDetailPage() {
                 <MiniSelect value={newRate.service_type} onChange={(v) => setNewRate({ ...newRate, service_type: v })} options={SERVICE_TYPES} labels={SERVICE_TYPE_LABELS} placeholder="Type" />
                 <MiniSelect value={newRate.transfer_type} onChange={(v) => setNewRate({ ...newRate, transfer_type: v })} options={TRANSFER_TYPES} labels={TRANSFER_TYPE_LABELS} placeholder="Transfer type" />
                 <MiniSelect value={newRate.time_of_day} onChange={(v) => setNewRate({ ...newRate, time_of_day: v })} options={TIME_OF_DAY} labels={TIME_OF_DAY_LABELS} placeholder="Time of day" />
-                <input
-                  type="number" min="0" step="0.01" placeholder="0.00"
+                <NumberStepper
                   value={newRate.base_amount}
-                  onChange={(e) => setNewRate({ ...newRate, base_amount: e.target.value })}
-                  className="h-9 rounded-md border border-slate-200 px-2 text-sm outline-none focus:border-blue-500"
+                  onChange={(v) => setNewRate({ ...newRate, base_amount: v })}
+                  min={0} max={MAX_RATE_AMOUNT} step={1} bigStep={10}
+                  placeholder="0.00" ariaLabel="Base amount" className="h-9 w-full"
                 />
                 <div className="flex gap-1">
                   <button onClick={handleAddRate} disabled={busy} className="h-9 px-3 rounded-md bg-green-600 text-white text-xs font-semibold hover:bg-green-700 disabled:opacity-40">Add</button>
@@ -310,11 +311,11 @@ export default function ContractDetailPage() {
                       <td className="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">{TIME_OF_DAY_LABELS[r.time_of_day]}</td>
                       <td className="px-3 py-2 text-sm font-medium text-slate-900">
                         {editingRateId === r.id ? (
-                          <input
-                            type="number" min="0" step="0.01" autoFocus
+                          <NumberStepper
                             value={editAmount}
-                            onChange={(e) => setEditAmount(e.target.value)}
-                            className="w-24 h-8 rounded-md border border-blue-500 px-2 text-sm outline-none"
+                            onChange={setEditAmount}
+                            min={0} max={MAX_RATE_AMOUNT} step={1} bigStep={10}
+                            autoFocus ariaLabel="Base amount" className="w-28 h-8"
                           />
                         ) : money(r.base_amount)}
                       </td>
@@ -358,11 +359,11 @@ export default function ContractDetailPage() {
                 {editingSurcharges ? (
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-slate-400">$</span>
-                    <input
-                      type="number" min="0" step="0.01"
+                    <NumberStepper
                       value={surchargeDraft[s.id] ?? ''}
-                      onChange={(e) => setSurchargeDraft({ ...surchargeDraft, [s.id]: e.target.value })}
-                      className="w-20 h-8 rounded-md border border-slate-200 px-2 text-sm text-right outline-none focus:border-blue-500"
+                      onChange={(v) => setSurchargeDraft({ ...surchargeDraft, [s.id]: v })}
+                      min={0} max={MAX_SURCHARGE_AMOUNT} step={1} bigStep={10}
+                      ariaLabel={`${SURCHARGE_TYPE_LABELS[s.surcharge_type]} amount`} className="w-28 h-8"
                     />
                   </div>
                 ) : (

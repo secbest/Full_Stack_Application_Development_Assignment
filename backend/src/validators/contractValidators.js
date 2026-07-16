@@ -16,16 +16,23 @@ const SURCHARGE_TYPES = [
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
+// Realistic ceilings so an amount can't be persisted with an absurd value (e.g. a
+// mistyped extra zero). Seeded rates run $450-$1,800 and surcharges $1-$320, so these
+// caps sit well above any genuine figure while still rejecting obvious fat-finger
+// errors. Mirrored in frontend/src/validation/contractValidation.js; keep in sync.
+const MAX_RATE_AMOUNT = 50000
+const MAX_SURCHARGE_AMOUNT = 10000
+
 const rateInputSchema = Yup.object({
   service_type: Yup.string().oneOf(SERVICE_TYPES, `service_type must be one of: ${SERVICE_TYPES.join(', ')}`).required('service_type is required'),
   transfer_type: Yup.string().oneOf(TRANSFER_TYPES, `transfer_type must be one of: ${TRANSFER_TYPES.join(', ')}`).required('transfer_type is required'),
   time_of_day: Yup.string().oneOf(TIME_OF_DAY, `time_of_day must be one of: ${TIME_OF_DAY.join(', ')}`).required('time_of_day is required'),
-  base_amount: Yup.number().positive('base_amount must be a positive number').required('base_amount is required'),
+  base_amount: Yup.number().positive('base_amount must be a positive number').max(MAX_RATE_AMOUNT, `base_amount cannot exceed ${MAX_RATE_AMOUNT}`).required('base_amount is required'),
 })
 
 const surchargeInputSchema = Yup.object({
   surcharge_type: Yup.string().oneOf(SURCHARGE_TYPES, `surcharge_type must be one of: ${SURCHARGE_TYPES.join(', ')}`).required('surcharge_type is required'),
-  amount: Yup.number().min(0, 'amount cannot be negative').required('amount is required'),
+  amount: Yup.number().min(0, 'amount cannot be negative').max(MAX_SURCHARGE_AMOUNT, `amount cannot exceed ${MAX_SURCHARGE_AMOUNT}`).required('amount is required'),
 })
 
 // POST /api/contracts - UC-01. rates/surcharges default to [] so a contract can be
@@ -88,7 +95,7 @@ const rateParamSchema = Yup.object({
 
 // PUT /api/contracts/:contractId/rates/:rateId - only base_amount is editable.
 const updateRateSchema = Yup.object({
-  base_amount: Yup.number().positive('base_amount must be a positive number').required('base_amount is required'),
+  base_amount: Yup.number().positive('base_amount must be a positive number').max(MAX_RATE_AMOUNT, `base_amount cannot exceed ${MAX_RATE_AMOUNT}`).required('base_amount is required'),
 })
 
 const surchargeParamSchema = Yup.object({
@@ -98,7 +105,7 @@ const surchargeParamSchema = Yup.object({
 
 // PUT /api/contracts/:contractId/surcharges/:surchargeId
 const updateSurchargeSchema = Yup.object({
-  amount: Yup.number().min(0, 'amount cannot be negative').required('amount is required'),
+  amount: Yup.number().min(0, 'amount cannot be negative').max(MAX_SURCHARGE_AMOUNT, `amount cannot exceed ${MAX_SURCHARGE_AMOUNT}`).required('amount is required'),
 })
 
 module.exports = {
