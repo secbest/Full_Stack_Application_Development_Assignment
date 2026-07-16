@@ -43,6 +43,17 @@ function getRowBackground(intake) {
   return STATUS_ROW_CLASSES[intake.status] || 'bg-white'
 }
 
+// Status filter pills. The active fill follows the CLAUDE.md status reference colors so
+// the pill reads as the status it filters to: Pending = amber (#F59E0B / Warning),
+// Confirmed = blue (#3B82F6 / Info), Rejected = red (#EF4444 / Error). "All" stays
+// neutral slate since it isn't a status.
+const STATUS_FILTER_PILLS = [
+  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white' },
+  { value: 'Pending', label: 'Pending', activeClass: 'bg-amber-500 text-white' },
+  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white' },
+  { value: 'Rejected', label: 'Rejected', activeClass: 'bg-red-500 text-white' },
+]
+
 export default function IntakeQueuePage() {
   const [intakes, setIntakes] = useState([])
   const [query, setQuery] = useState('')
@@ -211,10 +222,15 @@ export default function IntakeQueuePage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setStatusFilter('')} className={`h-8 px-3 rounded-full text-xs ${statusFilter === '' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All</button>
-                  <button onClick={() => setStatusFilter('Pending')} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Pending' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending</button>
-                  <button onClick={() => setStatusFilter('Confirmed')} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Confirmed' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Confirmed</button>
-                  <button onClick={() => setStatusFilter('Rejected')} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Rejected' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Rejected</button>
+                  {STATUS_FILTER_PILLS.map((pill) => (
+                    <button
+                      key={pill.value || 'all'}
+                      onClick={() => setStatusFilter(pill.value)}
+                      className={`h-8 px-3 rounded-full text-xs transition-colors ${statusFilter === pill.value ? pill.activeClass : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="relative">
