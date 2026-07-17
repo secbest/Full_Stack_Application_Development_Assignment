@@ -1,6 +1,11 @@
-// Adds a booking + service memo + invoice for each of five already-seeded clients
-// (seed-clients.js) that had no invoices yet, so the Managing Director's Reports ->
-// Revenue by Client chart has more than the two clients real data happened to produce.
+// Adds a booking + service memo + invoice (with line items) for each of five
+// already-seeded clients (seed-clients.js) that had no invoices yet, so the AR Invoice
+// List is populated on load and the Managing Director's Reports -> Revenue by Client
+// chart has more than the two clients real data happened to produce.
+//
+// Each invoice's subtotal/total is DERIVED from its line items (not hardcoded) so the
+// Invoice Detail line-item table always reconciles with the summary totals. The
+// 'adjusted' invoice carries a manual-adjustment line so its status is self-explanatory.
 //
 // Requires seed-users.js and seed-clients.js to have run first.
 // Uses findOrCreate on each booking's reference_number - safe to run multiple times.
@@ -8,7 +13,13 @@
 // Usage:  node src/scripts/seed-more-revenue-invoices.js
 require('dotenv').config()
 const sequelize = require('../config')
-const { User, Client, Booking, ServiceMemo, Invoice } = require('../models')
+const { User, Client, Booking, ServiceMemo, Invoice, InvoiceLineItem } = require('../models')
+
+const round2 = (n) => Math.round(n * 100) / 100
+
+// li(description, unit_price, [quantity], [manual]) - small helper so the line-item
+// lists below stay readable. Most rows are qty 1 and auto (pricing-engine) rows.
+const li = (description, unit_price, quantity = 1, manual = false) => ({ description, unit_price, quantity, manual })
 
 const NEW_REVENUE_INVOICES = [
   {
@@ -19,7 +30,11 @@ const NEW_REVENUE_INVOICES = [
     transfer_type: 'one_way_hospital',
     pickup: '10 Anson Road, Singapore 079903',
     destination: 'Singapore General Hospital, Outram Road, Singapore 169608',
-    subtotal: 1350.00, tax: 0, total: 1350.00, status: 'synced_to_xero',
+    status: 'synced_to_xero',
+    lineItems: [
+      li('Workplace Standby - One-Way Hospital Transfer (Office Hours)', 1300),
+      li('Oxygen Charge - Base (first 10L)', 50),
+    ],
   },
   {
     ref: 'BKG-REV-0002',
@@ -29,7 +44,11 @@ const NEW_REVENUE_INVOICES = [
     transfer_type: 'one_way_hospital',
     pickup: '10 Bayfront Avenue, Singapore 018956',
     destination: 'Singapore General Hospital, Outram Road, Singapore 169608',
-    subtotal: 3100.00, tax: 0, total: 3100.00, status: 'approved',
+    status: 'approved',
+    lineItems: [
+      li('Event Standby - Advanced Medical Coverage', 3000),
+      li('Inconvenience Fee (Floor/Stair Access)', 100),
+    ],
   },
   {
     ref: 'BKG-REV-0003',
@@ -39,7 +58,12 @@ const NEW_REVENUE_INVOICES = [
     transfer_type: 'two_way_hospital',
     pickup: '1 Ang Mo Kio Electronics Park Road, Singapore 567710',
     destination: 'Tan Tock Seng Hospital A&E, 11 Jalan Tan Tock Seng, Singapore 308433',
-    subtotal: 2180.00, tax: 0, total: 2180.00, status: 'matched',
+    status: 'matched',
+    lineItems: [
+      li('EAS - Two-Way Hospital Transfer (Critical)', 1810),
+      li('Resuscitation Performed', 320),
+      li('Suction Performed', 50),
+    ],
   },
   {
     ref: 'BKG-REV-0004',
@@ -49,7 +73,12 @@ const NEW_REVENUE_INVOICES = [
     transfer_type: 'one_way_hospital',
     pickup: '31 Jurong Island Highway, Singapore 627831',
     destination: 'National University Hospital, 5 Lower Kent Ridge Road, Singapore 119074',
-    subtotal: 1900.00, tax: 0, total: 1900.00, status: 'adjusted',
+    status: 'adjusted',
+    lineItems: [
+      li('EAS - One-Way Hospital Transfer (Advanced)', 1600),
+      li('Jurong Island Transport Surcharge', 150),
+      li('Manual adjustment - after-hours premium', 150, 1, true),
+    ],
   },
   {
     ref: 'BKG-REV-0005',
@@ -59,7 +88,11 @@ const NEW_REVENUE_INVOICES = [
     transfer_type: 'one_way_hospital',
     pickup: '1 Stadium Drive, Singapore 397629',
     destination: 'Changi General Hospital, 2 Simei Street 3, Singapore 529889',
-    subtotal: 980.00, tax: 0, total: 980.00, status: 'synced_to_xero',
+    status: 'synced_to_xero',
+    lineItems: [
+      li('Event Standby - Basic Medical Coverage', 930),
+      li('Disposables Used', 50),
+    ],
   },
 ]
 
@@ -121,17 +154,32 @@ async function main() {
         status: 'invoiced',
       })
 
-      await Invoice.create({
+      // Totals are derived from the line items so the detail view's line-item table
+      // always sums to the summary subtotal/total (tax is 0 in this pre-GST demo data).
+      const subtotal = round2(item.lineItems.reduce((sum, l) => sum + l.quantity * l.unit_price, 0))
+      const tax = 0
+      const total = round2(subtotal + tax)
+
+      const invoice = await Invoice.create({
         memo_id: memo.id,
         booking_id: booking.id,
         client_id: client.id,
-        subtotal: item.subtotal,
-        tax_amount: item.tax,
-        total_amount: item.total,
+        subtotal,
+        tax_amount: tax,
+        total_amount: total,
         status: item.status,
       })
 
-      console.log(`[seed-more-revenue-invoices]   Created: ${item.ref} - ${client.name} - $${item.total.toFixed(2)} (${item.status})`)
+      await InvoiceLineItem.bulkCreate(item.lineItems.map((l) => ({
+        invoice_id: invoice.id,
+        description: l.description,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        amount: round2(l.quantity * l.unit_price),
+        is_manual_adjustment: l.manual,
+      })))
+
+      console.log(`[seed-more-revenue-invoices]   Created: ${item.ref} - ${client.name} - $${total.toFixed(2)} (${item.status}, ${item.lineItems.length} line items)`)
     }
 
     console.log('\n[seed-more-revenue-invoices] Done.')

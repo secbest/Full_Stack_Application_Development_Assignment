@@ -33,6 +33,11 @@ const SEED_STEPS = [
   'seed-bookings.js',
   'seed-xero.js',
   'seed-pricing.js',
+  // AR invoices: seed-pricing only leaves a submitted memo in the review queue (so the
+  // invoice can be generated live via Approve & Match). This adds five ready-made AR
+  // invoices across a status mix (matched/adjusted/approved/synced) so the AR Invoice
+  // List and the MD revenue reports aren't empty on first load. Needs users + clients.
+  'seed-more-revenue-invoices.js',
   'seed-sample-vendor-invoice.js',
   'reset-demo-vendor-invoice-sync.js',
 ]
