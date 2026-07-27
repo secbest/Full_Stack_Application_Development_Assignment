@@ -21,6 +21,56 @@ if (!window.ResizeObserver) {
   }
 }
 
+// jsdom implements no window.matchMedia whatsoever, so any component calling it (the
+// responsive AppLayout shell via useIsMobile) throws before rendering. This stub answers
+// `(max-width: Npx)` and `(min-width: Npx)` queries against window.innerWidth, which
+// jsdom defaults to 1024 - i.e. desktop unless a test says otherwise, so existing tests
+// are unaffected. Use setTestViewportWidth() below to simulate a phone.
+if (!window.matchMedia) {
+  const queryLists = new Set()
+
+  const evaluate = (query) => {
+    const max = /\(\s*max-width:\s*(\d+(?:\.\d+)?)px\s*\)/.exec(query)
+    if (max) return window.innerWidth <= parseFloat(max[1])
+    const min = /\(\s*min-width:\s*(\d+(?:\.\d+)?)px\s*\)/.exec(query)
+    if (min) return window.innerWidth >= parseFloat(min[1])
+    return false
+  }
+
+  window.matchMedia = (query) => {
+    const listeners = new Set()
+    const mql = {
+      media: query,
+      get matches() {
+        return evaluate(query)
+      },
+      addEventListener: (type, listener) => {
+        if (type === 'change') listeners.add(listener)
+      },
+      removeEventListener: (type, listener) => {
+        if (type === 'change') listeners.delete(listener)
+      },
+      // Safari < 14 API surface, kept so a polyfilled consumer still works.
+      addListener: (listener) => listeners.add(listener),
+      removeListener: (listener) => listeners.delete(listener),
+      notify: () => listeners.forEach((l) => l({ matches: mql.matches, media: query })),
+      listenerCount: () => listeners.size,
+    }
+    queryLists.add(mql)
+    return mql
+  }
+
+  // Resize the simulated viewport and fire `change` on every live query list, the way a
+  // browser would. Exposed globally so any student's test can drive a breakpoint.
+  global.setTestViewportWidth = (width) => {
+    window.innerWidth = width
+    queryLists.forEach((mql) => mql.notify())
+  }
+
+  // Tests that opened query lists should not leak listeners into the next file.
+  global.getTestQueryLists = () => queryLists
+}
+
 // jsdom has no PointerEvent constructor at all - @testing-library/user-event's
 // pointer() helper (used internally by click()) needs one to exist on window for
 // Radix's pointer-based interactions (e.g. SelectItem selection) to fire.

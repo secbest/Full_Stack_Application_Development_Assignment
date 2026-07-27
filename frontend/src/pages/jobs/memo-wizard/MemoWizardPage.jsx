@@ -104,20 +104,23 @@ export default function MemoWizardPage() {
 
   if (submittedMemo) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <MemoSubmittedView memo={submittedMemo} />
       </div>
     )
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-6 max-w-3xl mx-auto">
+      {/* Title and escape hatch share a row from `md` up. On a phone the title keeps the
+          full width and the back button sits under it - side by side, the button would
+          push "New Service Memo" into a two-line wrap. */}
+      <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <FilePlus className="w-5 h-5 text-muted-foreground" />
-          <h1 className="text-2xl font-semibold text-foreground">New Service Memo</h1>
+          <h1 className="text-xl md:text-2xl font-semibold text-foreground">New Service Memo</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={handleBackToJobs}>
+        <Button variant="outline" size="sm" onClick={handleBackToJobs} className="w-full h-11 md:w-auto md:h-9">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to My Jobs
         </Button>
       </div>
@@ -130,9 +133,9 @@ export default function MemoWizardPage() {
 
       {bookingStatus === 'error' && (
         <Card>
-          <CardContent className="p-6 flex items-center justify-between">
+          <CardContent className="p-4 md:p-6 flex flex-col items-stretch gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
             <p className="text-sm text-muted-foreground">Couldn't load this booking.</p>
-            <Button variant="outline" size="sm" onClick={() => navigate('/jobs')}>Back to My Jobs</Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/jobs')} className="w-full h-11 md:w-auto md:h-9">Back to My Jobs</Button>
           </CardContent>
         </Card>
       )}
