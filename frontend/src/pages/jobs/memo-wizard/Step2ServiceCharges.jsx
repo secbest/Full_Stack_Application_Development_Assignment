@@ -20,15 +20,18 @@ const TRANSFER_TYPE_LABELS = {
   sg_jb_ground: 'SG-JB Ground', air_evacuation: 'Air Evacuation',
 }
 
+// The whole row is the label, so tapping anywhere toggles - important with gloves on.
+// Taller rows and a larger box below `md` bring the target to ~48px; from `md` up the
+// original denser desktop sizing is restored.
 function ToggleRow({ label, checked, onChange, feeNote }) {
   return (
-    <label className="flex items-center justify-between rounded-lg border border-input px-3 py-2.5 cursor-pointer">
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-input px-3 py-3 md:py-2.5 cursor-pointer">
       <span className="text-sm">{label}</span>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         {checked && feeNote && (
-          <span className="text-xs rounded-full bg-[#F59E0B]/15 text-[#F59E0B] px-2 py-0.5">{feeNote}</span>
+          <span className="text-xs rounded-full bg-[#F59E0B]/15 text-[#F59E0B] px-2 py-0.5 whitespace-nowrap">{feeNote}</span>
         )}
-        <input type="checkbox" className="h-4 w-4 rounded border-input" checked={checked} onChange={onChange} />
+        <input type="checkbox" className="h-5 w-5 md:h-4 md:w-4 rounded border-input" checked={checked} onChange={onChange} />
       </div>
     </label>
   )
@@ -61,7 +64,7 @@ export default function Step2ServiceCharges({ initialValues, onNext, onBack }) {
           <p className="text-xs text-muted-foreground"><span className="text-[#EF4444]">*</span> Required field</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <RequiredLabel>Service Type</RequiredLabel>
               <Select value={formik.values.service_type} onValueChange={(v) => formik.setFieldValue('service_type', v)}>
@@ -101,7 +104,10 @@ export default function Step2ServiceCharges({ initialValues, onNext, onBack }) {
             <FieldError formik={formik} name="oxygen_litres_used" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Surcharge labels are full questions ("Were stairs or elevator access
+              required?"), so a 2-up grid on a phone would wrap each to three lines and
+              make the column of toggles unscannable. One per row below `sm`. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ToggleRow label="Were stairs or elevator access required?" feeNote="+$50" checked={formik.values.has_inconvenience_fee} onChange={(e) => formik.setFieldValue('has_inconvenience_fee', e.target.checked)} />
             <ToggleRow label="Disposables used" feeNote="+$20" checked={formik.values.disposables_used} onChange={(e) => formik.setFieldValue('disposables_used', e.target.checked)} />
             <ToggleRow label="Resuscitation performed" feeNote="+$320" checked={formik.values.resuscitation_performed} onChange={(e) => formik.setFieldValue('resuscitation_performed', e.target.checked)} />
@@ -109,7 +115,7 @@ export default function Step2ServiceCharges({ initialValues, onNext, onBack }) {
             <ToggleRow label="Jurong Island destination" feeNote="+$150-200" checked={formik.values.is_jurong_island} onChange={(e) => formik.setFieldValue('is_jurong_island', e.target.checked)} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="waiting_time_minutes">Waiting Time (minutes)</Label>
               <Input id="waiting_time_minutes" name="waiting_time_minutes" type="number" step="1" min="0" value={formik.values.waiting_time_minutes} onChange={formik.handleChange} onBlur={formik.handleBlur} />
@@ -127,9 +133,12 @@ export default function Step2ServiceCharges({ initialValues, onNext, onBack }) {
         </CardContent>
       </Card>
 
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={onBack}>Back</Button>
-        <Button type="submit">Next: Signature</Button>
+      {/* flex-col-reverse puts the primary action above Back on a phone - thumb-nearest
+          and first in reading order - while DOM order stays Back-then-Next so the
+          keyboard tab sequence is unchanged from desktop. */}
+      <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-between">
+        <Button type="button" variant="outline" onClick={onBack} className="w-full h-11 md:w-auto md:h-10">Back</Button>
+        <Button type="submit" className="w-full h-11 md:w-auto md:h-10">Next: Signature</Button>
       </div>
     </form>
   )

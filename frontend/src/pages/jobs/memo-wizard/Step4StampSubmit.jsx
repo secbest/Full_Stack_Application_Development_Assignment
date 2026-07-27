@@ -27,7 +27,11 @@ export default function Step4StampSubmit({ initialValues, summary, onBack, onSub
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      {/* Upload and summary stack below `lg`: the summary is the last thing read before
+          submitting, so it belongs below the upload rather than beside it. `lg` rather
+          than `md` for the same reason as Step 3 - at 768px two columns leave each about
+          200px, which squeezes the summary's values into a ragged wrap. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader><CardTitle>Hospital Stamp (optional)</CardTitle></CardHeader>
           <CardContent className="space-y-3">
@@ -44,8 +48,19 @@ export default function Step4StampSubmit({ initialValues, summary, onBack, onSub
                 </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-input rounded-lg p-8 cursor-pointer text-sm text-muted-foreground">
-                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Click to upload a photo of the stamped document'}
+              <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-input rounded-lg p-6 md:p-8 min-h-[112px] cursor-pointer text-sm text-muted-foreground text-center">
+                {uploading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    {/* "Click" is wrong on a touch device; the wording swaps at `md`. */}
+                    <span className="md:hidden">Tap to photograph or upload the stamped document</span>
+                    <span className="hidden md:inline">Click to upload a photo of the stamped document</span>
+                  </>
+                )}
+                {/* accept without `capture` deliberately: mobile browsers then offer both
+                    "Take Photo" and the gallery, so a stamp photographed earlier in the
+                    shift can still be attached. Forcing capture would block that. */}
                 <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleFileChange} disabled={uploading} />
               </label>
             )}
@@ -56,23 +71,23 @@ export default function Step4StampSubmit({ initialValues, summary, onBack, onSub
         <Card>
           <CardHeader><CardTitle>Review Before Submitting</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Patient</span><span className="text-right">{summary.patient_name}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Destination</span><span className="text-right">{summary.hospital_destination}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Service</span><span className="text-right">{summary.service_type} / {summary.transfer_type}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Overtime</span><span className="text-right">{summary.overtime_hours}h</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Evacuation Floors</span><span className="text-right">{summary.evacuation_floors}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Patient</span><span className="text-right min-w-0 break-words">{summary.patient_name}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Destination</span><span className="text-right min-w-0 break-words">{summary.hospital_destination}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Service</span><span className="text-right min-w-0 break-words">{summary.service_type} / {summary.transfer_type}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Overtime</span><span className="text-right min-w-0 break-words">{summary.overtime_hours}h</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Evacuation Floors</span><span className="text-right min-w-0 break-words">{summary.evacuation_floors}</span></div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground shrink-0">Signature</span>
-              <span className="text-right">{summary.is_waived ? 'Waived' : 'Captured'}</span>
+              <span className="text-right min-w-0 break-words">{summary.is_waived ? 'Waived' : 'Captured'}</span>
             </div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Hospital Stamp</span><span className="text-right">{stampUrl ? 'Attached' : 'Not attached'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Hospital Stamp</span><span className="text-right min-w-0 break-words">{stampUrl ? 'Attached' : 'Not attached'}</span></div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={onBack} disabled={submitting}>Back</Button>
-        <Button type="button" onClick={() => onSubmit(stampUrl)} disabled={submitting || uploading}>
+      <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-between">
+        <Button type="button" variant="outline" onClick={onBack} disabled={submitting} className="w-full h-11 md:w-auto md:h-10">Back</Button>
+        <Button type="button" onClick={() => onSubmit(stampUrl)} disabled={submitting || uploading} className="w-full h-11 md:w-auto md:h-10">
           {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting memo...</> : 'Submit Memo'}
         </Button>
       </div>

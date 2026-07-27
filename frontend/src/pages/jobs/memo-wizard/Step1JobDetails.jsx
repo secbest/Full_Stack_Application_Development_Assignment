@@ -39,7 +39,7 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
     <form onSubmit={formik.handleSubmit} className="space-y-4">
       <Card>
         <CardHeader><CardTitle>Booking Summary</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 text-sm bg-[#EFF6FF] rounded-lg p-4 mx-6 mb-6 mt-0">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-[#EFF6FF] rounded-lg p-4 mx-4 md:mx-6 mb-6 mt-0">
           <div><span className="text-muted-foreground">Client</span><p className="font-medium">{booking.client?.name}</p></div>
           <div><span className="text-muted-foreground">Reference</span><p className="font-medium">{booking.reference_number}</p></div>
           <div><span className="text-muted-foreground">Pickup</span><p className="font-medium">{booking.pickup_location}</p></div>
@@ -55,7 +55,9 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
           <p className="text-xs text-muted-foreground"><span className="text-[#EF4444]">*</span> Required field</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          {/* Two datetime-local inputs cannot share a 343px row - each needs roughly
+              200px before its native picker text clips. Stacked below `sm`. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <RequiredLabel htmlFor="job_start_time">Job Start Time</RequiredLabel>
               <Input id="job_start_time" name="job_start_time" type="datetime-local" value={formik.values.job_start_time} onChange={formik.handleChange} onBlur={formik.handleBlur} />
@@ -75,7 +77,7 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <RequiredLabel htmlFor="overtime_hours">Overtime Hours</RequiredLabel>
               <Input id="overtime_hours" name="overtime_hours" type="number" step="0.25" min="0" value={formik.values.overtime_hours} onChange={formik.handleChange} onBlur={formik.handleBlur} />
@@ -109,7 +111,7 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
       </Card>
 
       <div className="flex justify-end">
-        <Button type="submit">Next: Service &amp; Charges</Button>
+        <Button type="submit" className="w-full h-11 md:w-auto md:h-10">Next: Service &amp; Charges</Button>
       </div>
     </form>
   )

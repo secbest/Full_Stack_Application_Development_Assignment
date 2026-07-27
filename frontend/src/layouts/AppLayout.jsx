@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Activity, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { useAuth } from '@/hooks'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Activity, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { useAuth, useIsMobile } from '@/hooks'
 import { NAV_ROUTES } from '@/router/routes'
 import { Button } from '@/components/ui/button'
 
@@ -18,12 +18,55 @@ const ROLE_META = {
 export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Below `md` the sidebar stops being part of the page flow and becomes an off-canvas
+  // drawer: a fixed 240px rail left the field crew ~135px of usable width on a phone.
+  // This needs JS rather than pure CSS because the drawer carries state - it has to close
+  // itself on navigation, on Escape, and it must not claim dialog semantics on desktop.
+  const isMobile = useIsMobile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   // Collapsed state persists across sessions so the layout the user picked sticks.
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1')
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0')
   }, [collapsed])
+
+  // Collapsing to an icon rail is a desktop-only affordance - an overlay drawer is either
+  // open at full width or not shown at all, so the stored preference is ignored on mobile
+  // rather than overwritten (widening the window restores whatever the user chose).
+  const showRail = collapsed && !isMobile
+
+  // Growing past the breakpoint with the drawer open would otherwise leave a dialog and a
+  // locked body behind on a layout that no longer has a drawer at all.
+  useEffect(() => {
+    if (!isMobile) setDrawerOpen(false)
+  }, [isMobile])
+
+  // Any route change closes the drawer, so tapping a link does not leave the overlay
+  // sitting on top of the screen the user just asked for.
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!drawerOpen) return undefined
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
+
+  // Stop the page behind the drawer scrolling under the user's finger. The previous value
+  // is restored rather than cleared, in case anything else set it.
+  useEffect(() => {
+    if (!isMobile || !drawerOpen) return undefined
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [isMobile, drawerOpen])
 
   const visibleRoutes = NAV_ROUTES.filter(r => r.roles.includes(user?.role))
   const roleMeta = ROLE_META[user?.role] ?? { label: user?.role ?? '', badge: 'bg-gray-100 text-gray-700' }
@@ -35,42 +78,102 @@ export default function AppLayout() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
-      {/* Full-panel dark background per CLAUDE.md ("Sidebar bg: #1E293B") and every
+      {/* ── Mobile top bar ───────────────────────────────────────────────────────
+          Replaces the sidebar as the persistent chrome under `md`. Fixed rather than
+          in-flow so a long wizard step scrolls under it instead of pushing it away.
+
+          Gated on isMobile rather than only `md:hidden` so desktop does not carry a
+          hamburger in its DOM at all - it keeps the two navigation affordances mutually
+          exclusive in the accessibility tree, not just visually. The class is kept as
+          well, so a stale breakpoint read can never paint two navigations at once. */}
+      {isMobile && (
+        <header className="md:hidden fixed top-0 inset-x-0 z-30 h-14 flex items-center gap-3 px-4 bg-[#1E293B]">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation menu"
+            aria-expanded={drawerOpen}
+            aria-controls="app-sidebar"
+            className="-ml-1 p-2 rounded-md text-slate-300 hover:bg-[#0F172A] hover:text-white transition-colors"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <Activity className="w-4 h-4 text-teal-400 flex-shrink-0" />
+          <span className="text-sm font-semibold tracking-wide text-white">EFAR Platform</span>
+        </header>
+      )}
+
+      {/* Backdrop - only exists while the drawer is actually open on a phone. */}
+      {isMobile && drawerOpen && (
+        <div
+          data-testid="sidebar-backdrop"
+          onClick={() => setDrawerOpen(false)}
+          className="md:hidden fixed inset-0 z-40 bg-black/50"
+        />
+      )}
+
+      {/* ── Sidebar ──────────────────────────────────────────────────────────────
+          One markup tree for both breakpoints. Under `md` it is a fixed overlay that
+          slides in from the left; from `md` up it is the original in-flow column, with
+          the desktop classes left exactly as they were so nothing can regress there.
+
+          Full-panel dark background per CLAUDE.md ("Sidebar bg: #1E293B") and every
           Figma Make screen (shared.tsx's <Sidebar> sets this on the whole <aside>, not
-          just a header strip) - previously only the header row was dark, and at the
-          wrong hex (#1B2336). */}
+          just a header strip). */}
       <aside
-        className={`${collapsed ? 'w-[68px]' : 'w-60'} flex-shrink-0 flex flex-col bg-[#1E293B]
-          overflow-hidden transition-[width] duration-300 ease-in-out`}
+        id="app-sidebar"
+        role={isMobile && drawerOpen ? 'dialog' : undefined}
+        aria-modal={isMobile && drawerOpen ? 'true' : undefined}
+        aria-label="Main navigation"
+        aria-hidden={isMobile && !drawerOpen ? 'true' : undefined}
+        className={`
+          fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw]
+          ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}
+          transition-transform duration-300 ease-in-out
+          md:static md:z-auto md:max-w-none md:translate-x-0 md:transition-[width]
+          ${showRail ? 'md:w-[68px]' : 'md:w-60'}
+          flex-shrink-0 flex flex-col bg-[#1E293B] overflow-hidden
+        `}
       >
-        {/* Brand header - collapses to just the mark, with the toggle beside/below it. */}
+        {/* Brand header - collapses to just the mark on the desktop rail, with the
+            toggle beside/below it. On mobile it carries the drawer's close button. */}
         <div
           className={`flex items-center px-4 py-[18px] border-b border-white/10 ${
-            collapsed ? 'justify-center' : 'gap-2.5'
+            showRail ? 'md:justify-center' : 'gap-2.5'
           }`}
         >
-          <Activity className={`${collapsed ? 'w-5 h-5' : 'w-4 h-4'} text-teal-400 flex-shrink-0`} />
-          {!collapsed && (
+          <Activity className={`${showRail ? 'md:w-5 md:h-5' : ''} w-4 h-4 text-teal-400 flex-shrink-0`} />
+          {!showRail && (
             <>
               <span className="text-sm font-semibold tracking-wide text-white whitespace-nowrap">
                 EFAR Platform
               </span>
-              <button
-                type="button"
-                onClick={() => setCollapsed(true)}
-                aria-label="Collapse sidebar"
-                title="Collapse sidebar"
-                className="ml-auto p-1 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
-              >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
+              {isMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setDrawerOpen(false)}
+                  aria-label="Close navigation menu"
+                  className="ml-auto p-2 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCollapsed(true)}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                  className="ml-auto p-1 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>
 
-        {/* Expand control - only shown while collapsed, sits at the top of the rail. */}
-        {collapsed && (
+        {/* Expand control - only shown while the desktop rail is collapsed. */}
+        {showRail && (
           <div className="flex justify-center pt-2">
             <button
               type="button"
@@ -84,18 +187,18 @@ export default function AppLayout() {
           </div>
         )}
 
-        {/* Nav links - two-line list items when expanded; icon-only rail with hover
-            tooltips when collapsed. */}
+        {/* Nav links - two-line list items normally; icon-only rail with hover tooltips
+            when collapsed on desktop. Taller rows on mobile for a 44px touch target. */}
         <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
           {visibleRoutes.map(({ path, label, sub, Icon }) => (
             <NavLink
               key={path}
               to={path}
               end={path === '/settings'}
-              title={collapsed ? label : undefined}
+              title={showRail ? label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
-                  collapsed ? 'justify-center' : ''
+                `flex items-center gap-3 px-3 py-3 md:py-2 rounded-md transition-colors ${
+                  showRail ? 'md:justify-center' : ''
                 } ${
                   isActive
                     ? 'bg-[#0F172A] text-white'
@@ -105,8 +208,8 @@ export default function AppLayout() {
             >
               {({ isActive }) => (
                 <>
-                  <Icon className={`${collapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0`} />
-                  {!collapsed && (
+                  <Icon className={`${showRail ? 'md:w-5 md:h-5' : ''} w-4 h-4 flex-shrink-0`} />
+                  {!showRail && (
                     <span className="flex flex-col min-w-0 leading-tight">
                       <span className="text-sm font-medium truncate">{label}</span>
                       {sub && (
@@ -127,14 +230,14 @@ export default function AppLayout() {
           <NavLink
             to="/settings"
             end
-            title={collapsed ? user?.name : undefined}
+            title={showRail ? user?.name : undefined}
             className={({ isActive }) =>
-              `block rounded-md transition-colors ${collapsed ? 'p-2' : 'px-3 py-1'} ${
+              `block rounded-md transition-colors ${showRail ? 'md:p-2' : 'px-3 py-1'} ${
                 isActive ? 'bg-[#0F172A]' : 'hover:bg-[#0F172A]'
               }`
             }
           >
-            {collapsed ? (
+            {showRail ? (
               <span className="flex items-center justify-center w-full h-5 text-sm font-semibold text-white">
                 {user?.name?.[0]?.toUpperCase() ?? '?'}
               </span>
@@ -152,19 +255,20 @@ export default function AppLayout() {
             variant="ghost"
             size="sm"
             onClick={handleLogout}
-            title={collapsed ? 'Sign out' : undefined}
+            title={showRail ? 'Sign out' : undefined}
             className={`w-full gap-2 text-slate-300 hover:bg-[#0F172A] hover:text-white ${
-              collapsed ? 'justify-center px-0' : 'justify-start'
+              showRail ? 'md:justify-center md:px-0' : 'justify-start'
             }`}
           >
-            <LogOut className={collapsed ? 'w-5 h-5' : 'w-4 h-4'} />
-            {!collapsed && 'Sign out'}
+            <LogOut className={`${showRail ? 'md:w-5 md:h-5' : ''} w-4 h-4`} />
+            {!showRail && 'Sign out'}
           </Button>
         </div>
       </aside>
 
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-auto">
+      {/* ── Main content ─────────────────────────────────────────────────────────
+          pt-14 clears the fixed mobile top bar; from `md` up there is no top bar. */}
+      <main className="flex-1 overflow-auto pt-14 md:pt-0">
         <Outlet />
       </main>
     </div>
