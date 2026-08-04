@@ -101,7 +101,7 @@ async function seedFieldOpsTestBookings({ ravi, camilla }) {
 
 // Client feedback item 1 (17 Jul 2026): the crew records five job milestones live.
 // Seeds the first two against the in_progress demo booking so the My Jobs hero card
-// opens mid-job (two stages done, "En Route" as the next tap target) instead of
+// opens mid-job (two stages done, "On the way" as the next tap target) instead of
 // needing someone to tap twice before the screen looks realistic.
 async function seedMilestones({ ravi }) {
   const booking = await Booking.findOne({ where: { reference_number: 'BKG-TEST-00001' } })

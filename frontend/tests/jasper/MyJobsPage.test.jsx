@@ -80,8 +80,8 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     // 'activated' is recorded, so the single tap target is the NEXT milestone
     expect(within(hero).getByRole('button', { name: 'Arrived at Location' })).toBeEnabled()
     // later milestones are visible but not tappable
-    expect(within(hero).queryByRole('button', { name: 'En Route' })).not.toBeInTheDocument()
-    expect(within(hero).getByText('En Route')).toBeInTheDocument()
+    expect(within(hero).queryByRole('button', { name: 'On the way' })).not.toBeInTheDocument()
+    expect(within(hero).getByText('On the way')).toBeInTheDocument()
   })
 
   test('a confirmed job today starting within the next hour becomes the hero, offering "Activated"', async () => {
@@ -170,7 +170,7 @@ describe('MyJobsPage - live milestone stepper (client feedback #1)', () => {
     const hero = await screen.findByTestId('current-job-hero')
     await user.click(within(hero).getByRole('button', { name: 'Arrived at Location' }))
 
-    expect(await within(hero).findByRole('button', { name: 'En Route' })).toBeEnabled()
+    expect(await within(hero).findByRole('button', { name: 'On the way' })).toBeEnabled()
     expect(JSON.parse(mock.history.post[0].data)).toEqual({ milestone_type: 'arrived_at_location' })
   })
 

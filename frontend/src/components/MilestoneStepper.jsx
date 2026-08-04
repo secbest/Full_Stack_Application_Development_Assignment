@@ -20,7 +20,7 @@ export const MILESTONE_SEQUENCE = ['activated', 'arrived_at_location', 'en_route
 export const MILESTONE_LABELS = {
   activated: 'Activated',
   arrived_at_location: 'Arrived at Location',
-  en_route: 'En Route',
+  en_route: 'On the way',
   arrived_at_destination: 'Arrived at Destination',
   job_completed: 'Job Complete',
 }
