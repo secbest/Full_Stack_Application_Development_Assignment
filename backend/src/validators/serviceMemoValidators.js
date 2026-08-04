@@ -12,6 +12,16 @@ const TRANSFER_TYPES = [
 // scheduled duration.
 const STANDARD_SHIFT_HOURS = 8
 
+// The two service types that always involve an ambulance and therefore a patient.
+const AMBULANCE_SERVICE_TYPES = ['eas', 'mts']
+
+const requiredForAmbulanceOnly = (fieldName) =>
+  Yup.string().trim().when('service_type', {
+    is: (v) => AMBULANCE_SERVICE_TYPES.includes(v),
+    then: (schema) => schema.required(`${fieldName} is required`),
+    otherwise: (schema) => schema.nullable().transform((v) => (v === '' ? null : v)).default(null),
+  })
+
 const signatureSchema = Yup.object({
   signer_name: Yup.string().trim().required('Signer name is required'),
   signature_image_url: Yup.string().url('signature_image_url must be a valid URL').nullable().default(null),
@@ -51,8 +61,12 @@ const createServiceMemoSchema = Yup.object({
     .min(0, 'evacuation_floors cannot be negative')
     .required('Evacuation floor count cannot be blank. Enter 0 if no evacuation occurred.'),
 
-  patient_name: Yup.string().trim().required('patient_name is required'),
-  hospital_destination: Yup.string().trim().required('hospital_destination is required'),
+  // Client feedback item 4: manpower-only event/workplace standby jobs have no patient
+  // and no hospital run, so both fields are required only for the ambulance service
+  // types. For standby types an empty string coerces to null (a standby job CAN still
+  // have a patient - an event casualty - so a provided value is kept).
+  patient_name: requiredForAmbulanceOnly('patient_name'),
+  hospital_destination: requiredForAmbulanceOnly('hospital_destination'),
 
   service_type: Yup.string().oneOf(SERVICE_TYPES, `service_type must be one of: ${SERVICE_TYPES.join(', ')}`).required('service_type is required'),
   transfer_type: Yup.string().oneOf(TRANSFER_TYPES, `transfer_type must be one of: ${TRANSFER_TYPES.join(', ')}`).required('transfer_type is required'),

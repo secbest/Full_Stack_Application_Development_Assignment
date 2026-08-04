@@ -5,27 +5,56 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RequiredLabel } from '@/components/RequiredLabel'
 import { Label } from '@/components/ui/label'
-import { step1Schema } from '@/validation/serviceMemoValidation'
+import { buildStep1Schema, isManpowerOnlyServiceType } from '@/validation/serviceMemoValidation'
 
 function FieldError({ formik, name }) {
   if (!formik.touched[name] || !formik.errors[name]) return null
   return <p className="text-xs text-[#EF4444] mt-1">{formik.errors[name]}</p>
 }
 
+// A datetime-local input holds LOCAL wall-clock time with no zone, so an ISO instant
+// has to be converted through the local calendar fields rather than sliced off the
+// ISO string (which is UTC and would show the wrong time for a Singapore crew).
+function toDatetimeLocal(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function milestoneTime(booking, type) {
+  return (booking.milestones || []).find((m) => m.milestone_type === type)?.recorded_at || null
+}
+
 export default function Step1JobDetails({ booking, initialValues, onNext }) {
+  // Client feedback item 1: the crew already tapped these times live on the job card,
+  // so pre-fill from the recorded milestones instead of asking them to type times a
+  // second time. Still editable - the memo remains the document of record.
+  const activatedAt = toDatetimeLocal(milestoneTime(booking, 'activated'))
+  const completedAt = toDatetimeLocal(milestoneTime(booking, 'job_completed'))
+
+  // Client feedback item 4: a manpower-only standby job has no patient and no hospital
+  // run, so both fields become optional. Driven by the BOOKING's service type.
+  const manpowerOnly = isManpowerOnlyServiceType(booking.service_type)
+
   const formik = useFormik({
     initialValues: {
-      job_start_time: initialValues.job_start_time || '',
-      job_end_time: initialValues.job_end_time || '',
+      job_start_time: initialValues.job_start_time || activatedAt,
+      job_end_time: initialValues.job_end_time || completedAt,
       overtime_hours: initialValues.overtime_hours ?? 0,
       evacuation_floors: initialValues.evacuation_floors ?? 0,
       patient_name: initialValues.patient_name || '',
-      hospital_destination: initialValues.hospital_destination || booking.destination || '',
+      // For a standby job the booking "destination" is the event site, not a hospital,
+      // so it must not be copied into hospital_destination.
+      hospital_destination: initialValues.hospital_destination || (manpowerOnly ? '' : booking.destination || ''),
       additional_charges_notes: initialValues.additional_charges_notes || '',
     },
-    validationSchema: step1Schema,
+    validationSchema: buildStep1Schema(booking.service_type),
     onSubmit: (values) => onNext(values),
   })
+
+  const prefilledFromMilestones = !!(activatedAt || completedAt)
 
   // Live duration readout so the 8-hour standard-shift assumption (see step1Schema's
   // overtime-consistency test) is visible before the user hits an error, not just after.
@@ -55,6 +84,12 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
           <p className="text-xs text-muted-foreground"><span className="text-[#EF4444]">*</span> Required field</p>
         </CardHeader>
         <CardContent className="space-y-4">
+          {prefilledFromMilestones && (
+            <p className="text-xs text-[#22C55E]">
+              Times pre-filled from the milestones you recorded on the job card. Adjust them if needed.
+            </p>
+          )}
+
           {/* Two datetime-local inputs cannot share a 343px row - each needs roughly
               200px before its native picker text clips. Stacked below `sm`. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -91,14 +126,31 @@ export default function Step1JobDetails({ booking, initialValues, onNext }) {
             </div>
           </div>
 
+          {/* Client feedback item 4: an event/workplace standby job dispatches crew with
+              no ambulance and no patient, so these two stop being mandatory. A standby
+              job CAN still have a casualty, so the fields remain available. */}
+          {manpowerOnly && (
+            <p className="text-xs text-[#3B82F6] bg-[#EFF6FF] rounded-lg px-3 py-2">
+              Manpower-only standby job - leave the patient fields blank if there was no patient.
+            </p>
+          )}
+
           <div>
-            <RequiredLabel htmlFor="patient_name">Patient Name</RequiredLabel>
+            {manpowerOnly ? (
+              <Label htmlFor="patient_name">Patient Name (optional)</Label>
+            ) : (
+              <RequiredLabel htmlFor="patient_name">Patient Name</RequiredLabel>
+            )}
             <Input id="patient_name" name="patient_name" value={formik.values.patient_name} onChange={formik.handleChange} onBlur={formik.handleBlur} />
             <FieldError formik={formik} name="patient_name" />
           </div>
 
           <div>
-            <RequiredLabel htmlFor="hospital_destination">Hospital Destination</RequiredLabel>
+            {manpowerOnly ? (
+              <Label htmlFor="hospital_destination">Hospital Destination (optional)</Label>
+            ) : (
+              <RequiredLabel htmlFor="hospital_destination">Hospital Destination</RequiredLabel>
+            )}
             <Input id="hospital_destination" name="hospital_destination" value={formik.values.hospital_destination} onChange={formik.handleChange} onBlur={formik.handleBlur} />
             <FieldError formik={formik} name="hospital_destination" />
           </div>

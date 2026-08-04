@@ -40,6 +40,12 @@ export function getBooking(id) {
   return api.get(`/bookings/${id}`)
 }
 
+// Client feedback item 1 - live tap-to-timestamp. The server records the time; the
+// client only names the milestone, so there is nothing to backdate.
+export function recordMilestone(bookingId, milestoneType) {
+  return api.post(`/bookings/${bookingId}/milestone`, { milestone_type: milestoneType })
+}
+
 export function getFleetOverview(params) {
   return api.get('/dashboard/fleet-overview', { params })
 }

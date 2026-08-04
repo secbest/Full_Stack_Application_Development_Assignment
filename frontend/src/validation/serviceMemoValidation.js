@@ -14,49 +14,76 @@ export const TRANSFER_TYPES = [
 // exists on bookings yet).
 const STANDARD_SHIFT_HOURS = 8
 
-export const step1Schema = Yup.object({
-  job_start_time: Yup.date().required('Job start time is required'),
-  job_end_time: Yup.date()
-    .required('Job end time is required')
-    .test('after-start', 'Job end time must be after job start time', function (value) {
-      const { job_start_time } = this.parent
-      if (!value || !job_start_time) return true
-      return new Date(value) > new Date(job_start_time)
-    }),
-  overtime_hours: Yup.number()
-    .typeError('Overtime hours must be a number')
-    .required('Overtime hours is required')
-    .min(0, 'Overtime hours cannot be negative'),
-  evacuation_floors: Yup.number()
-    .typeError('Evacuation floor count must be a number')
-    .integer()
-    .min(0, 'Evacuation floor count cannot be negative')
-    .required('Evacuation floor count cannot be blank. Enter 0 if no evacuation occurred.'),
-  patient_name: Yup.string().trim().required('Patient name is required'),
-  hospital_destination: Yup.string().trim().required('Hospital destination is required'),
-  additional_charges_notes: Yup.string().trim().nullable(),
-})
-  // Cross-field UC-03 rule, previously only enforced server-side - it was passing all 4
-  // wizard steps silently and only failing at the final POST, which is confusing because
-  // the fields it complains about (job times, overtime) were filled in 3 steps earlier.
-  // Mirrored here so the crew member sees it immediately on Step 1 instead.
-  .test(
-    'overtime-consistency',
-    'Job duration implies overtime but overtime_hours is 0. Add a note or correct the hours.',
-    function (values) {
-      if (!values.job_start_time || !values.job_end_time || values.overtime_hours == null) return true
-      const durationHours = (new Date(values.job_end_time) - new Date(values.job_start_time)) / 3_600_000
-      const exceedsGracePeriod = durationHours > STANDARD_SHIFT_HOURS + 0.5
-      const hasReasonNote = !!(values.additional_charges_notes && values.additional_charges_notes.trim())
-      if (exceedsGracePeriod && Number(values.overtime_hours) === 0 && !hasReasonNote) {
-        return this.createError({
-          path: 'overtime_hours',
-          message: 'Job duration implies overtime but overtime_hours is 0. Add a note in additional_charges_notes or correct the hours.',
-        })
-      }
-      return true
+// Cross-field UC-03 rule, previously only enforced server-side - it was passing all 4
+// wizard steps silently and only failing at the final POST, which is confusing because
+// the fields it complains about (job times, overtime) were filled in 3 steps earlier.
+// Mirrored here so the crew member sees it immediately on Step 1 instead.
+// Held as a spreadable tuple because buildStep1Schema() produces a fresh object schema
+// per booking service type and every one of them needs this same object-level test.
+const OVERTIME_CONSISTENCY_TEST = [
+  'overtime-consistency',
+  'Job duration implies overtime but overtime_hours is 0. Add a note or correct the hours.',
+  function (values) {
+    if (!values.job_start_time || !values.job_end_time || values.overtime_hours == null) return true
+    const durationHours = (new Date(values.job_end_time) - new Date(values.job_start_time)) / 3_600_000
+    const exceedsGracePeriod = durationHours > STANDARD_SHIFT_HOURS + 0.5
+    const hasReasonNote = !!(values.additional_charges_notes && values.additional_charges_notes.trim())
+    if (exceedsGracePeriod && Number(values.overtime_hours) === 0 && !hasReasonNote) {
+      return this.createError({
+        path: 'overtime_hours',
+        message: 'Job duration implies overtime but overtime_hours is 0. Add a note in additional_charges_notes or correct the hours.',
+      })
     }
-  )
+    return true
+  },
+]
+
+// Client feedback item 4 (17 Jul 2026): manpower-only event/workplace standby jobs have
+// no ambulance and no patient, so the patient fields are required only for the ambulance
+// service types. Mirrors requiredForAmbulanceOnly in the backend validator - unlike the
+// backend the condition here comes from the BOOKING's service_type (a prop), not from a
+// sibling field, because Step 1 is rendered before the crew touches service_type on Step 2.
+export const AMBULANCE_SERVICE_TYPES = ['eas', 'mts']
+
+export function isManpowerOnlyServiceType(serviceType) {
+  return !!serviceType && !AMBULANCE_SERVICE_TYPES.includes(serviceType)
+}
+
+export function buildStep1Schema(bookingServiceType) {
+  const manpowerOnly = isManpowerOnlyServiceType(bookingServiceType)
+  const patientField = (message) =>
+    manpowerOnly
+      ? Yup.string().trim().nullable()
+      : Yup.string().trim().required(message)
+
+  return Yup.object({
+    job_start_time: Yup.date().required('Job start time is required'),
+    job_end_time: Yup.date()
+      .required('Job end time is required')
+      .test('after-start', 'Job end time must be after job start time', function (value) {
+        const { job_start_time } = this.parent
+        if (!value || !job_start_time) return true
+        return new Date(value) > new Date(job_start_time)
+      }),
+    overtime_hours: Yup.number()
+      .typeError('Overtime hours must be a number')
+      .required('Overtime hours is required')
+      .min(0, 'Overtime hours cannot be negative'),
+    evacuation_floors: Yup.number()
+      .typeError('Evacuation floor count must be a number')
+      .integer()
+      .min(0, 'Evacuation floor count cannot be negative')
+      .required('Evacuation floor count cannot be blank. Enter 0 if no evacuation occurred.'),
+    patient_name: patientField('Patient name is required'),
+    hospital_destination: patientField('Hospital destination is required'),
+    additional_charges_notes: Yup.string().trim().nullable(),
+  })
+    .test(...OVERTIME_CONSISTENCY_TEST)
+}
+
+// Default export keeps the original ambulance behaviour (both patient fields required)
+// for any caller that does not know the booking's service type.
+export const step1Schema = buildStep1Schema('eas')
 
 export const step2Schema = Yup.object({
   service_type: Yup.string().oneOf(SERVICE_TYPES, 'Select a valid service type').required('Service type is required'),

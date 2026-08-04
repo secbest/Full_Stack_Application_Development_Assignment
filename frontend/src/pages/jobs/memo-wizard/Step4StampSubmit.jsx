@@ -71,8 +71,10 @@ export default function Step4StampSubmit({ initialValues, summary, onBack, onSub
         <Card>
           <CardHeader><CardTitle>Review Before Submitting</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Patient</span><span className="text-right min-w-0 break-words">{summary.patient_name}</span></div>
-            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Destination</span><span className="text-right min-w-0 break-words">{summary.hospital_destination}</span></div>
+            {/* A manpower-only standby memo (client feedback item 4) has no patient and
+                no hospital destination - show a dash rather than an empty gap. */}
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Patient</span><span className="text-right min-w-0 break-words">{summary.patient_name || '-'}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Destination</span><span className="text-right min-w-0 break-words">{summary.hospital_destination || '-'}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Service</span><span className="text-right min-w-0 break-words">{summary.service_type} / {summary.transfer_type}</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Overtime</span><span className="text-right min-w-0 break-words">{summary.overtime_hours}h</span></div>
             <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Evacuation Floors</span><span className="text-right min-w-0 break-words">{summary.evacuation_floors}</span></div>

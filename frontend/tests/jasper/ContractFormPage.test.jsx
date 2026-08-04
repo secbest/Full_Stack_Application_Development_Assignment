@@ -52,7 +52,13 @@ function renderNewContractForm() {
 }
 
 async function fillRequiredFields(user) {
-  await user.type(screen.getByLabelText(/Contract Name/i), 'REST Client Test Contract - FY2027')
+  // fireEvent.change rather than user.type: this is a Formik-controlled input, so
+  // user.type() dispatches one keystroke cycle per character and re-renders the whole
+  // form each time. At 34 characters that cost ~3s per test, which under parallel-worker
+  // CPU contention intermittently crossed Jest's 5s default timeout and made this suite
+  // flaky. One change event sets the same value - and it is what the date inputs below
+  // already do. Keystroke-level behaviour is not what these tests assert.
+  fireEvent.change(screen.getByLabelText(/Contract Name/i), { target: { value: 'REST Client Test Contract - FY2027' } })
 
   await user.click(screen.getByRole('combobox', { name: /Client/i }))
   // Radix also renders a visually-hidden native <select><option> in parallel (for

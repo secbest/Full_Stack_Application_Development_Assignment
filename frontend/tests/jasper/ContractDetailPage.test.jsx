@@ -322,7 +322,10 @@ describe('ContractDetailPage - surcharge schedule', () => {
     await screen.findByRole('heading', { name: 'TTSH - FY2027' })
 
     await user.click(screen.getByRole('button', { name: 'Edit Surcharges' }))
-    const oxygenInput = screen.getAllByRole('spinbutton')[0]
+    // The surcharge editor renders Kwan Hua's NumberStepper - a type="text" input with
+    // an aria-label ("<surcharge label> amount"), not a native number input - so there
+    // is no "spinbutton" role to query. Address the field by its accessible name.
+    const oxygenInput = screen.getByRole('textbox', { name: 'Oxygen Base amount' })
     await user.clear(oxygenInput)
     await user.type(oxygenInput, '60')
 

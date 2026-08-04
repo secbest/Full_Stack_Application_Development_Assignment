@@ -1,6 +1,6 @@
 // Owner: Jasper - Field Ops (Wave 2A), hotfix follow-up.
 // Pure Yup schema tests, no mocking needed - mirror the Memo Wizard's step schemas.
-const { step1Schema, step2Schema, step3Schema } = require('@/validation/serviceMemoValidation')
+const { step1Schema, step2Schema, step3Schema, buildStep1Schema } = require('@/validation/serviceMemoValidation')
 
 function validStep1(overrides = {}) {
   return {
@@ -158,5 +158,46 @@ describe('step3Schema (UC-02 signature / waiver)', () => {
       expect(err.path).toBe('signature_image_url')
       expect(err.message).toMatch(/A drawn signature or a documented waiver is required/)
     }
+  })
+})
+
+// Client feedback item 4 (17 Jul 2026): "sometimes we also have events whereby there is
+// no ambulance at all, we just have to dispatch crew, like manpower." Step 1's patient
+// fields are required only when the booking is an ambulance job, so the schema is now
+// built per booking service_type. Mirrors the backend's requiredForAmbulanceOnly rule in
+// backend/src/validators/serviceMemoValidators.js.
+describe('buildStep1Schema - conditional patient fields (client feedback #4)', () => {
+  test('event_standby: both patient fields may be blank', async () => {
+    const schema = buildStep1Schema('event_standby')
+    await expect(
+      schema.validate(validStep1({ patient_name: '', hospital_destination: '' }))
+    ).resolves.toBeTruthy()
+  })
+
+  test('workplace_standby: both patient fields may be blank', async () => {
+    const schema = buildStep1Schema('workplace_standby')
+    await expect(
+      schema.validate(validStep1({ patient_name: '', hospital_destination: '' }))
+    ).resolves.toBeTruthy()
+  })
+
+  test('eas: patient_name is still required', async () => {
+    const schema = buildStep1Schema('eas')
+    await expect(
+      schema.validate(validStep1({ patient_name: '' }))
+    ).rejects.toThrow('Patient name is required')
+  })
+
+  test('mts: hospital_destination is still required', async () => {
+    const schema = buildStep1Schema('mts')
+    await expect(
+      schema.validate(validStep1({ hospital_destination: '' }))
+    ).rejects.toThrow('Hospital destination is required')
+  })
+
+  test('the default step1Schema export keeps the ambulance (required) behaviour', async () => {
+    await expect(
+      step1Schema.validate(validStep1({ patient_name: '' }))
+    ).rejects.toThrow('Patient name is required')
   })
 })
