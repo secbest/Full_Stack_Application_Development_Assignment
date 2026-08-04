@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/context/ToastContext'
 import { getBooking, createServiceMemo } from '@/api/fieldOps'
+import { AMBULANCE_SERVICE_TYPES } from '@/validation/serviceMemoValidation'
 import WizardProgressBar from './WizardProgressBar'
 import Step1JobDetails from './Step1JobDetails'
 import Step2ServiceCharges from './Step2ServiceCharges'
@@ -46,14 +47,29 @@ export default function MemoWizardPage() {
 
   async function handleFinalSubmit(hospitalStampUrl) {
     const d = wizardData
+    const blank = (v) => !v || !String(v).trim()
+
+    // Step 1 decides whether the patient fields are required from the BOOKING's service
+    // type, but the crew can change service_type on Step 2. If they switch a standby job
+    // to an ambulance type after leaving the patient fields blank, catch it here rather
+    // than letting the backend 400 land after they've already drawn a signature and
+    // photographed the stamp - send them back to Step 1 where the fields actually live.
+    if (AMBULANCE_SERVICE_TYPES.includes(d.service_type) && (blank(d.patient_name) || blank(d.hospital_destination))) {
+      toast.error(`A ${d.service_type.toUpperCase()} memo needs a patient name and hospital destination. Returning to Job Details.`)
+      setStep(1)
+      return
+    }
+
     const payload = {
       booking_id: Number(bookingId),
       job_start_time: d.job_start_time,
       job_end_time: d.job_end_time,
       overtime_hours: Number(d.overtime_hours),
       evacuation_floors: Number(d.evacuation_floors),
-      patient_name: d.patient_name,
-      hospital_destination: d.hospital_destination,
+      // Manpower-only standby memos send null, not '' - the column is nullable and an
+      // empty string would read as a real (blank) patient name downstream.
+      patient_name: blank(d.patient_name) ? null : d.patient_name,
+      hospital_destination: blank(d.hospital_destination) ? null : d.hospital_destination,
       additional_charges_notes: d.additional_charges_notes || null,
       hospital_stamp_image_url: hospitalStampUrl,
       service_type: d.service_type,
@@ -148,7 +164,7 @@ export default function MemoWizardPage() {
             <Step1JobDetails booking={booking} initialValues={wizardData} onNext={mergeAndAdvance} />
           )}
           {step === 2 && (
-            <Step2ServiceCharges initialValues={wizardData} onNext={mergeAndAdvance} onBack={() => setStep(1)} />
+            <Step2ServiceCharges booking={booking} initialValues={wizardData} onNext={mergeAndAdvance} onBack={() => setStep(1)} />
           )}
           {step === 3 && (
             <Step3Signature initialValues={wizardData} onNext={mergeAndAdvance} onBack={() => setStep(2)} />

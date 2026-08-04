@@ -37,10 +37,13 @@ function ToggleRow({ label, checked, onChange, feeNote }) {
   )
 }
 
-export default function Step2ServiceCharges({ initialValues, onNext, onBack }) {
+export default function Step2ServiceCharges({ booking, initialValues, onNext, onBack }) {
   const formik = useFormik({
     initialValues: {
-      service_type: initialValues.service_type || '',
+      // The booking already states the service type - defaulting from it saves a tap and
+      // avoids a memo whose service type contradicts its own booking, which would send
+      // the pricing engine looking for the wrong rate row. Still changeable on the spot.
+      service_type: initialValues.service_type || booking?.service_type || '',
       transfer_type: initialValues.transfer_type || '',
       is_office_hours: initialValues.is_office_hours ?? true,
       oxygen_litres_used: initialValues.oxygen_litres_used ?? 0,
