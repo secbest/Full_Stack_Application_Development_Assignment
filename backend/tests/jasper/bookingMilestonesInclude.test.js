@@ -89,3 +89,33 @@ describe('getBookingById - milestones included', () => {
     ])
   })
 })
+
+// Regression: adding the JobMilestone include (client feedback item 1) to these two
+// handlers with no surrounding try/catch meant a DB error thrown from the added
+// include - e.g. the real incident this catches, `relation "job_milestones" does
+// not exist` when db:sync had not yet been run - became an unhandled promise
+// rejection in Express, which crashes the ENTIRE Node process for every user, not
+// just a 500 for the one request. Every other handler in this file already
+// catches and returns 500 (see listBookings/updateBookingCrew above); these two
+// were the exceptions.
+describe('listMyJobs / getBookingById - a DB error is caught, not left to crash the process', () => {
+  test('listMyJobs returns 500 INTERNAL_ERROR instead of throwing', async () => {
+    Booking.findAll.mockRejectedValue(Object.assign(new Error('relation "job_milestones" does not exist'), { name: 'SequelizeDatabaseError' }))
+
+    const res = mockRes()
+    await expect(listMyJobs({ query: {}, user: { sub: 42, role: 'field_crew' } }, res)).resolves.not.toThrow()
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(payload(res).code).toBe('INTERNAL_ERROR')
+  })
+
+  test('getBookingById returns 500 INTERNAL_ERROR instead of throwing', async () => {
+    Booking.findByPk.mockRejectedValue(Object.assign(new Error('relation "job_milestones" does not exist'), { name: 'SequelizeDatabaseError' }))
+
+    const res = mockRes()
+    await expect(getBookingById({ params: { id: 1 }, user: { sub: 42, role: 'field_crew' } }, res)).resolves.not.toThrow()
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    expect(payload(res).code).toBe('INTERNAL_ERROR')
+  })
+})

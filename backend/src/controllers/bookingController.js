@@ -1,6 +1,6 @@
 const { Op } = require('sequelize')
 const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice, JobMilestone } = require('../models')
-const { success, error, notFound, forbidden } = require('../utils')
+const { success, error, notFound, forbidden, internalError } = require('../utils')
 const { bookingCrewSchema } = require('../validators')
 const { serializeMilestones } = require('./jobMilestoneController')
 
@@ -12,47 +12,55 @@ function toDateOnly(date) {
 }
 
 // Field Crew "My Jobs" screen - only the current user's assigned bookings.
+// try/catch matters here specifically: an uncaught rejection from an async Express
+// handler isn't just a failed request, it crashes the entire Node process for every
+// user (see the JobMilestone-include regression test below for the incident this
+// guards against).
 async function listMyJobs(req, res) {
-  const { date_filter } = req.query // 'today' | 'tomorrow' | 'this_week' | undefined (all upcoming)
-  const where = { assigned_crew_id: req.user.sub }
+  try {
+    const { date_filter } = req.query // 'today' | 'tomorrow' | 'this_week' | undefined (all upcoming)
+    const where = { assigned_crew_id: req.user.sub }
 
-  const today = startOfDay(new Date())
-  if (date_filter === 'today') {
-    where.scheduled_date = toDateOnly(today)
-  } else if (date_filter === 'tomorrow') {
-    const tomorrow = new Date(today)
-    tomorrow.setDate(today.getDate() + 1)
-    where.scheduled_date = toDateOnly(tomorrow)
-  } else if (date_filter === 'this_week') {
-    const endOfWeek = new Date(today)
-    endOfWeek.setDate(today.getDate() + (6 - today.getDay()))
-    where.scheduled_date = { [Op.between]: [toDateOnly(today), toDateOnly(endOfWeek)] }
+    const today = startOfDay(new Date())
+    if (date_filter === 'today') {
+      where.scheduled_date = toDateOnly(today)
+    } else if (date_filter === 'tomorrow') {
+      const tomorrow = new Date(today)
+      tomorrow.setDate(today.getDate() + 1)
+      where.scheduled_date = toDateOnly(tomorrow)
+    } else if (date_filter === 'this_week') {
+      const endOfWeek = new Date(today)
+      endOfWeek.setDate(today.getDate() + (6 - today.getDay()))
+      where.scheduled_date = { [Op.between]: [toDateOnly(today), toDateOnly(endOfWeek)] }
+    }
+
+    const bookings = await Booking.findAll({
+      where,
+      include: [
+        { model: Client, attributes: ['id', 'name'] },
+        { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
+      ],
+      order: [['scheduled_date', 'ASC'], ['scheduled_time', 'ASC']],
+    })
+
+    return success(res, bookings.map((b) => ({
+      id: b.id,
+      reference_number: b.reference_number,
+      client: b.Client ? { id: b.Client.id, name: b.Client.name } : null,
+      service_type: b.service_type,
+      service_tier: b.service_tier,
+      scheduled_date: b.scheduled_date,
+      scheduled_time: b.scheduled_time,
+      pickup_location: b.pickup_location,
+      destination: b.destination,
+      status: b.status,
+      // Sequence-sorted (activated first) - the hero card's stepper and the memo
+      // wizard's pre-fill both rely on this order, not DB insertion order.
+      milestones: serializeMilestones(b.JobMilestones || []),
+    })))
+  } catch (err) {
+    return internalError(res, err)
   }
-
-  const bookings = await Booking.findAll({
-    where,
-    include: [
-      { model: Client, attributes: ['id', 'name'] },
-      { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
-    ],
-    order: [['scheduled_date', 'ASC'], ['scheduled_time', 'ASC']],
-  })
-
-  return success(res, bookings.map((b) => ({
-    id: b.id,
-    reference_number: b.reference_number,
-    client: b.Client ? { id: b.Client.id, name: b.Client.name } : null,
-    service_type: b.service_type,
-    service_tier: b.service_tier,
-    scheduled_date: b.scheduled_date,
-    scheduled_time: b.scheduled_time,
-    pickup_location: b.pickup_location,
-    destination: b.destination,
-    status: b.status,
-    // Sequence-sorted (activated first) - the hero card's stepper and the memo
-    // wizard's pre-fill both rely on this order, not DB insertion order.
-    milestones: serializeMilestones(b.JobMilestones || []),
-  })))
 }
 
 // Quotations Specialist / AR / MD booking list with filters and pagination.
@@ -128,30 +136,34 @@ async function listBookings(req, res) {
 // Single booking detail. Field crew may only view their own assigned booking
 // (used by the Memo Wizard's Booking Summary panel, which expects `client: {id, name}`).
 async function getBookingById(req, res) {
-  const booking = await Booking.findByPk(req.params.id, {
-    include: [
-      { model: Client, attributes: ['id', 'name'] },
-      { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
-    ],
-  })
-  if (!booking) return notFound(res, 'Booking not found.')
-  if (req.user.role === 'field_crew' && booking.assigned_crew_id !== req.user.sub) {
-    return forbidden(res, 'This booking is not assigned to you.')
-  }
+  try {
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [
+        { model: Client, attributes: ['id', 'name'] },
+        { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
+      ],
+    })
+    if (!booking) return notFound(res, 'Booking not found.')
+    if (req.user.role === 'field_crew' && booking.assigned_crew_id !== req.user.sub) {
+      return forbidden(res, 'This booking is not assigned to you.')
+    }
 
-  return success(res, {
-    id: booking.id,
-    reference_number: booking.reference_number,
-    client: booking.Client ? { id: booking.Client.id, name: booking.Client.name } : null,
-    service_type: booking.service_type,
-    service_tier: booking.service_tier,
-    scheduled_date: booking.scheduled_date,
-    scheduled_time: booking.scheduled_time,
-    pickup_location: booking.pickup_location,
-    destination: booking.destination,
-    status: booking.status,
-    milestones: serializeMilestones(booking.JobMilestones || []),
-  })
+    return success(res, {
+      id: booking.id,
+      reference_number: booking.reference_number,
+      client: booking.Client ? { id: booking.Client.id, name: booking.Client.name } : null,
+      service_type: booking.service_type,
+      service_tier: booking.service_tier,
+      scheduled_date: booking.scheduled_date,
+      scheduled_time: booking.scheduled_time,
+      pickup_location: booking.pickup_location,
+      destination: booking.destination,
+      status: booking.status,
+      milestones: serializeMilestones(booking.JobMilestones || []),
+    })
+  } catch (err) {
+    return internalError(res, err)
+  }
 }
 
 async function updateBookingCrew(req, res) {
