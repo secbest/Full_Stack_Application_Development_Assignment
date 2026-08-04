@@ -38,7 +38,7 @@ export function MilestoneStepper({ milestones = [], onRecord, busy = false }) {
   const captionType = selectedType && recorded.has(selectedType) ? selectedType : lastRecordedType
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       <div className="flex items-center">
         {MILESTONE_SEQUENCE.map((type, index) => {
           const isDone = recorded.has(type)
@@ -76,7 +76,7 @@ export function MilestoneStepper({ milestones = [], onRecord, busy = false }) {
                 )}
                 <span
                   className={cn(
-                    'hidden md:block text-xs text-center leading-tight max-w-[72px]',
+                    'block text-[10px] md:text-xs text-center leading-tight max-w-[64px] md:max-w-[72px]',
                     isNext ? 'text-foreground font-medium' : 'text-muted-foreground'
                   )}
                 >
@@ -84,7 +84,7 @@ export function MilestoneStepper({ milestones = [], onRecord, busy = false }) {
                 </span>
               </div>
               {index < MILESTONE_SEQUENCE.length - 1 && (
-                <div className={cn('flex-1 h-0.5 mx-1 md:mx-1.5', isDone ? 'bg-[#22C55E]' : 'bg-muted')} />
+                <div className={cn('flex-1 h-0.5 mx-2 md:mx-2.5', isDone ? 'bg-[#22C55E]' : 'bg-muted')} />
               )}
             </div>
           )
