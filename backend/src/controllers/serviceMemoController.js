@@ -142,7 +142,9 @@ async function createServiceMemo(req, res) {
       user_id: arSpecialist.id,
       type: 'memo_submitted',
       title: 'New service memo ready for review',
-      body: `Memo for booking #${booking.id} (${memo.patient_name}) is awaiting review.`,
+      // Manpower-only standby memos (client feedback item 4) have no patient - fall
+      // back to the booking reference so the notification still identifies the job.
+      body: `Memo for booking #${booking.id} (${memo.patient_name || booking.reference_number}) is awaiting review.`,
       link: `/memos/${memo.id}`,
     })
   }

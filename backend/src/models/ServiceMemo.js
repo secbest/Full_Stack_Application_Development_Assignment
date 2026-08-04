@@ -17,9 +17,12 @@ const ServiceMemo = sequelize.define('ServiceMemo', {
   overtime_hours: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 0.00 },
   evacuation_floors: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 
-  // Patient details
-  patient_name:         { type: DataTypes.STRING(255), allowNull: false },
-  hospital_destination: { type: DataTypes.STRING(255), allowNull: false },
+  // Patient details. Nullable since client feedback item 4 (17 Jul 2026): manpower-only
+  // event/workplace standby jobs have no ambulance and no patient. Conditional
+  // requirement (required for eas/mts, optional for standby types) is enforced in
+  // validators/serviceMemoValidators.js - the column itself must accept null.
+  patient_name:         { type: DataTypes.STRING(255), allowNull: true },
+  hospital_destination: { type: DataTypes.STRING(255), allowNull: true },
   additional_charges_notes:  { type: DataTypes.TEXT,        allowNull: true },
   hospital_stamp_image_url:  { type: DataTypes.STRING(512), allowNull: true },
 
