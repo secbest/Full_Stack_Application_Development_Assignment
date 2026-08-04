@@ -22,6 +22,9 @@ const InvoiceLineItem     = require('./InvoiceLineItem')
 const ServiceMemo         = require('./ServiceMemo')
 const MemoSignature       = require('./MemoSignature')
 
+// Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
+const JobMilestone        = require('./JobMilestone')
+
 // Kwan Hua - Xero Foundation, OCR & AP Processing
 const XeroConnection      = require('./XeroConnection')
 const VendorInvoice       = require('./VendorInvoice')
@@ -73,6 +76,13 @@ Booking.belongsTo(User,             { foreignKey: 'created_by',      as: 'create
 Booking.belongsTo(User,             { foreignKey: 'assigned_crew_id', as: 'assignedCrew' })
 Booking.hasOne(ServiceMemo,         { foreignKey: 'booking_id' })
 Booking.hasOne(Invoice,             { foreignKey: 'booking_id' })
+Booking.hasMany(JobMilestone,       { foreignKey: 'booking_id', onDelete: 'CASCADE' })
+
+// ── JobMilestone ──────────────────────────────────────────────────────────────
+// One row per live milestone tap (client feedback item 1). Unique on
+// (booking_id, milestone_type); recorded_by is the crew member who tapped.
+JobMilestone.belongsTo(Booking, { foreignKey: 'booking_id' })
+JobMilestone.belongsTo(User,    { foreignKey: 'recorded_by', as: 'recordedBy' })
 
 // ── Notification ──────────────────────────────────────────────────────────────
 Notification.belongsTo(User, { foreignKey: 'user_id' })
@@ -165,6 +175,9 @@ module.exports = {
   // Liang Yi
   ServiceMemo,
   MemoSignature,
+
+  // Jasper - field ops follow-up
+  JobMilestone,
 
   // Kwan Hua
   XeroConnection,

@@ -91,6 +91,9 @@ const {
   listServiceMemosQuerySchema,
 } = require('./serviceMemoValidators')
 const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashboardValidators')
+
+// Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
+const { MILESTONE_TYPES, milestoneBodySchema, bookingIdParamSchema } = require('./milestoneValidators')
 const { userIdParamSchema } = require('./userValidators')
 
 // Jasper - AR Billing, Pricing Engine & Invoice Sync (Wave 2B: pricing contracts)
@@ -123,6 +126,9 @@ module.exports = {
   fleetOverviewQuerySchema,
   vendorExpensesQuerySchema,
   userIdParamSchema,
+  MILESTONE_TYPES,
+  milestoneBodySchema,
+  bookingIdParamSchema,
   createContractSchema,
   updateContractSchema,
   listContractsQuerySchema,
