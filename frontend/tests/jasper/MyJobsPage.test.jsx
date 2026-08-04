@@ -1,15 +1,17 @@
 // Owner: Jasper - Field Ops (client feedback items 1 + 3, interim review 17 Jul 2026).
 // My Jobs now leads with a single "Current Job" hero card carrying the live milestone
 // stepper ("could it be the case that they are going to do at that present moment,
-// rather than the whole lot list?"), with every other job demoted behind a collapsed
-// "Upcoming jobs" section. These tests cover:
+// rather than the whole lot list?"), with every other job demoted below under an
+// always-visible "Upcoming jobs" section (no collapse - an earlier collapsed version
+// hid the date tabs and job list behind an extra tap). These tests cover:
 //   - hero selection: in_progress wins; a confirmed job today within the next hour
 //     (the call centre posts a case about an hour ahead) becomes the hero; otherwise
-//     there is no hero and the list is auto-expanded
+//     there is no hero and the upcoming list is what's shown instead
 //   - the milestone stepper: recorded steps show a timestamp, the next step is a
 //     single tap target that POSTs /bookings/:id/milestone and re-renders from the
 //     response (client feedback item 1)
-//   - completed/invoiced jobs never become the hero and show "Memo Submitted"
+//   - completed/invoiced jobs never become the hero and never appear in Upcoming
+//     jobs (their memo is already submitted - that belongs in Memo History)
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
@@ -96,7 +98,7 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     expect(within(hero).getByRole('button', { name: 'Activated' })).toBeEnabled()
   })
 
-  test('with no in_progress job and nothing inside the window there is no hero and the list is expanded', async () => {
+  test('with no in_progress job and nothing inside the window there is no hero, and Upcoming jobs is still visible', async () => {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
     mock.onGet('/bookings/my-jobs').reply(200, {
       success: true,
@@ -105,7 +107,6 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     renderPage()
 
     expect(await screen.findByText(/No active job right now/i)).toBeInTheDocument()
-    // upcoming section auto-expands so the queue is still reachable
     expect(screen.getByText('Raffles Medical Group')).toBeInTheDocument()
   })
 

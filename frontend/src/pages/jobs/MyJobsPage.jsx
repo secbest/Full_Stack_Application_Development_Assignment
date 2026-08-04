@@ -4,13 +4,14 @@
 // EFAR: "could it be the case that they are going to do at that present moment,
 // rather than the whole lot list?" - the page now leads with ONE hero card for the
 // job happening now, carrying the live milestone stepper (item 1). Every other job
-// still awaiting action (confirmed or in_progress) is demoted behind a collapsed
-// "Upcoming jobs" section that keeps the old date tabs, filtered client-side from a
-// single unfiltered fetch. Completed/invoiced bookings are excluded entirely - their
-// memo is already submitted, so they belong in Memo History, not a second list here.
+// still awaiting action (confirmed or in_progress) is demoted below under an
+// always-visible "Upcoming jobs" section that keeps the old date tabs, filtered
+// client-side from a single unfiltered fetch. Completed/invoiced bookings are
+// excluded entirely - their memo is already submitted, so they belong in Memo
+// History, not a second list here.
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Briefcase, ChevronDown, ChevronRight, Loader2, MapPin, RefreshCcw } from 'lucide-react'
+import { ArrowRight, Briefcase, Loader2, MapPin, RefreshCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -20,10 +21,10 @@ import { useToast } from '@/context/ToastContext'
 import { listMyJobs, recordMilestone } from '@/api/fieldOps'
 
 const DATE_FILTERS = [
+  { value: 'all', label: 'All Upcoming' },
   { value: 'today', label: 'Today' },
   { value: 'tomorrow', label: 'Tomorrow' },
   { value: 'this_week', label: 'This Week' },
-  { value: 'all', label: 'All Upcoming' },
 ]
 
 const SERVICE_TYPE_LABELS = {
@@ -196,7 +197,6 @@ export default function MyJobsPage() {
   const [jobs, setJobs] = useState([])
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [milestoneBusy, setMilestoneBusy] = useState(false)
-  const [upcomingOpen, setUpcomingOpen] = useState(null) // null = follow hero default
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -220,9 +220,6 @@ export default function MyJobsPage() {
   const currentJob = useMemo(() => (status === 'ready' ? selectCurrentJob(jobs) : null), [status, jobs])
   const otherJobs = jobs.filter((j) => j.id !== currentJob?.id && UPCOMING_STATUSES.includes(j.status))
   const filteredJobs = otherJobs.filter((j) => matchesDateFilter(j, dateFilter))
-  // Collapsed by default while a hero exists; auto-expanded when there is nothing
-  // current so the queue is never more than one glance away.
-  const showUpcoming = upcomingOpen ?? !currentJob
 
   async function handleRecordMilestone(milestoneType) {
     if (!currentJob) return
@@ -284,46 +281,36 @@ export default function MyJobsPage() {
             </Card>
           )}
 
-          {/* Everything that is not happening now stays out of the way (item 3). */}
-          <div className="pt-2">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-              onClick={() => setUpcomingOpen(!showUpcoming)}
-              aria-expanded={showUpcoming}
-            >
-              {showUpcoming ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              Upcoming jobs ({otherJobs.length})
-            </button>
-          </div>
+          {/* Everything that is not happening now stays out of the way (item 3),
+              but stays visible - a previous collapsed "Upcoming jobs" toggle hid the
+              tabs and job list behind an extra tap, which defeated their purpose. */}
+          <p className="text-sm font-medium text-muted-foreground pt-2">
+            Upcoming jobs ({otherJobs.length})
+          </p>
 
-          {showUpcoming && (
-            <>
-              {/* Four filters do not fit one 375px row - a 2x2 grid keeps all of them
-                  visible and tappable rather than hiding two behind a horizontal
-                  scroll with no affordance. */}
-              <Tabs value={dateFilter} onValueChange={setDateFilter}>
-                <TabsList className="grid w-full grid-cols-2 gap-1 rounded-2xl md:inline-flex md:w-auto md:rounded-full">
-                  {DATE_FILTERS.map((f) => (
-                    <TabsTrigger key={f.value} value={f.value} className="py-2.5 md:py-1.5">{f.label}</TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+          {/* Four filters do not fit one 375px row - a 2x2 grid keeps all of them
+              visible and tappable rather than hiding two behind a horizontal
+              scroll with no affordance. */}
+          <Tabs value={dateFilter} onValueChange={setDateFilter}>
+            <TabsList className="grid w-full grid-cols-2 gap-1 rounded-2xl md:inline-flex md:w-auto md:rounded-full">
+              {DATE_FILTERS.map((f) => (
+                <TabsTrigger key={f.value} value={f.value} className="py-2.5 md:py-1.5">{f.label}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
-              {filteredJobs.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 md:p-12 text-center text-sm text-muted-foreground">
-                    No jobs scheduled for this period.
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {filteredJobs.map((job) => (
-                    <JobCard key={job.id} job={job} onCreateMemo={handleCreateMemo} />
-                  ))}
-                </div>
-              )}
-            </>
+          {filteredJobs.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 md:p-12 text-center text-sm text-muted-foreground">
+                No jobs scheduled for this period.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {filteredJobs.map((job) => (
+                <JobCard key={job.id} job={job} onCreateMemo={handleCreateMemo} />
+              ))}
+            </div>
           )}
         </>
       )}
