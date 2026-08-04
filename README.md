@@ -35,6 +35,45 @@ Design ownership (use cases, API docs, database schema in `design/<student-name>
 
 See `my-project-ai/Jasper/handoff-2026-07-02.md` and `my-project-ai/Tow_Kwan_Hwa/handoff-2026-07-08.md` for the full session logs behind these handovers.
 
+## Client Feedback - Interim Review (17 Jul 2026)
+
+Interim prototype walkthrough presented to **Geraldine (EFAR)** and **Doris Tan (Managing Director, EFAR)**, hosted by Faris Malik and Damien Tan (NYP). Source: Zoom recording transcript `GMT20260717-060320_Recording.transcript.vtt` (not committed to this repo); our slot runs 00:03:00-00:22:00 with client feedback at 00:16:10-00:21:53.
+
+### What EFAR endorsed (keep, and lead with these in the final presentation)
+
+- **The crew-to-HQ chain addresses the stated pain.** "It does address the pain points that we have in terms of all the manual processes... from the crew all the way to the top line, which is our HQ site."
+- **Photographing the hospital stamp as the endorsement mechanism.** Named unprompted as an area we solved well.
+- **The pricing contract tables.** "I think the table works perfect... the pricing is already there with all the different agreements."
+- **"Assist Xero, do not replace it."** EFAR pressed a competing team hard on whether their system would displace Xero. Our pre-accounting positioning (Xero stays the master ledger, we push drafts) is the answer they wanted - state it prominently.
+- **Crew collects the signature on the spot.** A competing team proposed making customers install an app to stamp memos; EFAR pushed back twice on the difficulty of forcing software onto customers. Our on-device signature plus stamp photo is a deliberate differentiator, not an accident - say so.
+
+### Action items and owners
+
+| # | What EFAR asked for | Affected area | Owner | Status |
+|---|---|---|---|---|
+| 1 | Live job milestone timestamps - crew taps a button at each stage (activated, arrived at location, en route, arrived at destination, job complete) instead of typing times at end of day | `service_memos` / `bookings` schema, new milestone endpoint, My Jobs job card, memo wizard Step 1 | **Jasper** (Wave 2 field ops) | Not started |
+| 2 | Derive `is_office_hours` from the real activation timestamp instead of trusting the crew's manual toggle | `backend/src/services/pricingService.js`, memo approval flow | **Kwan Hua** (Wave 3 pricing engine) | Blocked on #1 |
+| 3 | Show the crew only the job happening now, not the whole queue - the call centre posts a case about one hour before its start time | `frontend/src/pages/jobs/MyJobsPage.jsx` | **Jasper** (Wave 2 field ops) | Not started |
+| 4 | Support jobs with no ambulance and no patient (manpower-only event coverage) | `backend/src/models/ServiceMemo.js`, memo wizard validation, pricing engine null-tolerance | **Jasper** (model + wizard), **Kwan Hua** (engine) | Not started |
+| 5 | Vendor invoices should arrive in the system automatically rather than always being uploaded by hand | AP intake, `vendor_invoices`, Xero Integration Settings screen | **Kwan Hua** (Wave 3 AP) | Deferred - manual upload ships, ingestion path documented |
+| 6 | Restate the Xero-stays-master and crew-collects-signature positioning up front, and open with the problem statement | Final presentation script and slides | **Group** | Not started |
+
+### Detail on each item
+
+**1. Job milestone timestamps (largest change - it feeds billing).** Geraldine's framing at 00:17:17: *"the pricing is very dependent on the time that we pick up the patients."* Crews already record five milestones today and she wants each captured live: *"as when they reach the point, they probably just click a button to just signify that they are already at the location... rather than at the end of the day, then they decide that the only thing that they are doing is probably just to get it signed."*
+
+Current state: `ServiceMemo` has only `job_start_time` and `job_end_time` (`backend/src/models/ServiceMemo.js:15-16`), both hand-typed in wizard Step 1. No milestone concept exists anywhere in the backend. Suggested shape: a `job_milestones` table (or five nullable `DATE` columns on `bookings`), written by `POST /api/bookings/:id/milestone`, surfaced as a tap-to-timestamp stepper on the job card, with the memo wizard pre-filling start/end from the recorded milestones.
+
+**2. Office hours derived, not asserted.** `is_office_hours` is currently a manual toggle on wizard Step 2 (`backend/src/models/ServiceMemo.js:38`). Once a real activation timestamp exists, the pricing engine should compute this itself - it closes a genuine revenue-leakage hole and demos well.
+
+**3. One job, not a queue.** At 00:18:26: *"there's plenty of transactions over there... could it be the case that they are going to do at that present moment, rather than the whole lot list?"* Note that mobile responsiveness (already delivered in Wave 2A) does **not** answer this - it shrinks the list rather than reducing it to one job. `MyJobsPage.jsx` is still a flat card list behind Today/Tomorrow/This Week tabs (lines 12-14). Needed: a current/next-job hero card for the job inside the activation window, carrying the milestone buttons from #1, with everything else demoted behind a collapsed "later today" section.
+
+**4. Non-ambulance event jobs.** Raised to another team at 01:11:35 and circulated to all teams by the hosts: *"we don't just operate ambulance on its own, sometimes we also have events whereby there is no ambulance at all, we just have to dispatch crew, like manpower."* We already carry `event_standby` and `workplace_standby` in the `service_type` enum, but the memo blocks them - `patient_name` and `hospital_destination` are both `allowNull: false` (`backend/src/models/ServiceMemo.js:21-22`), so an event standby with no patient cannot submit. Make both conditionally required on `service_type`. EFAR's wider service range was also listed at 02:12:10: first aid training, events, sporting events, concerts.
+
+**5. Automatic vendor invoice intake.** At 00:20:27: *"does it mean when the client sends us the invoice, we will also receive it inside the system, or we have to manually upload the vendor's invoice?"* We offered a Gmail-based ingestion path (deferred on privacy grounds) or manual PDF upload, and EFAR accepted the manual route. Options in ascending effort: a forwarding inbox address that drops PDFs into the vendor invoice queue, or keep manual upload but add multi-file drop plus a visible email-ingestion placeholder in AP settings so the roadmap is legible.
+
+**6. Delivery notes for the final.** The demo relied on live typing and was cut short twice (00:13:18, 00:15:02), leaving the Managing Director dashboard about 90 seconds. Pre-seed every record to be opened, script the click path, and open with the 30-second problem statement - EFAR asked for the problem statement up front at 00:01:44 and it had to be looked up on the call.
+
 ## How to Run Locally
 
 ### Prerequisites
