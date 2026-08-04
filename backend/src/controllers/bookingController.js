@@ -1,7 +1,8 @@
 const { Op } = require('sequelize')
-const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice } = require('../models')
+const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice, JobMilestone } = require('../models')
 const { success, error, notFound, forbidden } = require('../utils')
 const { bookingCrewSchema } = require('../validators')
+const { serializeMilestones } = require('./jobMilestoneController')
 
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -30,7 +31,10 @@ async function listMyJobs(req, res) {
 
   const bookings = await Booking.findAll({
     where,
-    include: [{ model: Client, attributes: ['id', 'name'] }],
+    include: [
+      { model: Client, attributes: ['id', 'name'] },
+      { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
+    ],
     order: [['scheduled_date', 'ASC'], ['scheduled_time', 'ASC']],
   })
 
@@ -45,6 +49,9 @@ async function listMyJobs(req, res) {
     pickup_location: b.pickup_location,
     destination: b.destination,
     status: b.status,
+    // Sequence-sorted (activated first) - the hero card's stepper and the memo
+    // wizard's pre-fill both rely on this order, not DB insertion order.
+    milestones: serializeMilestones(b.JobMilestones || []),
   })))
 }
 
@@ -122,7 +129,10 @@ async function listBookings(req, res) {
 // (used by the Memo Wizard's Booking Summary panel, which expects `client: {id, name}`).
 async function getBookingById(req, res) {
   const booking = await Booking.findByPk(req.params.id, {
-    include: [{ model: Client, attributes: ['id', 'name'] }],
+    include: [
+      { model: Client, attributes: ['id', 'name'] },
+      { model: JobMilestone, attributes: ['milestone_type', 'recorded_at'] },
+    ],
   })
   if (!booking) return notFound(res, 'Booking not found.')
   if (req.user.role === 'field_crew' && booking.assigned_crew_id !== req.user.sub) {
@@ -140,6 +150,7 @@ async function getBookingById(req, res) {
     pickup_location: booking.pickup_location,
     destination: booking.destination,
     status: booking.status,
+    milestones: serializeMilestones(booking.JobMilestones || []),
   })
 }
 
