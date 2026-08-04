@@ -1,17 +1,31 @@
-// Owner: Jasper - Field Ops (Wave 2A), hotfix follow-up.
-// Regression test for the "Create Memo" button showing on already-completed bookings:
-// a booking only ever reaches 'completed' as a side effect of a memo being submitted
-// (see backend/src/controllers/serviceMemoController.js's createServiceMemo), so offering
-// "Create Memo" again on a 'completed' card let a crew member re-trigger the wizard and
-// hit the backend's MEMO_ALREADY_EXISTS guard with no warning. Fixed in MyJobsPage.jsx by
-// only showing the create-memo action for 'in_progress' and treating 'completed' the same
-// as 'invoiced' - "Memo Submitted", no button.
-import { render, screen } from '@testing-library/react'
+// Owner: Jasper - Field Ops (client feedback items 1 + 3, interim review 17 Jul 2026).
+// My Jobs now leads with a single "Current Job" hero card carrying the live milestone
+// stepper ("could it be the case that they are going to do at that present moment,
+// rather than the whole lot list?"), with every other job demoted behind a collapsed
+// "Upcoming jobs" section. These tests cover:
+//   - hero selection: in_progress wins; a confirmed job today within the next hour
+//     (the call centre posts a case about an hour ahead) becomes the hero; otherwise
+//     there is no hero and the list is auto-expanded
+//   - the milestone stepper: recorded steps show a timestamp, the next step is a
+//     single tap target that POSTs /bookings/:id/milestone and re-renders from the
+//     response (client feedback item 1)
+//   - completed/invoiced jobs never become the hero and show "Memo Submitted"
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import MockAdapter from 'axios-mock-adapter'
 import api from '@/api/index'
 import { ToastProvider } from '@/context/ToastContext'
 import MyJobsPage from '@/pages/jobs/MyJobsPage'
+
+function localDateStr(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+function localTimeStr(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 function job(overrides = {}) {
   return {
@@ -25,6 +39,7 @@ function job(overrides = {}) {
     pickup_location: 'Raffles Hospital',
     destination: 'Tan Tock Seng Hospital A&E',
     status: 'confirmed',
+    milestones: [],
     ...overrides,
   }
 }
@@ -52,36 +67,122 @@ function renderPage() {
   )
 }
 
-describe('MyJobsPage - action button per booking status', () => {
-  test('confirmed shows a disabled "Start Job" button', async () => {
-    mock.onGet('/bookings/my-jobs').reply(200, { success: true, data: [job({ status: 'confirmed' })] })
+describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
+  test('an in_progress job renders as the Current Job hero with the milestone stepper', async () => {
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'in_progress', milestones: [{ milestone_type: 'activated', recorded_at: '2026-07-02T00:45:00Z' }] })],
+    })
     renderPage()
 
-    expect(await screen.findByRole('button', { name: 'Start Job' })).toBeDisabled()
+    const hero = await screen.findByTestId('current-job-hero')
+    expect(within(hero).getByText('Raffles Medical Group')).toBeInTheDocument()
+    // 'activated' is recorded, so the single tap target is the NEXT milestone
+    expect(within(hero).getByRole('button', { name: 'Arrived at Location' })).toBeEnabled()
+    // later milestones are visible but not tappable
+    expect(within(hero).queryByRole('button', { name: 'En Route' })).not.toBeInTheDocument()
+    expect(within(hero).getByText('En Route')).toBeInTheDocument()
   })
 
-  test('in_progress shows an enabled "Start Job & Create Memo" button', async () => {
-    mock.onGet('/bookings/my-jobs').reply(200, { success: true, data: [job({ status: 'in_progress' })] })
+  test('a confirmed job today starting within the next hour becomes the hero, offering "Activated"', async () => {
+    const soon = new Date(Date.now() + 30 * 60 * 1000)
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'confirmed', scheduled_date: localDateStr(soon), scheduled_time: localTimeStr(soon) })],
+    })
     renderPage()
 
-    expect(await screen.findByRole('button', { name: 'Start Job & Create Memo' })).toBeEnabled()
+    const hero = await screen.findByTestId('current-job-hero')
+    expect(within(hero).getByRole('button', { name: 'Activated' })).toBeEnabled()
   })
 
-  // Regression: completed used to also show "Create Memo", letting a crew member
-  // re-open the wizard on a booking that already has a memo and hit MEMO_ALREADY_EXISTS.
-  test('completed shows "Memo Submitted" with no button to re-open the wizard', async () => {
-    mock.onGet('/bookings/my-jobs').reply(200, { success: true, data: [job({ status: 'completed' })] })
+  test('with no in_progress job and nothing inside the window there is no hero and the list is expanded', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'confirmed', scheduled_date: localDateStr(tomorrow), scheduled_time: '09:00' })],
+    })
     renderPage()
 
-    expect(await screen.findByText('Memo Submitted')).toBeInTheDocument()
+    expect(await screen.findByText(/No active job right now/i)).toBeInTheDocument()
+    // upcoming section auto-expands so the queue is still reachable
+    expect(screen.getByText('Raffles Medical Group')).toBeInTheDocument()
+  })
+
+  test('completed and invoiced jobs never become the hero and read "Memo Submitted"', async () => {
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'completed' }), job({ id: 2, reference_number: 'BKG-TEST-00002', status: 'invoiced' })],
+    })
+    renderPage()
+
+    expect(await screen.findByText(/No active job right now/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('current-job-hero')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Memo Submitted')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Create Memo/i })).not.toBeInTheDocument()
   })
+})
 
-  test('invoiced also shows "Memo Submitted" with no button', async () => {
-    mock.onGet('/bookings/my-jobs').reply(200, { success: true, data: [job({ status: 'invoiced' })] })
+describe('MyJobsPage - live milestone stepper (client feedback #1)', () => {
+  test('tapping the next milestone POSTs it and re-renders the stepper from the response', async () => {
+    const user = userEvent.setup()
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'in_progress', milestones: [{ milestone_type: 'activated', recorded_at: '2026-07-02T00:45:00Z' }] })],
+    })
+    mock.onPost('/bookings/1/milestone').reply(201, {
+      success: true,
+      data: {
+        booking_id: 1,
+        status: 'in_progress',
+        milestones: [
+          { milestone_type: 'activated', recorded_at: '2026-07-02T00:45:00Z' },
+          { milestone_type: 'arrived_at_location', recorded_at: '2026-07-02T01:10:00Z' },
+        ],
+      },
+    })
     renderPage()
 
-    expect(await screen.findByText('Memo Submitted')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Create Memo/i })).not.toBeInTheDocument()
+    const hero = await screen.findByTestId('current-job-hero')
+    await user.click(within(hero).getByRole('button', { name: 'Arrived at Location' }))
+
+    expect(await within(hero).findByRole('button', { name: 'En Route' })).toBeEnabled()
+    expect(JSON.parse(mock.history.post[0].data)).toEqual({ milestone_type: 'arrived_at_location' })
+  })
+
+  test('a failed milestone tap shows the backend message and keeps the button tappable', async () => {
+    const user = userEvent.setup()
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'in_progress' })],
+    })
+    mock.onPost('/bookings/1/milestone').reply(409, {
+      success: false, code: 'MILESTONE_ALREADY_RECORDED', message: 'This milestone has already been recorded for this job.',
+    })
+    renderPage()
+
+    const hero = await screen.findByTestId('current-job-hero')
+    await user.click(within(hero).getByRole('button', { name: 'Activated' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('already been recorded')
+    expect(within(hero).getByRole('button', { name: 'Activated' })).toBeEnabled()
+  })
+})
+
+describe('MyJobsPage - hero memo action', () => {
+  test('once job_completed is recorded the hero leads to the memo wizard', async () => {
+    const user = userEvent.setup()
+    const allDone = ['activated', 'arrived_at_location', 'en_route', 'arrived_at_destination', 'job_completed']
+      .map((t, i) => ({ milestone_type: t, recorded_at: `2026-07-02T0${i}:00:00Z` }))
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [job({ status: 'in_progress', milestones: allDone })],
+    })
+    renderPage()
+
+    const hero = await screen.findByTestId('current-job-hero')
+    await user.click(within(hero).getByRole('button', { name: /Create Memo/i }))
+
+    expect(await screen.findByText('Memo Wizard Stub')).toBeInTheDocument()
   })
 })
