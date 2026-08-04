@@ -4,8 +4,10 @@
 // EFAR: "could it be the case that they are going to do at that present moment,
 // rather than the whole lot list?" - the page now leads with ONE hero card for the
 // job happening now, carrying the live milestone stepper (item 1). Every other job
-// is demoted behind a collapsed "Upcoming jobs" section that keeps the old date
-// tabs, filtered client-side from a single unfiltered fetch.
+// still awaiting action (confirmed or in_progress) is demoted behind a collapsed
+// "Upcoming jobs" section that keeps the old date tabs, filtered client-side from a
+// single unfiltered fetch. Completed/invoiced bookings are excluded entirely - their
+// memo is already submitted, so they belong in Memo History, not a second list here.
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Briefcase, ChevronDown, ChevronRight, Loader2, MapPin, RefreshCcw } from 'lucide-react'
@@ -34,6 +36,12 @@ const SERVICE_TYPE_LABELS = {
 // The call centre posts a case about an hour before its start time (EFAR, 00:18:26),
 // so a confirmed job "belongs to now" once it is within this window.
 const ACTIVATION_WINDOW_MS = 60 * 60 * 1000
+
+// "Upcoming jobs" means jobs with something still to do. A completed/invoiced booking
+// already has its memo submitted - it belongs in Memo History, not here. Without this
+// filter, every booking a crew member has EVER had piles up under a misleading
+// "upcoming" label (11 of 13 rows were finished jobs in one real account).
+const UPCOMING_STATUSES = ['confirmed', 'in_progress']
 
 function localDateStr(d) {
   const p = (n) => String(n).padStart(2, '0')
@@ -138,8 +146,10 @@ function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo })
   )
 }
 
+// Only ever rendered for a confirmed or in_progress job - see UPCOMING_STATUSES.
+// A completed/invoiced booking's memo is already submitted, so it never reaches here.
 function JobCard({ job, onCreateMemo }) {
-  const accentColor = { confirmed: '#3B82F6', in_progress: '#F59E0B', completed: '#22C55E', invoiced: '#94A3B8' }[job.status] || '#94A3B8'
+  const accentColor = { confirmed: '#3B82F6', in_progress: '#F59E0B' }[job.status] || '#94A3B8'
 
   return (
     <Card className="overflow-hidden">
@@ -173,9 +183,6 @@ function JobCard({ job, onCreateMemo }) {
               <Button size="sm" onClick={() => onCreateMemo(job)} className="w-full h-11 md:w-auto md:h-9">
                 Create Memo
               </Button>
-            )}
-            {(job.status === 'completed' || job.status === 'invoiced') && (
-              <span className="block text-sm text-[#22C55E] font-medium md:inline">Memo Submitted</span>
             )}
           </div>
         </CardContent>
@@ -211,7 +218,7 @@ export default function MyJobsPage() {
   }, [])
 
   const currentJob = useMemo(() => (status === 'ready' ? selectCurrentJob(jobs) : null), [status, jobs])
-  const otherJobs = jobs.filter((j) => j.id !== currentJob?.id)
+  const otherJobs = jobs.filter((j) => j.id !== currentJob?.id && UPCOMING_STATUSES.includes(j.status))
   const filteredJobs = otherJobs.filter((j) => matchesDateFilter(j, dateFilter))
   // Collapsed by default while a hero exists; auto-expanded when there is nothing
   // current so the queue is never more than one glance away.

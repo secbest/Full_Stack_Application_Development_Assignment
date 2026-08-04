@@ -109,7 +109,13 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     expect(screen.getByText('Raffles Medical Group')).toBeInTheDocument()
   })
 
-  test('completed and invoiced jobs never become the hero and read "Memo Submitted"', async () => {
+  // Regression: "Upcoming jobs" used to list every booking ever assigned to the crew
+  // member with no status filter, so finished jobs (already memo'd, already invoiced)
+  // piled up there too - e.g. 11 of 13 rows in a real account were done jobs with
+  // nothing left to do. That's what Memo History is for; completed/invoiced bookings
+  // are excluded here entirely rather than shown a second time under a misleading
+  // "upcoming" label.
+  test('completed and invoiced jobs never become the hero and never appear in Upcoming jobs either', async () => {
     mock.onGet('/bookings/my-jobs').reply(200, {
       success: true,
       data: [job({ status: 'completed' }), job({ id: 2, reference_number: 'BKG-TEST-00002', status: 'invoiced' })],
@@ -118,8 +124,26 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
 
     expect(await screen.findByText(/No active job right now/i)).toBeInTheDocument()
     expect(screen.queryByTestId('current-job-hero')).not.toBeInTheDocument()
-    expect(screen.getAllByText('Memo Submitted')).toHaveLength(2)
+    expect(screen.getByText('Upcoming jobs (0)')).toBeInTheDocument()
+    expect(screen.queryByText('Memo Submitted')).not.toBeInTheDocument()
+    expect(screen.queryByText('Raffles Medical Group')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Create Memo/i })).not.toBeInTheDocument()
+  })
+
+  test('a confirmed job and an in_progress job both still count toward Upcoming jobs when they are not the hero', async () => {
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [
+        job({ id: 1, status: 'in_progress' }), // becomes the hero
+        job({ id: 2, reference_number: 'BKG-TEST-00002', status: 'confirmed', client: { id: 2, name: 'ABC Corporation' } }),
+        job({ id: 3, reference_number: 'BKG-TEST-00003', status: 'completed', client: { id: 3, name: 'Should Not Appear' } }),
+      ],
+    })
+    renderPage()
+
+    await screen.findByTestId('current-job-hero')
+    expect(screen.getByText('Upcoming jobs (1)')).toBeInTheDocument()
+    expect(screen.queryByText('Should Not Appear')).not.toBeInTheDocument()
   })
 })
 
