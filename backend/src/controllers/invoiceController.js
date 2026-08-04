@@ -19,6 +19,20 @@ const LOCKED_STATUSES = ['approved', 'synced_to_xero']
 const MAX_LINE_ITEM_UNIT_PRICE = 50000
 const MAX_LINE_ITEM_QUANTITY = 999
 
+// Upper bound on ?limit. Without one, `?limit=100000` makes the caller able to ask for the
+// whole table in a single unpaginated query.
+const MAX_PAGE_SIZE = 100
+
+// created_at is a timestamp but to_date arrives as a bare 'YYYY-MM-DD', which compares
+// against 00:00 on that day - so `to_date=today` used to exclude everything created today.
+// Convert a date-only bound into the exclusive start of the following day.
+function exclusiveEndOfDay(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null
+  const next = new Date(`${value}T00:00:00.000Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  return next
+}
+
 // Recomputes subtotal/total from the current line items and persists it.
 async function recalcInvoiceTotals(invoice) {
   const items = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id } })
@@ -35,8 +49,8 @@ async function listInvoices(req, res) {
     if (status && !VALID_STATUSES.includes(status)) {
       return error(res, `status must be one of: ${VALID_STATUSES.join(', ')}`, 'INVALID_STATUS', 400)
     }
-    const p = Number(page)
-    const l = Number(limit)
+    const p = Math.max(1, Number(page) || 1)
+    const l = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(limit) || 20))
 
     const where = {}
     if (status) where.status = status
@@ -44,7 +58,12 @@ async function listInvoices(req, res) {
     if (from_date || to_date) {
       where.created_at = {}
       if (from_date) where.created_at[Op.gte] = from_date
-      if (to_date) where.created_at[Op.lte] = to_date
+      if (to_date) {
+        // Inclusive of the whole end date - see exclusiveEndOfDay.
+        const end = exclusiveEndOfDay(to_date)
+        if (end) where.created_at[Op.lt] = end
+        else where.created_at[Op.lte] = to_date
+      }
     }
 
     const { rows, count } = await Invoice.findAndCountAll({
@@ -109,6 +128,7 @@ async function getInvoiceById(req, res) {
       total_amount: invoice.total_amount,
       status: invoice.status,
       xero_invoice_id: invoice.xero_invoice_id,
+      unpriced_surcharges: invoice.unpriced_surcharges || [],
       approved_by: invoice.approvedBy ? { id: invoice.approvedBy.id, name: invoice.approvedBy.name } : null,
       approved_at: invoice.approved_at,
       created_at: invoice.created_at,
@@ -120,6 +140,9 @@ async function getInvoiceById(req, res) {
         unit_price: li.unit_price,
         amount: li.amount,
         is_manual_adjustment: li.is_manual_adjustment,
+        was_manually_edited: li.was_manually_edited,
+        engine_unit_price: li.engine_unit_price,
+        engine_amount: li.engine_amount,
       })),
     })
   } catch (err) {
@@ -173,6 +196,9 @@ async function addLineItem(req, res) {
         unit_price: item.unit_price,
         amount: item.amount,
         is_manual_adjustment: item.is_manual_adjustment,
+        was_manually_edited: item.was_manually_edited,
+        engine_unit_price: item.engine_unit_price,
+        engine_amount: item.engine_amount,
       },
       invoice: { id: invoice.id, subtotal: totals.subtotal, total_amount: totals.total_amount, status: invoice.status },
     })
@@ -206,6 +232,20 @@ async function updateLineItem(req, res) {
     const newQty = updates.quantity !== undefined ? updates.quantity : Number(item.quantity)
     const newPrice = updates.unit_price !== undefined ? updates.unit_price : Number(item.unit_price)
     updates.amount = round2(newQty * newPrice)
+
+    // An engine-generated row whose figures change stops being purely engine-derived, and
+    // must stop presenting itself as such. Capture the engine's original numbers on the
+    // first edit only, so repeated edits still compare against what the engine actually
+    // produced rather than against the previous manual value.
+    const figuresChanged = updates.amount !== Number(item.amount)
+    if (!item.is_manual_adjustment && figuresChanged) {
+      updates.was_manually_edited = true
+      if (item.engine_unit_price === null || item.engine_unit_price === undefined) {
+        updates.engine_unit_price = item.unit_price
+        updates.engine_amount = item.amount
+      }
+    }
+
     await item.update(updates)
 
     if (['matched', 'unmatched'].includes(invoice.status)) await invoice.update({ status: 'adjusted' })
@@ -220,6 +260,9 @@ async function updateLineItem(req, res) {
         unit_price: item.unit_price,
         amount: item.amount,
         is_manual_adjustment: item.is_manual_adjustment,
+        was_manually_edited: item.was_manually_edited,
+        engine_unit_price: item.engine_unit_price,
+        engine_amount: item.engine_amount,
       },
       invoice: { id: invoice.id, subtotal: totals.subtotal, total_amount: totals.total_amount, status: invoice.status },
     })
@@ -254,12 +297,31 @@ async function deleteLineItem(req, res) {
   }
 }
 
-// Pushes one approved invoice to Xero, logging the attempt in xero_sync_logs
+// The one sync-log row for an AR invoice, created on the first attempt and reused after.
+//
+// This deliberately does NOT create a row per attempt. Doing so meant every retry started a
+// fresh log at attempt_count 1, so UC-08's "three attempts then stop" cap - which reads
+// attempt_count off the log - could never be reached from this code path, and the Sync Status
+// screen accumulated stale `failed` rows for invoices that had since synced successfully.
+// One row per entity, incremented, keeps the attempt count and the screen truthful.
+async function findOrCreateSyncLog(invoiceId) {
+  const [log] = await XeroSyncLog.findOrCreate({
+    where: { entity_type: 'ar_invoice', entity_id: invoiceId },
+    defaults: { entity_type: 'ar_invoice', entity_id: invoiceId, status: 'pending', attempt_count: 0 },
+  })
+  return log
+}
+
+// Pushes one approved invoice to Xero, recording the attempt on the invoice's sync log
 // (entity_type 'ar_invoice'). On success advances the booking to 'invoiced' and the
 // memo to 'invoiced'. Returns the outcome; never throws for expected Xero errors.
 async function syncInvoiceToXero(invoice, connection) {
   const client = await Client.findByPk(invoice.client_id, { attributes: ['name'] })
   const items = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id } })
+
+  const log = await findOrCreateSyncLog(invoice.id)
+  const attempt_count = Number(log.attempt_count || 0) + 1
+
   const result = await xeroService.pushArInvoice(
     { id: invoice.id, client_name: client ? client.name : null, total_amount: invoice.total_amount, InvoiceLineItems: items },
     connection
@@ -267,20 +329,18 @@ async function syncInvoiceToXero(invoice, connection) {
 
   if (result.ok) {
     await invoice.update({ status: 'synced_to_xero', xero_invoice_id: result.xeroRecordId })
-    await XeroSyncLog.create({
-      entity_type: 'ar_invoice', entity_id: invoice.id, xero_record_id: result.xeroRecordId,
-      status: 'success', attempt_count: 1, synced_at: new Date(),
+    await log.update({
+      status: 'success', attempt_count, xero_record_id: result.xeroRecordId,
+      error_message: null, synced_at: new Date(),
     })
     // Advance the operational records now that billing is in Xero.
     await Booking.update({ status: 'invoiced' }, { where: { id: invoice.booking_id, status: 'completed' } })
     await ServiceMemo.update({ status: 'invoiced' }, { where: { id: invoice.memo_id } })
-    return { ok: true, xeroRecordId: result.xeroRecordId }
+    return { ok: true, xeroRecordId: result.xeroRecordId, attempt_count }
   }
 
   await invoice.update({ status: 'failed' })
-  await XeroSyncLog.create({
-    entity_type: 'ar_invoice', entity_id: invoice.id, status: 'failed', attempt_count: 1, error_message: result.error,
-  })
+  await log.update({ status: 'failed', attempt_count, error_message: result.error })
   notificationService.create({
     user_id: invoice.approved_by || null,
     type: 'xero_sync_failed',
@@ -288,7 +348,7 @@ async function syncInvoiceToXero(invoice, connection) {
     body: result.error,
     link: '/xero/sync-status',
   })
-  return { ok: false, error: result.error }
+  return { ok: false, error: result.error, attempt_count }
 }
 
 // POST /api/invoices/batch-approve - UC-06: approve matched/adjusted invoices and push
@@ -332,6 +392,19 @@ async function retryXero(req, res) {
     if (!invoice) return notFound(res, 'No invoice with this id.')
     if (invoice.status !== 'failed') {
       return error(res, 'Invoice is not in `failed` status - retry not applicable.', 'INVOICE_NOT_FAILED', 409)
+    }
+
+    // Same cap as POST /api/xero/sync-logs/:id/retry. Both routes retry the same push, so
+    // both must honour UC-08's attempt limit - otherwise retrying from this screen is an
+    // unlimited loop around the ceiling the other screen enforces.
+    const existingLog = await XeroSyncLog.findOne({ where: { entity_type: 'ar_invoice', entity_id: invoice.id } })
+    if (existingLog && Number(existingLog.attempt_count) >= xeroService.MAX_SYNC_ATTEMPTS) {
+      return error(
+        res,
+        `This invoice has failed to sync ${existingLog.attempt_count} times. Please contact support - this likely indicates a configuration issue in Xero.`,
+        'RETRY_LIMIT_REACHED',
+        409
+      )
     }
 
     const conn = await getFreshConnection()

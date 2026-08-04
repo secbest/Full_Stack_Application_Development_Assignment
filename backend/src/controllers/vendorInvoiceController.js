@@ -183,6 +183,10 @@ async function listVendorInvoices(req, res) {
         invoice_date: v.invoice_date,
         extracted_total: v.extracted_total,
         verified_total: v.verified_total,
+        // The list's colour-coded confidence column reads this. Sending only the boolean
+        // is_low_confidence left that column permanently blank even though the percentage
+        // was stored and shown correctly on the detail screen.
+        extraction_confidence: v.extraction_confidence,
         is_low_confidence: v.is_low_confidence,
         status: v.status,
         created_at: v.createdAt,

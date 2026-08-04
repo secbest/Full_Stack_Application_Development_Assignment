@@ -23,6 +23,11 @@ const Invoice = sequelize.define('Invoice', {
   },
   xero_invoice_id: { type: DataTypes.STRING(255), allowNull: true },
   approved_at:     { type: DataTypes.DATE,        allowNull: true },
+  // Chargeable items the crew recorded on the memo that the matched contract has no rate
+  // for, as [{ surcharge_type, label, detail }]. Written by the pricing engine at approval
+  // time and surfaced on the Invoice Detail screen so the AR Specialist can price them by
+  // hand instead of the charge silently disappearing. Empty array = nothing was dropped.
+  unpriced_surcharges: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
 }, {
   tableName: 'invoices',
   underscored: true,

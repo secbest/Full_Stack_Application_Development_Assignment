@@ -96,6 +96,18 @@ npm run db:seed:xero      # inserts demo Xero connection + vendor invoices (AP -
 npm run db:seed:pricing   # inserts pricing contract + rates + surcharges + review-queue memos (AR Wave 3 - Kwan Hua; requires the seeds above)
 ```
 
+> **Upgrading an existing database:** `db:sync` runs `sequelize.sync({ alter: true })`, which adds new
+> columns but does **not** add values to existing PostgreSQL `ENUM` types. The Wave 3 fixes introduce
+> two new enum values (`service_memos.status = 'returned'` and
+> `surcharge_schedules.surcharge_type = 'overtime_per_hour'`), so a database created before them needs
+> a full rebuild rather than an alter:
+>
+> ```bash
+> npm run db:reset -- --yes   # drops every table, recreates, and reseeds
+> ```
+>
+> Without this, returning a memo or saving an overtime surcharge fails with an invalid-enum error.
+
 Demo accounts (password: `Efar@2026`):
 
 | Email | Role |

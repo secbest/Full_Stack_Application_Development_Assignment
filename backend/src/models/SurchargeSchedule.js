@@ -12,6 +12,7 @@ const SurchargeSchedule = sequelize.define('SurchargeSchedule', {
       'resuscitation', 'suction', 'waiting_time_per_30min',
       'heavy_lifting_min', 'heavy_lifting_max',
       'jurong_island_min', 'jurong_island_max',
+      'overtime_per_hour',
       'cancellation'
     ),
     allowNull: false,

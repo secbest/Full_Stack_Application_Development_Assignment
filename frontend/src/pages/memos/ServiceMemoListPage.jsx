@@ -32,6 +32,17 @@ function queueColour(hours) {
   return 'text-slate-600'
 }
 
+// Raw hours stop being readable within a day - a memo sitting for a fortnight rendered as
+// "433.8h", leaving the reader to divide by 24. Days and hours from 24h up.
+function formatQueueAge(hours) {
+  const h = Number(hours) || 0
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))}m`
+  if (h < 24) return `${Math.round(h * 10) / 10}h`
+  const days = Math.floor(h / 24)
+  const rem = Math.round(h % 24)
+  return rem === 0 ? `${days}d` : `${days}d ${rem}h`
+}
+
 function Field({ label, value, highlight }) {
   return (
     <div>
@@ -155,11 +166,20 @@ export default function ServiceMemoListPage() {
                     <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">No memos awaiting review.</td></tr>
                   ) : rows.map((m, idx) => (
                     <tr key={m.id} className={`h-12 hover:bg-slate-50/80 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'}`}>
-                      <td className="px-4 py-2"><span className="text-xs font-semibold text-slate-900 font-mono">{m.booking_reference || `#${m.booking_id}`}</span></td>
+                      <td className="px-4 py-2">
+                        <span className="text-xs font-semibold text-slate-900 font-mono">{m.booking_reference || `#${m.booking_id}`}</span>
+                        {/* Marks a memo that has already been round-tripped, so this review is
+                            a re-check of a correction rather than a first look. */}
+                        {m.was_returned && (
+                          <span title="Previously returned to the crew and since corrected" className="ml-2 inline-flex items-center rounded-[6px] bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                            Corrected
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-2"><span className="text-xs font-medium text-slate-800">{m.client_name || '—'}</span></td>
                       <td className="px-4 py-2"><span className="text-xs text-slate-800">{SERVICE_LABELS[m.service_type] || m.service_type}</span></td>
                       <td className="px-4 py-2"><span className="text-xs text-slate-800">{TRANSFER_LABELS[m.transfer_type] || m.transfer_type}</span></td>
-                      <td className="px-4 py-2"><span className={`text-xs ${queueColour(m.hours_since_submission)}`}>{m.hours_since_submission}h</span></td>
+                      <td className="px-4 py-2"><span className={`text-xs ${queueColour(m.hours_since_submission)}`}>{formatQueueAge(m.hours_since_submission)}</span></td>
                       <td className="px-4 py-2">
                         <button onClick={() => openDetail(m.id)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all">
                           <Eye size={12} /><span>Review</span>
@@ -193,7 +213,9 @@ export default function ServiceMemoListPage() {
                   <Field label="Hospital Destination" value={selected.hospital_destination} />
                   <Field label="Job Start" value={new Date(selected.job_start_time).toLocaleString('en-SG')} />
                   <Field label="Job End" value={new Date(selected.job_end_time).toLocaleString('en-SG')} />
-                  <Field label="Overtime (hrs)" value={selected.overtime_hours} />
+                  {/* Documentation only - evacuation_floors does not affect billing
+                      (CLAUDE.md logic correction 4); the billable stair/lift charge is the
+                      separate Inconvenience Fee flag in the pricing panel below. */}
                   <Field label="Evacuation Floors" value={selected.evacuation_floors} />
                 </div>
 
@@ -204,6 +226,9 @@ export default function ServiceMemoListPage() {
                     <Field label="Service Type" value={SERVICE_LABELS_FULL[selected.service_type] || selected.service_type} highlight />
                     <Field label="Transfer Type" value={TRANSFER_LABELS[selected.transfer_type] || selected.transfer_type} highlight />
                     <Field label="Office Hours" value={yesNo(selected.is_office_hours)} />
+                    {/* Billable since the engine gained an overtime_per_hour surcharge, so it
+                        belongs with the pricing inputs rather than the job-details block. */}
+                    <Field label="Overtime (hrs)" value={selected.overtime_hours} highlight={Number(selected.overtime_hours) > 0} />
                     <Field label="Oxygen Litres Used" value={selected.oxygen_litres_used} />
                     <Field label="Inconvenience Fee" value={yesNo(selected.has_inconvenience_fee)} />
                     <Field label="Disposables Used" value={yesNo(selected.disposables_used)} />

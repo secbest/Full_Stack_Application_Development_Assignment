@@ -11,6 +11,15 @@ const InvoiceLineItem = sequelize.define('InvoiceLineItem', {
   unit_price:  { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   amount:      { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   is_manual_adjustment: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+
+  // Provenance. is_manual_adjustment alone can't tell "the engine calculated this" from
+  // "the engine calculated this and then someone changed the number", and on an invoice
+  // that distinction IS the audit trail - a hand-edited figure displayed as engine-derived
+  // is a false attribution. Set when an engine-generated row is edited; the original
+  // engine figures are retained so the change is reviewable rather than just flagged.
+  was_manually_edited: { type: DataTypes.BOOLEAN,        allowNull: false, defaultValue: false },
+  engine_unit_price:   { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  engine_amount:       { type: DataTypes.DECIMAL(10, 2), allowNull: true },
 }, {
   tableName: 'invoice_line_items',
   underscored: true,

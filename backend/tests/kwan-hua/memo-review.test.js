@@ -3,7 +3,8 @@ jest.mock('../../src/models', () => ({
   MemoSignature: {},
   Booking: {},
   Client: {},
-  User: {},
+  // findOne is used to notify the AR Specialist when the crew resubmits a corrected memo.
+  User: { findOne: jest.fn() },
   PricingContract: { findOne: jest.fn() },
   PricingRate: { findAll: jest.fn() },
   SurchargeSchedule: { findAll: jest.fn() },
@@ -24,7 +25,7 @@ jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }
 const { ServiceMemo, PricingContract, PricingRate, SurchargeSchedule, Invoice, InvoiceLineItem } = require('../../src/models')
 const { pricingService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
-const { approveMemo, returnMemo } = require('../../src/controllers/memoReviewController')
+const { approveMemo, returnMemo, resubmitMemo, listPendingReview } = require('../../src/controllers/memoReviewController')
 
 function mockRes() {
   const res = {}
@@ -78,6 +79,12 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
     PricingContract.findOne.mockResolvedValue(null)
+    // With no contract the engine is still consulted, with empty rates/surcharges, purely to
+    // enumerate what the memo recorded that now needs pricing by hand.
+    pricingService.computeInvoiceLineItems.mockReturnValue({
+      matched: false, lineItems: [], subtotal: 0,
+      unpriced: [{ surcharge_type: 'resuscitation', label: 'Resuscitation', detail: 'performed' }],
+    })
     Invoice.create.mockResolvedValue({ id: 42 })
 
     const res = mockRes()
@@ -86,10 +93,22 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     expect(res.status).toHaveBeenCalledWith(422)
     expect(payload(res).code).toBe('NO_ACTIVE_CONTRACT')
     expect(Invoice.create).toHaveBeenCalledWith(
-      expect.objectContaining({ contract_id: null, status: 'unmatched' }),
+      expect.objectContaining({
+        contract_id: null,
+        status: 'unmatched',
+        unpriced_surcharges: [{ surcharge_type: 'resuscitation', label: 'Resuscitation', detail: 'performed' }],
+      }),
       expect.anything()
     )
     expect(memo.status).toBe('reviewed')
+  })
+
+  test('409s instead of approving a memo that is out with the crew for correction', async () => {
+    ServiceMemo.findByPk.mockResolvedValue(makeMemo({ status: 'returned' }))
+    const res = mockRes()
+    await approveMemo({ params: { id: 1 }, user: { sub: 2 } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('MEMO_RETURNED')
   })
 
   test('creates an unmatched invoice + 422 when no rate row matches the memo', async () => {
@@ -99,7 +118,7 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     PricingContract.findOne.mockResolvedValue({ id: 7 })
     PricingRate.findAll.mockResolvedValue([])
     SurchargeSchedule.findAll.mockResolvedValue([])
-    pricingService.computeInvoiceLineItems.mockReturnValue({ matched: false, lineItems: [], subtotal: 0 })
+    pricingService.computeInvoiceLineItems.mockReturnValue({ matched: false, lineItems: [], subtotal: 0, unpriced: [] })
     Invoice.create.mockResolvedValue({ id: 43 })
 
     const res = mockRes()
@@ -124,6 +143,7 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
       matched: true,
       lineItems: [{ description: 'EAS - One-Way Hospital Transfer', quantity: 1, unit_price: 850, amount: 850, is_manual_adjustment: false }],
       subtotal: 850,
+      unpriced: [],
     })
     Invoice.create.mockResolvedValue({ id: 44, status: 'matched', subtotal: 850, tax_amount: 0, total_amount: 850 })
     InvoiceLineItem.bulkCreate.mockResolvedValue([])
@@ -159,23 +179,137 @@ describe('returnMemo (UC-03 alt flow)', () => {
 
   test('409s when the linked invoice is already approved or synced', async () => {
     ServiceMemo.findByPk.mockResolvedValue(makeMemo())
-    Invoice.findOne.mockResolvedValue({ status: 'approved' })
+    Invoice.findOne.mockResolvedValue({ id: 5, status: 'approved' })
     const res = mockRes()
     await returnMemo({ params: { id: 1 }, body: { note: 'Missing signature' }, user: { sub: 2 } }, res)
     expect(res.status).toHaveBeenCalledWith(409)
     expect(payload(res).code).toBe('MEMO_ALREADY_INVOICED')
   })
 
-  test('returns the memo to the crew with the correction note and notifies them', async () => {
+  // Regression: a 'matched' invoice used to permit the return, which stranded both records -
+  // the memo went back to the crew while its invoice lived on, and re-approving then failed
+  // because an invoice already existed, leaving no available action on either.
+  test('409s when the memo already generated an invoice, even an unapproved one', async () => {
+    const memo = makeMemo()
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    Invoice.findOne.mockResolvedValue({ id: 9, status: 'matched' })
+    const res = mockRes()
+    await returnMemo({ params: { id: 1 }, body: { note: 'Wrong oxygen figure' }, user: { sub: 2 } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('MEMO_ALREADY_INVOICED')
+    expect(payload(res).message).toContain('#9')
+    expect(memo.update).not.toHaveBeenCalled()
+  })
+
+  test('409s when the memo is already out with the crew', async () => {
+    ServiceMemo.findByPk.mockResolvedValue(makeMemo({ status: 'returned' }))
+    Invoice.findOne.mockResolvedValue(null)
+    const res = mockRes()
+    await returnMemo({ params: { id: 1 }, body: { note: 'Again?' }, user: { sub: 2 } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('MEMO_ALREADY_RETURNED')
+  })
+
+  // Regression: returning used to set status back to 'submitted', so the memo stayed in the
+  // AR review queue looking identical to a fresh submission and got re-reviewed in a loop.
+  test("moves the memo to 'returned' so it leaves the AR review queue, and notifies the crew", async () => {
     const memo = makeMemo({ submitted_by: 99 })
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
     const res = mockRes()
     await returnMemo({ params: { id: 1 }, body: { note: 'Missing signature' }, user: { sub: 2 } }, res)
 
-    expect(memo.status).toBe('submitted')
+    expect(memo.status).toBe('returned')
+    expect(memo.status).not.toBe('submitted')
     expect(memo.ar_note).toBe('Missing signature')
+    expect(memo.returned_at).toBeInstanceOf(Date)
     expect(res.status).toHaveBeenCalledWith(200)
+    expect(payload(res).data.memo_status).toBe('returned')
     expect(notificationService.create).toHaveBeenCalledWith(expect.objectContaining({ user_id: 99 }))
+  })
+})
+
+describe('listPendingReview (UC-03)', () => {
+  test('queries only submitted memos, so returned ones stay out of the queue', async () => {
+    ServiceMemo.findAndCountAll.mockResolvedValue({ rows: [], count: 0 })
+    const res = mockRes()
+    await listPendingReview({ query: {} }, res)
+    expect(ServiceMemo.findAndCountAll).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'submitted' } })
+    )
+  })
+
+  test('caps an absurd ?limit rather than fetching the whole table', async () => {
+    ServiceMemo.findAndCountAll.mockResolvedValue({ rows: [], count: 0 })
+    await listPendingReview({ query: { limit: '100000' } }, mockRes())
+    expect(ServiceMemo.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }))
+  })
+
+  test('ages a corrected memo from its resubmission, not its original creation', async () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    ServiceMemo.findAndCountAll.mockResolvedValue({
+      count: 1,
+      rows: [{
+        id: 1, booking_id: 10, service_type: 'eas', transfer_type: 'one_way_hospital',
+        // Created a fortnight ago but corrected and resubmitted two hours ago.
+        createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+        returned_at: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        resubmitted_at: twoHoursAgo,
+        Booking: { reference_number: 'BKG-1', scheduled_date: '2026-06-10', Client: { id: 6, name: 'TTSH' } },
+      }],
+    })
+    const res = mockRes()
+    await listPendingReview({ query: {} }, res)
+
+    const row = payload(res).data.data[0]
+    expect(row.was_returned).toBe(true)
+    expect(row.hours_since_submission).toBeCloseTo(2, 1)
+  })
+})
+
+describe('resubmitMemo (the crew half of the return loop)', () => {
+  test('409s unless the memo is actually in returned status', async () => {
+    ServiceMemo.findByPk.mockResolvedValue(makeMemo({ status: 'submitted' }))
+    const res = mockRes()
+    await resubmitMemo({ params: { id: 1 }, body: {}, user: { sub: 99, role: 'field_crew' } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('MEMO_NOT_RETURNED')
+  })
+
+  test("404s when a crew member tries to resubmit someone else's memo", async () => {
+    ServiceMemo.findByPk.mockResolvedValue(makeMemo({ status: 'returned', submitted_by: 77 }))
+    const res = mockRes()
+    await resubmitMemo({ params: { id: 1 }, body: {}, user: { sub: 99, role: 'field_crew' } }, res)
+    expect(res.status).toHaveBeenCalledWith(404)
+  })
+
+  test('applies the corrected fields, clears the note and puts the memo back in the queue', async () => {
+    const memo = makeMemo({ status: 'returned', ar_note: 'Oxygen litres look wrong', submitted_by: 99 })
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    const res = mockRes()
+    await resubmitMemo(
+      { params: { id: 1 }, body: { oxygen_litres_used: 14, overtime_hours: 2 }, user: { sub: 99, role: 'field_crew' } },
+      res
+    )
+
+    expect(memo.status).toBe('submitted')
+    expect(memo.oxygen_litres_used).toBe(14)
+    expect(memo.overtime_hours).toBe(2)
+    expect(memo.ar_note).toBeNull()
+    expect(memo.resubmitted_at).toBeInstanceOf(Date)
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(payload(res).data.fields_updated).toEqual(['overtime_hours', 'oxygen_litres_used'])
+  })
+
+  test('ignores fields that are not the crew\'s to change', async () => {
+    const memo = makeMemo({ status: 'returned', submitted_by: 99 })
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    await resubmitMemo(
+      { params: { id: 1 }, body: { booking_id: 999, submitted_by: 1, status: 'invoiced' }, user: { sub: 99, role: 'field_crew' } },
+      mockRes()
+    )
+    expect(memo.booking_id).toBe(10)
+    expect(memo.submitted_by).toBe(99)
+    expect(memo.status).toBe('submitted')
   })
 })

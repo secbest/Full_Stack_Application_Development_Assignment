@@ -48,6 +48,12 @@ function serializeMemo(memo, signature) {
     is_jurong_island: memo.is_jurong_island,
     additional_charges_notes: memo.additional_charges_notes,
     hospital_stamp_image_url: memo.hospital_stamp_image_url,
+    // The AR Specialist's correction note when this memo was returned. Set while a
+    // correction is outstanding and cleared on resubmission, so the crew can see what
+    // they were asked to fix - previously it was persisted but never sent to any client.
+    ar_note: memo.ar_note ?? null,
+    returned_at: memo.returned_at ?? null,
+    resubmitted_at: memo.resubmitted_at ?? null,
     signature: {
       id: signature.id,
       signer_name: signature.signer_name,
@@ -244,6 +250,10 @@ async function getServiceMemoById(req, res) {
     is_jurong_island: memo.is_jurong_island,
     additional_charges_notes: memo.additional_charges_notes,
     hospital_stamp_image_url: memo.hospital_stamp_image_url,
+    // Correction context: what AR asked to be fixed, and the round-trip timestamps.
+    ar_note: memo.ar_note ?? null,
+    returned_at: memo.returned_at ?? null,
+    resubmitted_at: memo.resubmitted_at ?? null,
     signatures: memo.MemoSignatures.map((s) => ({
       id: s.id,
       signer_name: s.signer_name,
