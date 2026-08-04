@@ -11,7 +11,7 @@
 // Defaults to BKG-TEST-00001, the booking seed-bookings.js sets up for this purpose.
 require('dotenv').config()
 const sequelize = require('../config')
-const { Booking, ServiceMemo, Invoice, InvoiceLineItem } = require('../models')
+const { Booking, ServiceMemo, Invoice, InvoiceLineItem, JobMilestone } = require('../models')
 
 async function main() {
   const referenceNumber = process.argv[2] || 'BKG-TEST-00001'
@@ -40,8 +40,17 @@ async function main() {
       console.log('[reset-demo-memo-booking] No existing memo found - nothing to delete.')
     }
 
+    // Milestones must go too (client feedback item 1): they are unique per
+    // (booking_id, milestone_type), so leaving them behind would make every stage
+    // already-recorded and the hero card's stepper would have nothing left to tap.
+    const removedMilestones = await JobMilestone.destroy({ where: { booking_id: booking.id } })
+    if (removedMilestones > 0) {
+      console.log(`[reset-demo-memo-booking] Deleted ${removedMilestones} recorded job milestone(s).`)
+    }
+
     await booking.update({ status: 'in_progress' })
     console.log(`[reset-demo-memo-booking] ${referenceNumber} reset to status 'in_progress' - ready to redo the Memo Wizard demo.`)
+    console.log('[reset-demo-memo-booking] Re-run `npm run db:seed:bookings` to restore the two seeded milestones on BKG-TEST-00001.')
   } catch (err) {
     console.error('[reset-demo-memo-booking] Failed:', err.message)
     process.exit(1)

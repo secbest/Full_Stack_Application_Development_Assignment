@@ -2,6 +2,9 @@
 //   1. BKG-TEST-* - a handful of test bookings assigned to Ravi Kumar (field_crew) so the
 //      Field Operations frontend (My Jobs, Memo Wizard) has real data to work against.
 //      Requires seed-users.js and seed-clients.js to have run first.
+//      BKG-TEST-00005 is a manpower-only event standby (client feedback item 4), and
+//      BKG-TEST-00001 also gets its first two job milestones (client feedback item 1)
+//      so the My Jobs hero card opens mid-job.
 //   2. BKG-2026-* - bookings linked to the confirmed intake submissions created by
 //      seed-intakes.js, so the Quotations Specialist's Booking List has real data
 //      with a working intake link. Requires seed-users.js, seed-clients.js, and
@@ -12,7 +15,7 @@
 // Usage:  node src/scripts/seed-bookings.js
 require('dotenv').config()
 const sequelize = require('../config')
-const { User, Client, IntakeSubmission, Booking } = require('../models')
+const { User, Client, IntakeSubmission, Booking, JobMilestone } = require('../models')
 
 async function seedFieldOpsTestBookings({ ravi, camilla }) {
   const client = await Client.findOne({ where: { contact_email: 'ops@rafflesmedical.com.sg' } })
@@ -64,6 +67,24 @@ async function seedFieldOpsTestBookings({ ravi, camilla }) {
       status: 'invoiced',
       notes: 'Seed data - already invoiced, used to test the BOOKING_ALREADY_INVOICED error path.',
     },
+    {
+      // Client feedback item 4 (17 Jul 2026): "sometimes we also have events whereby
+      // there is no ambulance at all, we just have to dispatch crew, like manpower."
+      // Demo case for a memo with no patient and no hospital destination.
+      reference_number: 'BKG-TEST-00005',
+      client_id: client.id, created_by: camilla.id, assigned_crew_id: ravi.id,
+      service_type: 'event_standby', service_tier: 'basic', original_service_tier: null,
+      // Deliberately LATER in the day than BKG-TEST-00001 (09:00). My Jobs promotes the
+      // earliest in_progress job to the hero card, so an earlier time here would push
+      // the milestone-seeded booking below and leave the hero with an empty stepper.
+      // At 14:00 the hero stays on 00001 while this one sits in "Upcoming jobs" - still
+      // in_progress, so its Create Memo button reaches the standby wizard directly.
+      scheduled_date: today, scheduled_time: '14:00',
+      pickup_location: 'Singapore Sports Hub, 1 Stadium Drive, Singapore 397629',
+      destination: 'Singapore Sports Hub, 1 Stadium Drive, Singapore 397629',
+      status: 'in_progress',
+      notes: 'Seed data - manpower-only event standby (no ambulance, no patient). Demo case for the memo wizard\'s optional patient fields.',
+    },
   ]
 
   for (const booking of TEST_BOOKINGS) {
@@ -73,6 +94,42 @@ async function seedFieldOpsTestBookings({ ravi, camilla }) {
     })
     const tag = created ? '  Created' : 'Skipped (exists)'
     console.log(`[seed-bookings] ${tag}: ${booking.reference_number}  (${booking.status})`)
+  }
+
+  await seedMilestones({ ravi })
+}
+
+// Client feedback item 1 (17 Jul 2026): the crew records five job milestones live.
+// Seeds the first two against the in_progress demo booking so the My Jobs hero card
+// opens mid-job (two stages done, "En Route" as the next tap target) instead of
+// needing someone to tap twice before the screen looks realistic.
+async function seedMilestones({ ravi }) {
+  const booking = await Booking.findOne({ where: { reference_number: 'BKG-TEST-00001' } })
+  if (!booking) {
+    console.error('[seed-bookings] BKG-TEST-00001 not found - skipping milestone seed.')
+    return
+  }
+
+  // Anchored to the booking's own scheduled date so the timestamps stay plausible
+  // relative to the job rather than drifting to whenever the seed was last run.
+  const base = new Date(`${booking.scheduled_date}T09:00:00`)
+  const MILESTONES = [
+    { milestone_type: 'activated',           offsetMinutes: 0 },
+    { milestone_type: 'arrived_at_location', offsetMinutes: 18 },
+  ]
+
+  for (const m of MILESTONES) {
+    const [, created] = await JobMilestone.findOrCreate({
+      where: { booking_id: booking.id, milestone_type: m.milestone_type },
+      defaults: {
+        booking_id: booking.id,
+        milestone_type: m.milestone_type,
+        recorded_at: new Date(base.getTime() + m.offsetMinutes * 60_000),
+        recorded_by: ravi.id,
+      },
+    })
+    const tag = created ? '  Created' : 'Skipped (exists)'
+    console.log(`[seed-bookings] ${tag}: milestone ${m.milestone_type} on ${booking.reference_number}`)
   }
 }
 
