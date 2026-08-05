@@ -232,4 +232,23 @@ async function rejectIntake(req, res) {
   }
 }
 
-module.exports = { createIntake, listIntakes, getIntakeById, confirmIntake, rejectIntake }
+// Only rejected submissions are deletable. Pending ones are still awaiting a decision,
+// and a confirmed one already produced a Booking (intake_submission_id references this
+// row) - deleting either of those out from under the Intake Queue would either destroy
+// work in progress or leave a booking pointing at nothing.
+async function deleteIntake(req, res) {
+  try {
+    const intake = await IntakeSubmission.findByPk(req.params.id)
+    if (!intake) return notFound(res, 'Intake submission not found.')
+    if (intake.status !== 'rejected') {
+      return error(res, 'Only rejected intake submissions can be deleted.', 'INTAKE_NOT_REJECTED', 409)
+    }
+
+    await intake.destroy()
+    return success(res, { id: intake.id, reference_number: intake.reference_number })
+  } catch (err) {
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+module.exports = { createIntake, listIntakes, getIntakeById, confirmIntake, rejectIntake, deleteIntake }

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { CalendarDays, ChevronDown, Eye, Search } from 'lucide-react'
+import { CalendarDays, ChevronDown, Eye, Search, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { bookingAssignmentSchema } from '@/schemas'
 import api from '../../api'
 
@@ -32,6 +33,19 @@ const STATUS_BADGE_CLASSES = {
   Completed: 'bg-slate-200 text-slate-700',
   Invoiced: 'bg-emerald-100 text-emerald-700',
 }
+
+// Filter pill active-state colors, following the same CLAUDE.md status pattern as
+// STATUS_BADGE_CLASSES above and IntakeQueuePage's STATUS_FILTER_PILLS: the active pill
+// fills with the color of the status it filters to, so e.g. "In Progress" (this page's
+// closest equivalent to Intake's amber "Pending") turns amber/yellow when selected,
+// instead of every pill turning the same neutral black regardless of which status it is.
+const BOOKING_STATUS_FILTER_PILLS = [
+  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white' },
+  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white' },
+  { value: 'In Progress', label: 'In Progress', activeClass: 'bg-amber-500 text-white' },
+  { value: 'Completed', label: 'Completed', activeClass: 'bg-slate-600 text-white' },
+  { value: 'Invoiced', label: 'Invoiced', activeClass: 'bg-emerald-500 text-white' },
+]
 
 // Row tint mirrors the badge colors so status is readable at a glance; unassigned
 // takes priority since it's the most actionable state regardless of booking status.
@@ -102,6 +116,7 @@ export default function BookingListPage() {
   const crewMenuRef = useRef(null)
   const [viewedIntake, setViewedIntake] = useState(null)
   const [viewedIntakeLoading, setViewedIntakeLoading] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   // Derived counts used for the stats cards at the top of the page.
   const totalCount = bookings.length
@@ -257,6 +272,23 @@ export default function BookingListPage() {
     }
   }
 
+  // Only invoiced bookings can be deleted (see backend/src/controllers/bookingController.js) -
+  // by that stage Xero holds the master copy, so this just clears completed clutter locally.
+  async function confirmDelete() {
+    const booking = deleteTarget
+    if (!booking) return
+    try {
+      await api.delete(`/bookings/${booking.id}`)
+      setAssignmentNotification({ type: 'success', message: `Booking ${booking.ref} deleted.` })
+      if (selectedBooking && selectedBooking.ref === booking.ref) setSelectedBooking(null)
+      await fetchBookings()
+    } catch (err) {
+      setAssignmentNotification({ type: 'error', message: err.response?.data?.message || 'Failed to delete booking.' })
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
   useEffect(() => {
     if (!assignmentNotification) {
       setNotificationVisible(false)
@@ -301,15 +333,15 @@ export default function BookingListPage() {
           <button
             type="button"
             onClick={() => { setStatusFilter('Confirmed'); setUnassignedFilter(false) }}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Confirmed' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Confirmed' ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Confirmed</div>
-            <div className="text-2xl font-semibold text-emerald-500">{confirmedCount}</div>
+            <div className="text-2xl font-semibold text-blue-600">{confirmedCount}</div>
           </button>
           <button
             type="button"
             onClick={() => { setStatusFilter('Completed'); setUnassignedFilter(false) }}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Completed' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Completed' ? 'border-slate-400 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Completed (Memo Pending)</div>
             <div className="text-2xl font-semibold text-slate-900">{completedCount}</div>
@@ -317,15 +349,15 @@ export default function BookingListPage() {
           <button
             type="button"
             onClick={() => { setStatusFilter('Invoiced'); setUnassignedFilter(false) }}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Invoiced' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Invoiced' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Invoiced</div>
-            <div className="text-2xl font-semibold text-sky-600">{invoicedCount}</div>
+            <div className="text-2xl font-semibold text-emerald-600">{invoicedCount}</div>
           </button>
           <button
             type="button"
             onClick={() => { setStatusFilter(''); setUnassignedFilter(true) }}
-            className={`text-left rounded-2xl border p-4 transition ${unassignedFilter ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${unassignedFilter ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Unassigned</div>
             <div className="text-2xl font-semibold text-amber-500">{unassignedCount}</div>
@@ -358,11 +390,15 @@ export default function BookingListPage() {
 
                 <div className="flex gap-2 items-center">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => { setStatusFilter(''); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${!statusFilter && !unassignedFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All</button>
-                    <button onClick={() => { setStatusFilter('Confirmed'); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Confirmed' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Confirmed</button>
-                    <button onClick={() => { setStatusFilter('In Progress'); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'In Progress' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>In Progress</button>
-                    <button onClick={() => { setStatusFilter('Completed'); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Completed' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Completed</button>
-                    <button onClick={() => { setStatusFilter('Invoiced'); setUnassignedFilter(false) }} className={`h-8 px-3 rounded-full text-xs ${statusFilter === 'Invoiced' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>Invoiced</button>
+                    {BOOKING_STATUS_FILTER_PILLS.map((pill) => (
+                      <button
+                        key={pill.value || 'all'}
+                        onClick={() => { setStatusFilter(pill.value); setUnassignedFilter(false) }}
+                        className={`h-8 px-3 rounded-full text-xs transition-colors ${statusFilter === pill.value && !unassignedFilter ? pill.activeClass : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                      >
+                        {pill.label}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="relative">
@@ -410,7 +446,11 @@ export default function BookingListPage() {
                     </thead>
                     <tbody>
                       {filtered.map((b) => (
-                        <tr key={b.ref} className={`h-12 hover:bg-slate-100/80 transition-colors ${getRowBackground(b)}`}>
+                        <tr
+                          key={b.ref}
+                          onClick={() => { setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); setCrewSearch(''); setCrewMenuOpen(false); }}
+                          className={`h-12 cursor-pointer ${getRowBackground(b)}`}
+                        >
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{b.ref}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{b.client}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{b.serviceType}</span></td>
@@ -429,10 +469,18 @@ export default function BookingListPage() {
                             )}
                           </td>
                           <td className="px-4 py-2 align-middle">
-                            <button onClick={() => { setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); setCrewSearch(''); setCrewMenuOpen(false); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
-                              <Eye size={12} />
-                              <span>Review</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); setCrewSearch(''); setCrewMenuOpen(false); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                                <Eye size={12} />
+                                <span>Review</span>
+                              </button>
+                              {b.status === 'Invoiced' ? (
+                                <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(b); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-red-50 text-red-600 hover:bg-red-600 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                                  <Trash2 size={12} />
+                                  <span>Delete</span>
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -701,6 +749,15 @@ export default function BookingListPage() {
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete this booking?"
+        description={deleteTarget ? `Booking ${deleteTarget.ref} and its service memo, invoice, and job milestones will be permanently deleted. This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
 const { milestoneBodySchema, bookingIdParamSchema } = require('../validators')
-const { listMyJobs, listBookings, getBookingById, updateBookingCrew } = require('../controllers/bookingController')
+const { listMyJobs, listBookings, getBookingById, updateBookingCrew, deleteBooking } = require('../controllers/bookingController')
 const { recordMilestone } = require('../controllers/jobMilestoneController')
 
 router.get(
@@ -21,6 +21,8 @@ router.get(
 )
 
 router.patch('/:id/crew', authenticate, authorise('quotations_specialist'), updateBookingCrew)
+
+router.delete('/:id', authenticate, authorise('quotations_specialist'), deleteBooking)
 
 // Jasper (client feedback item 1) - crew taps a button as each job stage happens;
 // the server records the timestamp. Also the real "start job" action: recording

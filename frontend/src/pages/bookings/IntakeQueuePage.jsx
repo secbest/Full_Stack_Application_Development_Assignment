@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, Search, ChevronDown, Eye, X } from 'lucide-react';
+import { CalendarDays, Search, ChevronDown, Eye, Trash2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { intakeRejectSchema } from '@/schemas';
 import api from '../../api';
 
@@ -68,6 +69,7 @@ export default function IntakeQueuePage() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   // Build the filtered intake list based on search text and dropdown filters.
   const filteredIntakes = intakes.filter((i) => {
@@ -154,6 +156,22 @@ export default function IntakeQueuePage() {
     }
   }
 
+  // Only rejected submissions can be deleted (see backend/src/controllers/intakeController.js) -
+  // pending ones are still awaiting a decision, and a confirmed one already produced a booking.
+  async function confirmDelete() {
+    const intake = deleteTarget
+    if (!intake) return
+    try {
+      await api.delete(`/intake/${intake.id}`)
+      setToast({ type: 'success', message: `Submission ${intake.ref} deleted.` })
+      await fetchIntakes()
+    } catch (err) {
+      setToast({ type: 'error', message: err.response?.data?.message || 'Failed to delete submission.' })
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
   useEffect(() => {
     if (!toast) return undefined
     const timer = window.setTimeout(() => setToast(null), 3200)
@@ -177,7 +195,7 @@ export default function IntakeQueuePage() {
           <button
             type="button"
             onClick={() => setStatusFilter('Pending')}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Pending' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Pending' ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Pending Review</div>
             <div className="text-2xl font-semibold text-amber-500">{intakes.filter((i) => i.status === 'Pending').length}</div>
@@ -185,7 +203,7 @@ export default function IntakeQueuePage() {
           <button
             type="button"
             onClick={() => setStatusFilter('Confirmed')}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Confirmed' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Confirmed' ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Confirmed</div>
             <div className="text-2xl font-semibold text-blue-600">{intakes.filter((i) => i.status === 'Confirmed').length}</div>
@@ -193,7 +211,7 @@ export default function IntakeQueuePage() {
           <button
             type="button"
             onClick={() => setStatusFilter('Rejected')}
-            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Rejected' ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+            className={`text-left rounded-2xl border p-4 transition ${statusFilter === 'Rejected' ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
           >
             <div className="text-sm text-slate-500">Rejected</div>
             <div className="text-2xl font-semibold text-red-500">{intakes.filter((i) => i.status === 'Rejected').length}</div>
@@ -276,7 +294,11 @@ export default function IntakeQueuePage() {
                         </tr>
                       ) : (
                         filteredIntakes.map((it) => (
-                          <tr key={it.ref} className={`h-12 hover:bg-slate-100/80 transition-colors ${getRowBackground(it)}`}>
+                          <tr
+                            key={it.ref}
+                            onClick={() => { setSelectedIntake(it); setShowDetails(true); }}
+                            className={`h-12 cursor-pointer ${getRowBackground(it)}`}
+                          >
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{it.ref}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{it.name}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{it.org}</span></td>
@@ -285,10 +307,18 @@ export default function IntakeQueuePage() {
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">{it.preferredDate}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">1h 12m</span></td>
                             <td className="px-4 py-2 align-middle">
-                              <button onClick={() => { setSelectedIntake(it); setShowDetails(true); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
-                                <Eye size={12} />
-                                <span>Review</span>
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button onClick={(e) => { e.stopPropagation(); setSelectedIntake(it); setShowDetails(true); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                                  <Eye size={12} />
+                                  <span>Review</span>
+                                </button>
+                                {it.status === 'Rejected' ? (
+                                  <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(it); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-red-50 text-red-600 hover:bg-red-600 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                                    <Trash2 size={12} />
+                                    <span>Delete</span>
+                                  </button>
+                                ) : null}
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -411,6 +441,15 @@ export default function IntakeQueuePage() {
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete this submission?"
+        description={deleteTarget ? `Submission ${deleteTarget.ref} will be permanently deleted. This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
