@@ -63,7 +63,7 @@ export function StatusBadge({ status, className }) {
 
   return (
     <span
-      className={cn('inline-flex items-center rounded-[6px] px-2.5 py-0.5 text-xs font-medium', className)}
+      className={cn('inline-flex items-center whitespace-nowrap rounded-[6px] px-2.5 py-0.5 text-xs font-medium', className)}
       style={{ backgroundColor: `${color}26`, color }}
     >
       {label}
