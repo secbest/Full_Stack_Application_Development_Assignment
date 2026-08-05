@@ -2,6 +2,7 @@ const { Op } = require('sequelize')
 const { IntakeSubmission, Booking, Client, User } = require('../models')
 const { success, created, error, notFound } = require('../utils')
 const { intakeCreateSchema, intakeConfirmSchema, intakeRejectSchema } = require('../validators')
+const notificationService = require('../services/notificationService')
 
 function buildReference(prefix, nextNumber) {
   return `${prefix}-${String(nextNumber).padStart(5, '0')}`
@@ -53,6 +54,26 @@ async function createIntake(req, res) {
       destination: body.destination,
       additional_notes: body.additional_notes || null,
     })
+
+    // Non-fatal and isolated from the outer catch on purpose: the intake above is
+    // already committed, and this is a public, unauthenticated form - a failure here
+    // (e.g. the specialist lookup itself throwing) must never turn a successful
+    // submission into a 500 for the customer. The Intake Queue is the reliable fallback.
+    try {
+      const quotationsSpecialists = await User.findAll({ where: { role: 'quotations_specialist' } })
+      await Promise.all(quotationsSpecialists.map((specialist) =>
+        notificationService.create({
+          user_id: specialist.id,
+          type: 'new_intake_submission',
+          title: 'New service request received',
+          body: `${intake.customer_name} submitted a new request (${intake.reference_number}).`,
+          link: '/intake-queue',
+        })
+      ))
+    } catch (notifyErr) {
+      console.error('[createIntake] Failed to notify Quotations Specialists:', notifyErr.message)
+    }
+
     return created(res, {
       id: intake.id,
       reference_number: intake.reference_number,
