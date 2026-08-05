@@ -80,9 +80,20 @@ export default function RevenueLeakagePage() {
     setLoading(true)
     try {
       const range = PRESETS.find((p) => p.id === presetId).range()
-      setReport(await getRevenueLeakage(range))
+      const result = await getRevenueLeakage(range)
+      // Guard the shape rather than trusting it: every read below assumes `summary` and the
+      // three breakdown arrays exist, so a malformed payload would throw during render and
+      // blank the whole screen instead of showing an error the user can act on.
+      if (!result || !result.summary) throw new Error('The revenue leakage report came back in an unexpected shape.')
+      setReport({
+        ...result,
+        by_surcharge_type: result.by_surcharge_type ?? [],
+        by_contract: result.by_contract ?? [],
+        affected_invoices: result.affected_invoices ?? [],
+        period: result.period ?? {},
+      })
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to load the revenue leakage report.')
+      toast.error(err.response?.data?.message || err.message || 'Failed to load the revenue leakage report.')
       setReport(null)
     } finally {
       setLoading(false)
@@ -121,6 +132,26 @@ export default function RevenueLeakagePage() {
       </div>
 
       {loading && <p className="text-sm text-muted-foreground">Loading report...</p>}
+
+      {!loading && !report && (
+        <Card>
+          <CardContent className="flex items-start gap-3 pt-6">
+            <AlertTriangle className="mt-0.5 w-5 h-5 shrink-0 text-red-500" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Could not load the report</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The details are in the notification above. Check that the backend is running, then try again.
+              </p>
+              <button
+                onClick={() => load(preset)}
+                className="mt-3 h-8 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100"
+              >
+                Retry
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!loading && report && (
         <>
