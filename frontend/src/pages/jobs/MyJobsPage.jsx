@@ -54,20 +54,32 @@ function jobStartDate(job) {
   return new Date(`${job.scheduled_date}T${job.scheduled_time}:00`)
 }
 
-// Hero selection (item 3): an in_progress job is always the current job; failing
-// that, the earliest confirmed job today whose start time is within the next hour
-// (or already past). Completed/invoiced jobs are never current.
-export function selectCurrentJob(jobs, now = new Date()) {
-  const inProgress = jobs.find((j) => j.status === 'in_progress')
-  if (inProgress) return inProgress
+function activatedAt(job) {
+  const activated = (job.milestones || []).find((m) => m.milestone_type === 'activated')
+  return activated ? new Date(activated.recorded_at).getTime() : 0
+}
 
-  const today = localDateStr(now)
-  return jobs.find(
-    (j) =>
-      j.status === 'confirmed' &&
-      j.scheduled_date === today &&
-      jobStartDate(j).getTime() <= now.getTime() + ACTIVATION_WINDOW_MS
-  ) || null
+// A confirmed job "belongs to now" once it's today and within the activation window
+// (or already past its start time) - the same rule the hero card uses to decide
+// whether a confirmed job is due, reused wherever "can this be started yet" matters.
+export function isDueForActivation(job, now = new Date()) {
+  return job.scheduled_date === localDateStr(now) && jobStartDate(job).getTime() <= now.getTime() + ACTIVATION_WINDOW_MS
+}
+
+// Hero selection (item 3): the live current job is whichever in_progress job the
+// crew most recently tapped "Start Job" on - not just the first in_progress job in
+// the list. Without this, an older job that's still awaiting its memo (e.g. one the
+// crew started earlier and hasn't wrapped up yet) would permanently hog the hero
+// slot, and a job the crew starts right now would never surface as "current" until
+// the old one is completed. Failing that (nothing in_progress), fall back to the
+// earliest confirmed job that is due. Completed/invoiced jobs are never current.
+export function selectCurrentJob(jobs, now = new Date()) {
+  const inProgress = jobs.filter((j) => j.status === 'in_progress')
+  if (inProgress.length > 0) {
+    return inProgress.reduce((latest, j) => (activatedAt(j) >= activatedAt(latest) ? j : latest))
+  }
+
+  return jobs.find((j) => j.status === 'confirmed' && isDueForActivation(j, now)) || null
 }
 
 function matchesDateFilter(job, filter, now = new Date()) {
@@ -150,7 +162,7 @@ function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo })
 
 // Only ever rendered for a confirmed or in_progress job - see UPCOMING_STATUSES.
 // A completed/invoiced booking's memo is already submitted, so it never reaches here.
-function JobCard({ job, onCreateMemo }) {
+function JobCard({ job, onCreateMemo, onStartJob, startBusy, startEligible }) {
   const accentColor = { confirmed: '#3B82F6', in_progress: '#F59E0B' }[job.status] || '#94A3B8'
 
   return (
@@ -175,11 +187,31 @@ function JobCard({ job, onCreateMemo }) {
             </div>
           </div>
 
-          <div className="md:shrink-0">
-            {/* Confirmed jobs are queued, not actionable - activation happens on the
-                hero card once the job's window arrives (client feedback #3). */}
+          <div className="md:shrink-0 flex flex-col items-stretch gap-1 md:items-end">
+            {/* A confirmed job is demoted here only because another job already holds
+                the single hero slot (client feedback #3) - the backend places no
+                restriction on which confirmed booking can be activated, so this card
+                gets its own "Start Job" tap target rather than leaving the crew with
+                no way to activate it until the hero job is wrapped up. But that action
+                only appears once the job is actually due (same window the hero card
+                uses) - a job scheduled for tomorrow (or later) shows only its
+                scheduled time, same as before this button existed. */}
             {job.status === 'confirmed' && (
-              <span className="block text-sm text-muted-foreground md:inline">Starts at {job.scheduled_time}</span>
+              <>
+                <span className="block text-sm text-muted-foreground md:text-right">Starts at {job.scheduled_time}</span>
+                {startEligible && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={startBusy}
+                    onClick={() => onStartJob(job)}
+                    className="w-full h-11 md:w-auto md:h-9"
+                  >
+                    {startBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />}
+                    Start Job
+                  </Button>
+                )}
+              </>
             )}
             {job.status === 'in_progress' && (
               <Button size="sm" onClick={() => onCreateMemo(job)} className="w-full h-11 md:w-auto md:h-9">
@@ -198,6 +230,7 @@ export default function MyJobsPage() {
   const [jobs, setJobs] = useState([])
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [milestoneBusy, setMilestoneBusy] = useState(false)
+  const [startingJobId, setStartingJobId] = useState(null)
   const [now, setNow] = useState(() => new Date())
   const navigate = useNavigate()
   const toast = useToast()
@@ -247,6 +280,22 @@ export default function MyJobsPage() {
 
   function handleCreateMemo(job) {
     navigate(`/jobs/${job.id}/memo`)
+  }
+
+  // Activates a confirmed job straight from its Upcoming jobs card - the same
+  // 'activated' milestone the hero's stepper records, but not gated on this job
+  // holding the single hero slot (see JobCard).
+  async function handleStartJob(job) {
+    setStartingJobId(job.id)
+    try {
+      const { data } = await recordMilestone(job.id, 'activated')
+      const { status: newStatus, milestones } = data.data
+      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: newStatus, milestones } : j)))
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to start the job. Please try again.')
+    } finally {
+      setStartingJobId(null)
+    }
   }
 
   return (
@@ -318,7 +367,14 @@ export default function MyJobsPage() {
           ) : (
             <div className="space-y-3">
               {filteredJobs.map((job) => (
-                <JobCard key={job.id} job={job} onCreateMemo={handleCreateMemo} />
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onCreateMemo={handleCreateMemo}
+                  onStartJob={handleStartJob}
+                  startBusy={startingJobId === job.id}
+                  startEligible={isDueForActivation(job, now)}
+                />
               ))}
             </div>
           )}

@@ -146,6 +146,109 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     expect(screen.getByText('Upcoming jobs (1)')).toBeInTheDocument()
     expect(screen.queryByText('Should Not Appear')).not.toBeInTheDocument()
   })
+
+  // Regression: with two in_progress jobs, the hero used to be whichever one
+  // happened to come first in the API response - in practice always the same stale
+  // demo/seed booking that never gets its memo submitted. That let the "Current Job"
+  // card sit on old sample data forever, no matter what the crew actually started
+  // next. The hero must instead track the job most recently activated, so tapping
+  // "Start Job" on a newly assigned booking is what makes IT the live current job.
+  test('when two jobs are in_progress, the one most recently started (not the first in the list) is the hero', async () => {
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [
+        job({
+          id: 1,
+          status: 'in_progress',
+          milestones: [{ milestone_type: 'activated', recorded_at: '2026-08-04T09:00:00Z' }],
+        }), // started first - now stale
+        job({
+          id: 2,
+          reference_number: 'BKG-TEST-00002',
+          client: { id: 2, name: 'ABC Corporation' },
+          status: 'in_progress',
+          milestones: [{ milestone_type: 'activated', recorded_at: '2026-08-06T02:00:00Z' }],
+        }), // started later - this is the live job now
+      ],
+    })
+    renderPage()
+
+    const hero = await screen.findByTestId('current-job-hero')
+    expect(within(hero).getByText('ABC Corporation')).toBeInTheDocument()
+    expect(screen.getByText('Upcoming jobs (1)')).toBeInTheDocument()
+    expect(screen.getByText('Raffles Medical Group')).toBeInTheDocument()
+  })
+})
+
+describe('MyJobsPage - starting a job that is not the hero', () => {
+  // Regression: once ANY job is in_progress, it permanently occupied the single hero
+  // slot, so a second confirmed job assigned to the same crew member had no path to
+  // "Start Job" at all - it only ever rendered static "Starts at HH:MM" text in its
+  // Upcoming jobs row. The backend already allows recording 'activated' on any
+  // confirmed booking regardless of hero status, so the action belongs on every
+  // confirmed job's card, the same way "Create Memo" already appears on every
+  // in_progress job's card and not just the hero's.
+  test('a confirmed job demoted to Upcoming (because another job is already in_progress) still offers Start Job, once its own window arrives', async () => {
+    const user = userEvent.setup()
+    const now = new Date()
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [
+        job({ id: 1, status: 'in_progress' }), // occupies the hero slot
+        job({
+          id: 2,
+          reference_number: 'BKG-TEST-00002',
+          status: 'confirmed',
+          client: { id: 2, name: 'ABC Corporation' },
+          scheduled_date: localDateStr(now),
+          scheduled_time: localTimeStr(now),
+        }),
+      ],
+    })
+    mock.onPost('/bookings/2/milestone').reply(201, {
+      success: true,
+      data: { booking_id: 2, status: 'in_progress', milestones: [{ milestone_type: 'activated', recorded_at: '2026-07-02T01:00:00Z' }] },
+    })
+    renderPage()
+
+    await screen.findByTestId('current-job-hero')
+    const upcomingRow = screen.getByText('ABC Corporation').closest('.overflow-hidden')
+    await user.click(within(upcomingRow).getByRole('button', { name: 'Start Job' }))
+
+    expect(JSON.parse(mock.history.post[0].data)).toEqual({ milestone_type: 'activated' })
+
+    // Tapping "Start Job" is what makes this the live current job (see hero selection
+    // regression test below) - it doesn't just flip status in place and stay put.
+    const hero = await screen.findByTestId('current-job-hero')
+    expect(within(hero).getByText('ABC Corporation')).toBeInTheDocument()
+    expect(within(hero).getByRole('button', { name: /Create Memo/i })).toBeEnabled()
+  })
+
+  // Regression: "Start Job" was added to every confirmed job's Upcoming card with no
+  // time gate at all, so a job scheduled for tomorrow (or any future day) offered the
+  // same tappable "Start Job" button as one that's actually due now. A crew shouldn't
+  // be able to activate - and rack up billable job-start time against - a booking a
+  // full day before it happens. The button must respect the same "due" window the hero
+  // card itself uses (today, within the activation window).
+  test('a confirmed job scheduled for a future day does not offer Start Job - only its scheduled time', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    mock.onGet('/bookings/my-jobs').reply(200, {
+      success: true,
+      data: [
+        job({
+          status: 'confirmed',
+          scheduled_date: localDateStr(tomorrow),
+          scheduled_time: '10:00',
+        }),
+      ],
+    })
+    renderPage()
+
+    await screen.findByText(/No active job right now/i)
+    const upcomingRow = screen.getByText('Raffles Medical Group').closest('.overflow-hidden')
+    expect(within(upcomingRow).queryByRole('button', { name: 'Start Job' })).not.toBeInTheDocument()
+    expect(within(upcomingRow).getByText(/Starts at 10:00/i)).toBeInTheDocument()
+  })
 })
 
 describe('MyJobsPage - live milestone stepper (client feedback #1)', () => {
