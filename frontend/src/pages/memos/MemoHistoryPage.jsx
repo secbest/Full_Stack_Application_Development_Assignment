@@ -10,8 +10,11 @@ import { useMediaQuery, NARROW_QUERY } from '@/hooks'
 import { listServiceMemos } from '@/api/fieldOps'
 import MemoDetailGrid from './MemoDetailGrid'
 
+// 'Returned' is listed second: a memo AR sent back is the only status here that needs the
+// crew to actually do something, so it should be the easiest one to find.
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
+  { value: 'returned', label: 'Returned' },
   { value: 'submitted', label: 'Submitted' },
   { value: 'reviewed', label: 'Reviewed' },
   { value: 'invoiced', label: 'Invoiced' },

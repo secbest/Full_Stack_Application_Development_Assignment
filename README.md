@@ -102,6 +102,22 @@ npm run db:seed:xero      # inserts demo Xero connection + vendor invoices (AP -
 npm run db:seed:pricing   # inserts pricing contract + rates + surcharges + review-queue memos (AR Wave 3 - Kwan Hua; requires the seeds above)
 ```
 
+> **Upgrading an existing database:** `db:sync` runs `sequelize.sync({ alter: true })`, which adds new
+> columns but does **not** add values to existing PostgreSQL `ENUM` types. The Wave 3 fixes introduce
+> two new enum values (`service_memos.status = 'returned'` and
+> `surcharge_schedules.surcharge_type = 'overtime_per_hour'`), so a database created before them needs
+> a full rebuild rather than an alter:
+>
+> ```bash
+> npm run db:reset -- --yes   # drops every table, recreates, and reseeds
+> ```
+>
+> Without this, returning a memo or saving an overtime surcharge fails with an invalid-enum error.
+>
+> **Once a real Xero organisation is connected, prefer `db:sync` over `db:reset`.** A reset drops
+> `xero_connections` along with everything else, so the OAuth consent has to be repeated. `db:sync`
+> adds missing columns in place and leaves the connection intact.
+
 Demo accounts (password: `Efar@2026`):
 
 | Email | Role |
@@ -154,6 +170,41 @@ demoable without a Xero account. Controlled by `XERO_SIMULATION` in `backend/.en
 5. Create a free **Demo Company** in Xero to sync into.
 6. Log in as the Managing Director, open Xero Connection, and complete the OAuth consent. Tokens are
    AES-256-GCM encrypted at rest and auto-refreshed (~30 min lifetime) before each sync.
+
+Verified working against a live Xero Demo Company on 4 Aug 2026: the authorization-code exchange,
+the tenant/org lookup, encrypted token storage, and both sync directions - a draft `ACCPAY` bill and
+a draft `ACCREC` invoice were created in Xero and read back to confirm their line items survived
+the round trip.
+
+**Scopes (`XERO_SCOPES`).** Xero is replacing its broad scopes with granular ones: apps registered
+after **2 March 2026** are only granted the new set, while apps registered before it keep the broad
+set until September 2027. The code requests the granular set by default:
+
+```
+openid profile email accounting.invoices accounting.contacts offline_access
+```
+
+`accounting.invoices` is the granular replacement for the old `accounting.transactions` and covers
+both the ACCREC sales invoices and ACCPAY bills this platform creates. If your app predates the
+cutoff and only has broad scopes, override it in `backend/.env`:
+
+```
+XERO_SCOPES=openid profile email accounting.transactions accounting.contacts offline_access
+```
+
+This matters because Xero rejects the **entire** authorize request with `invalid_scope` when any
+single requested scope is unavailable to the app - which surfaces as a dead authorize link rather
+than a scope problem. To see which scopes your own app actually has: **My Apps -> your app ->
+Configuration -> Authorisation -> Scopes**.
+
+**Two gotchas when running the OAuth flow locally:**
+
+- Use `node src/index.js`, not `npm run dev`. The CSRF `state` is held in an in-memory `Set`, so a
+  nodemon reload between clicking Connect and Xero redirecting back invalidates it and the callback
+  returns `?error=invalid_state`.
+- Don't sync before completing the consent. The seeded demo connection row carries placeholder
+  plaintext tokens that can't be decrypted, so a sync attempt fails confusingly. Completing the real
+  OAuth flow retires that row automatically.
 
 ## Tech Stack
 

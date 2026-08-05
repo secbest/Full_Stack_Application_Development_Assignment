@@ -60,9 +60,33 @@ describe('xeroService.getAuthorizationUrl (UC-01)', () => {
     expect(url.origin + url.pathname).toBe('https://login.xero.com/identity/connect/authorize')
     expect(url.searchParams.get('client_id')).toBe('test-client-id')
     expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:3000/api/xero/callback')
-    expect(url.searchParams.get('scope')).toContain('accounting.transactions')
+    // accounting.invoices is Xero's granular replacement for the retired broad
+    // accounting.transactions scope, and is what grants creation of both the ACCREC sales
+    // invoices and ACCPAY bills this platform pushes. Requesting the retired scope makes Xero
+    // reject the whole authorize request with invalid_scope for any app registered after
+    // 2 March 2026, so asserting the granular name here is the point of the test.
+    const scope = url.searchParams.get('scope')
+    expect(scope).toContain('accounting.invoices')
+    expect(scope).not.toContain('accounting.transactions')
+    expect(scope).toContain('accounting.contacts')
+    expect(scope).toContain('offline_access') // required for a refresh token
     expect(url.searchParams.get('state')).toBe(state)
     expect(state).toHaveLength(32) // 16 bytes as hex
+  })
+
+  test('XERO_SCOPES overrides the default set for an app still on the legacy broad scopes', () => {
+    process.env.XERO_CLIENT_ID = 'test-client-id'
+    process.env.XERO_REDIRECT_URI = 'http://localhost:3000/api/xero/callback'
+    process.env.XERO_SCOPES = 'openid accounting.transactions offline_access'
+
+    // The module reads XERO_SCOPES at load time, so re-require it in isolation.
+    jest.resetModules()
+    const reloaded = require('../../src/services/xeroService')
+    const url = new URL(reloaded.getAuthorizationUrl().authUrl)
+
+    expect(url.searchParams.get('scope')).toBe('openid accounting.transactions offline_access')
+    delete process.env.XERO_SCOPES
+    jest.resetModules()
   })
 
   test('generates a fresh state token on every call (CSRF protection)', () => {

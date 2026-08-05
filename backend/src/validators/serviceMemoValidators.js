@@ -111,7 +111,7 @@ const memoIdParamSchema = Yup.object({
 })
 
 const listServiceMemosQuerySchema = Yup.object({
-  status: Yup.string().oneOf(['submitted', 'reviewed', 'invoiced'], 'status must be one of: submitted, reviewed, invoiced'),
+  status: Yup.string().oneOf(['submitted', 'returned', 'reviewed', 'invoiced'], 'status must be one of: submitted, returned, reviewed, invoiced'),
   booking_id: Yup.number().integer().positive(),
   submitted_by: Yup.number().integer().positive(),
   date_from: Yup.date(),

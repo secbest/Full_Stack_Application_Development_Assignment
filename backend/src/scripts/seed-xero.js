@@ -5,14 +5,43 @@
 //
 // Usage:  node src/scripts/seed-xero.js
 require('dotenv').config()
+const fs = require('fs')
+const path = require('path')
 const sequelize = require('../config')
 const { User, XeroConnection, VendorInvoice, VendorInvoiceItem, XeroSyncLog } = require('../models')
+const { cloudinaryService } = require('../services')
+
+// The AP review screen's whole purpose is comparing the source PDF against the extracted
+// fields side by side. These rows used to carry hand-written URLs on a Cloudinary cloud that
+// does not exist, so the PDF pane rendered as an empty white panel on every seeded invoice -
+// the one screen where that is most damaging. Upload the bundled fixture once and point every
+// seeded row at the resulting real URL.
+//
+// Falls back to the placeholder (with a loud warning) rather than failing the seed, so the
+// script still works when Cloudinary credentials are absent.
+const FIXTURE_PDF = path.join(__dirname, 'fixtures', 'CMD-2026-01187.pdf')
+const PLACEHOLDER_PDF = 'https://res.cloudinary.com/efar/raw/upload/v1750000000/vendor-invoices/placeholder.pdf'
+
+async function resolveSamplePdfUrl() {
+  try {
+    const buffer = fs.readFileSync(FIXTURE_PDF)
+    const url = await cloudinaryService.uploadPdf(buffer, 'seed-sample-vendor-invoice.pdf')
+    console.log(`[seed-xero]   Uploaded sample PDF -> ${url}`)
+    return url
+  } catch (err) {
+    console.warn(`[seed-xero]   WARNING: could not upload the sample PDF (${err.message}).`)
+    console.warn('[seed-xero]   Seeded invoices will use a placeholder URL and their PDF pane will be blank.')
+    return PLACEHOLDER_PDF
+  }
+}
 
 async function main() {
   try {
     console.log('[seed-xero] Connecting to Supabase...')
     await sequelize.authenticate()
     console.log('[seed-xero] Connected.')
+
+    const samplePdfUrl = await resolveSamplePdfUrl()
 
     const chloe = await User.findOne({ where: { email: 'chloe@efar.com.sg' } })
     if (!chloe) {
@@ -40,7 +69,7 @@ async function main() {
         vendor_name: 'Esso Petroleum Pte Ltd',
         invoice_number: 'INV-2026-00891',
         invoice_date: '2026-06-18',
-        pdf_url: 'https://res.cloudinary.com/efar/raw/upload/v1750000000/vendor-invoices/inv-2026-00891.pdf',
+        pdf_url: samplePdfUrl,
         extracted_total: 1840.00,
         rebate_percentage: 1.00,
         rebate_amount: 18.40,
@@ -66,7 +95,7 @@ async function main() {
         vendor_name: 'SBS Transit Parts',
         invoice_number: 'INV-2026-00450',
         invoice_date: '2026-06-14',
-        pdf_url: 'https://res.cloudinary.com/efar/raw/upload/v1749800000/vendor-invoices/inv-2026-00450.pdf',
+        pdf_url: samplePdfUrl,
         extracted_total: 640.00,
         rebate_percentage: 1.00,
         rebate_amount: 6.40,
@@ -107,7 +136,7 @@ async function main() {
         vendor_name: 'Jurong Medical Supplies',
         invoice_number: 'INV-2026-00512',
         invoice_date: '2026-06-19',
-        pdf_url: 'https://res.cloudinary.com/efar/raw/upload/v1750100000/vendor-invoices/inv-2026-00512.pdf',
+        pdf_url: samplePdfUrl,
         extracted_total: 312.50,
         rebate_percentage: 1.00,
         rebate_amount: 3.13,
@@ -134,7 +163,7 @@ async function main() {
         vendor_name: 'Esso Petroleum Pte Ltd',
         invoice_number: 'INV-2026-00893',
         invoice_date: '2026-06-20',
-        pdf_url: 'https://res.cloudinary.com/efar/raw/upload/v1750200000/vendor-invoices/inv-2026-00893.pdf',
+        pdf_url: samplePdfUrl,
         extracted_total: 980.00,
         rebate_percentage: 1.00,
         rebate_amount: 9.80,

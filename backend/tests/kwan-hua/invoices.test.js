@@ -6,11 +6,13 @@ jest.mock('../../src/models', () => ({
   ServiceMemo: { update: jest.fn() },
   PricingContract: {},
   User: {},
-  XeroSyncLog: { create: jest.fn() },
+  // findOrCreate: the sync log is now one row per invoice, incremented per attempt, rather
+  // than a fresh row each time. findOne: the retry endpoint reads it to enforce the cap.
+  XeroSyncLog: { create: jest.fn(), findOrCreate: jest.fn(), findOne: jest.fn() },
 }))
 
 jest.mock('../../src/services', () => ({
-  xeroService: { pushArInvoice: jest.fn() },
+  xeroService: { pushArInvoice: jest.fn(), MAX_SYNC_ATTEMPTS: 3 },
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
@@ -22,7 +24,7 @@ const { xeroService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  addLineItem, updateLineItem, deleteLineItem, batchApprove, retryXero,
+  addLineItem, updateLineItem, deleteLineItem, batchApprove, retryXero, listInvoices,
 } = require('../../src/controllers/invoiceController')
 
 function mockRes() {
@@ -40,7 +42,22 @@ function makeInvoice(overrides = {}) {
   return obj
 }
 
-beforeEach(() => jest.clearAllMocks())
+// One sync-log row per invoice, reused across attempts.
+function makeSyncLog(overrides = {}) {
+  const obj = { id: 1, entity_type: 'ar_invoice', entity_id: 1, status: 'pending', attempt_count: 0, ...overrides }
+  obj.update = jest.fn(async (fields) => { Object.assign(obj, fields); return obj })
+  return obj
+}
+
+let syncLog
+
+beforeEach(() => {
+  jest.clearAllMocks()
+  // Default: a fresh log with no attempts yet, and no pre-existing log for the cap check.
+  syncLog = makeSyncLog()
+  XeroSyncLog.findOrCreate.mockResolvedValue([syncLog, true])
+  XeroSyncLog.findOne.mockResolvedValue(null)
+})
 
 describe('addLineItem (UC-05)', () => {
   test('404s when the invoice does not exist', async () => {
@@ -178,7 +195,6 @@ describe('batchApprove (UC-06)', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: true, xeroRecordId: 'INV-XR-1' })
-    XeroSyncLog.create.mockResolvedValue({})
 
     const res = mockRes()
     await batchApprove({ body: { invoice_ids: [1, 2] }, user: { sub: 1 } }, res)
@@ -196,7 +212,6 @@ describe('batchApprove (UC-06)', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'Xero rejected the invoice' })
-    XeroSyncLog.create.mockResolvedValue({})
 
     const res = mockRes()
     await batchApprove({ body: { invoice_ids: [3] }, user: { sub: 1 } }, res)
@@ -237,7 +252,6 @@ describe('retryXero (UC-07 alt / UC-10)', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'still down' })
-    XeroSyncLog.create.mockResolvedValue({})
     const res = mockRes()
     await retryXero({ params: { id: 1 } }, res)
     expect(res.status).toHaveBeenCalledWith(502)
@@ -251,11 +265,117 @@ describe('retryXero (UC-07 alt / UC-10)', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: true, xeroRecordId: 'INV-XR-99' })
-    XeroSyncLog.create.mockResolvedValue({})
     const res = mockRes()
     await retryXero({ params: { id: 1 } }, res)
     expect(res.status).toHaveBeenCalledWith(200)
     expect(payload(res).data.xero_invoice_id).toBe('INV-XR-99')
     expect(invoice.status).toBe('synced_to_xero')
+  })
+
+  // Regression: this route used to create a brand-new sync log at attempt_count 1 on every
+  // call, so the UC-08 three-attempt ceiling - which reads attempt_count - was unreachable
+  // here even though the Sync Status screen enforced it.
+  test('reuses the invoice\'s existing sync log and increments the attempt count', async () => {
+    const invoice = makeInvoice({ status: 'failed' })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    xeroController.getFreshConnection.mockResolvedValue({ xero_tenant_id: 'demo', access_token: 'demo' })
+    Client.findByPk.mockResolvedValue({ name: 'TTSH' })
+    InvoiceLineItem.findAll.mockResolvedValue([])
+    xeroService.pushArInvoice.mockResolvedValue({ ok: true, xeroRecordId: 'INV-XR-100' })
+
+    // An existing log from the first, failed attempt.
+    const existing = makeSyncLog({ status: 'failed', attempt_count: 1 })
+    XeroSyncLog.findOne.mockResolvedValue(existing)
+    XeroSyncLog.findOrCreate.mockResolvedValue([existing, false])
+
+    await retryXero({ params: { id: 1 } }, mockRes())
+
+    expect(XeroSyncLog.create).not.toHaveBeenCalled()
+    expect(existing.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'success', attempt_count: 2 }))
+  })
+
+  test('refuses a retry once the attempt ceiling is reached', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ status: 'failed' }))
+    XeroSyncLog.findOne.mockResolvedValue(makeSyncLog({ status: 'failed', attempt_count: 3 }))
+
+    const res = mockRes()
+    await retryXero({ params: { id: 1 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('RETRY_LIMIT_REACHED')
+    expect(xeroService.pushArInvoice).not.toHaveBeenCalled()
+  })
+})
+
+describe('line item provenance (audit trail)', () => {
+  test('marks an edited engine line as overridden and keeps the engine\'s original figures', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ status: 'matched' }))
+    const item = {
+      id: 1, invoice_id: 1, description: 'EAS base rate', quantity: 1, unit_price: 950, amount: 950,
+      is_manual_adjustment: false, was_manually_edited: false, engine_unit_price: null, engine_amount: null,
+    }
+    item.update = jest.fn(async (f) => Object.assign(item, f))
+    InvoiceLineItem.findOne.mockResolvedValue(item)
+    InvoiceLineItem.findAll.mockResolvedValue([{ amount: 4321 }])
+
+    await updateLineItem({ params: { invoiceId: 1, itemId: 1 }, body: { unit_price: 4321 } }, mockRes())
+
+    // Still engine-sourced, but no longer purely engine-derived - and the original is kept.
+    expect(item.is_manual_adjustment).toBe(false)
+    expect(item.was_manually_edited).toBe(true)
+    expect(Number(item.engine_unit_price)).toBe(950)
+    expect(Number(item.engine_amount)).toBe(950)
+  })
+
+  test('a second edit keeps the engine figures from the first, not the previous manual value', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ status: 'adjusted' }))
+    const item = {
+      id: 1, invoice_id: 1, description: 'EAS base rate', quantity: 1, unit_price: 4321, amount: 4321,
+      is_manual_adjustment: false, was_manually_edited: true, engine_unit_price: 950, engine_amount: 950,
+    }
+    item.update = jest.fn(async (f) => Object.assign(item, f))
+    InvoiceLineItem.findOne.mockResolvedValue(item)
+    InvoiceLineItem.findAll.mockResolvedValue([{ amount: 1000 }])
+
+    await updateLineItem({ params: { invoiceId: 1, itemId: 1 }, body: { unit_price: 1000 } }, mockRes())
+
+    expect(Number(item.engine_unit_price)).toBe(950)
+  })
+
+  test('editing only the description does not brand the line as overridden', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ status: 'matched' }))
+    const item = {
+      id: 1, invoice_id: 1, description: 'EAS base rate', quantity: 1, unit_price: 950, amount: 950,
+      is_manual_adjustment: false, was_manually_edited: false, engine_unit_price: null, engine_amount: null,
+    }
+    item.update = jest.fn(async (f) => Object.assign(item, f))
+    InvoiceLineItem.findOne.mockResolvedValue(item)
+    InvoiceLineItem.findAll.mockResolvedValue([{ amount: 950 }])
+
+    await updateLineItem({ params: { invoiceId: 1, itemId: 1 }, body: { description: 'EAS base rate (one-way)' } }, mockRes())
+
+    expect(item.was_manually_edited).toBe(false)
+    expect(item.engine_unit_price).toBeNull()
+  })
+})
+
+describe('listInvoices query bounds', () => {
+  const { Op } = require('sequelize')
+
+  // Regression: to_date is a bare date, created_at is a timestamp, so Op.lte compared against
+  // 00:00 and "invoices up to today" silently excluded everything created today.
+  test('to_date covers the whole end date rather than stopping at its midnight', async () => {
+    Invoice.findAndCountAll.mockResolvedValue({ rows: [], count: 0 })
+    await listInvoices({ query: { to_date: '2026-08-04' } }, mockRes())
+
+    const where = Invoice.findAndCountAll.mock.calls[0][0].where
+    expect(where.created_at[Op.lte]).toBeUndefined()
+    expect(where.created_at[Op.lt]).toEqual(new Date('2026-08-05T00:00:00.000Z'))
+  })
+
+  test('caps an absurd ?limit', async () => {
+    Invoice.findAndCountAll.mockResolvedValue({ rows: [], count: 0 })
+    await listInvoices({ query: { limit: '100000' } }, mockRes())
+    expect(Invoice.findAndCountAll.mock.calls[0][0].limit).toBe(100)
   })
 })

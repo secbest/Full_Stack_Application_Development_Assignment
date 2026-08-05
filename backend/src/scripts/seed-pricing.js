@@ -37,6 +37,7 @@ const SURCHARGES = [
   { surcharge_type: 'heavy_lifting_max', amount: 150.00 },
   { surcharge_type: 'jurong_island_min', amount: 150.00 },
   { surcharge_type: 'jurong_island_max', amount: 200.00 },
+  { surcharge_type: 'overtime_per_hour', amount: 45.00 },
   { surcharge_type: 'cancellation', amount: 100.00 },
 ]
 
@@ -96,12 +97,18 @@ async function seedMemo(referenceNumber, ravi, memoFields) {
   }
 
   const day = booking.scheduled_date
+  // Keep the job duration consistent with the overtime recorded: a memo claiming overtime
+  // must show a shift long enough to have produced it, otherwise the submission validator's
+  // overtime-consistency rule (8h standard shift) would contradict the seed data.
+  const overtimeHours = Number(memoFields.overtime_hours || 0)
+  const jobHours = overtimeHours > 0 ? 8 + overtimeHours : 2
+  const start = new Date(`${day}T08:00:00.000Z`)
   const memo = await ServiceMemo.create({
     booking_id: booking.id,
     submitted_by: ravi.id,
-    job_start_time: new Date(`${day}T08:00:00.000Z`),
-    job_end_time: new Date(`${day}T10:00:00.000Z`),
-    overtime_hours: 0,
+    job_start_time: start,
+    job_end_time: new Date(start.getTime() + jobHours * 60 * 60 * 1000),
+    overtime_hours: overtimeHours,
     evacuation_floors: memoFields.evacuation_floors || 0,
     patient_name: memoFields.patient_name,
     hospital_destination: booking.destination,
@@ -149,19 +156,24 @@ async function main() {
       patient_name: 'Tan Wei Ming', service_type: 'eas', transfer_type: 'one_way_hospital',
       is_office_hours: true, oxygen_litres_used: 12, has_inconvenience_fee: true, evacuation_floors: 3,
     })
+    // Carries overtime so the engine's overtime line item is visible in the demo.
     await seedMemo('BKG-2026-00002', ravi, {
       patient_name: 'Lim Hui Fen', service_type: 'eas', transfer_type: 'one_way_hospital',
       is_office_hours: false, resuscitation_performed: true, waiting_time_minutes: 65, patient_weight_kg: 95,
+      overtime_hours: 2.5,
     })
     await seedMemo('BKG-2026-00003', ravi, {
       patient_name: 'Kumar S/O Raj', service_type: 'eas', transfer_type: 'covid_19',
       is_office_hours: true, disposables_used: true, suction_performed: true,
     })
 
-    // Unmatched case: Raffles has no pricing contract.
+    // Unmatched case: Raffles has no pricing contract. Deliberately carries several recorded
+    // charges so approving it demonstrates the "recorded but not priced" warning - the
+    // leakage this platform exists to catch - instead of a silently empty invoice.
     await seedMemo('BKG-TEST-00003', ravi, {
       patient_name: 'Demo Unmatched Patient', service_type: 'eas', transfer_type: 'one_way_hospital',
-      is_office_hours: true,
+      is_office_hours: true, oxygen_litres_used: 15, resuscitation_performed: true,
+      waiting_time_minutes: 45, overtime_hours: 3,
     })
 
     console.log('\n[seed-pricing] Done.')

@@ -28,6 +28,7 @@ export const SURCHARGE_TYPE_LABELS = {
   heavy_lifting_max: 'Heavy Lifting (max)',
   jurong_island_min: 'Jurong Island (min)',
   jurong_island_max: 'Jurong Island (max)',
+  overtime_per_hour: 'Overtime (per hour)',
   cancellation: 'Cancellation Fee',
 }
 
@@ -65,5 +66,6 @@ export const SURCHARGE_DEFAULT_AMOUNTS = {
   resuscitation: 320, suction: 50, waiting_time_per_30min: 30,
   heavy_lifting_min: 50, heavy_lifting_max: 150,
   jurong_island_min: 150, jurong_island_max: 200,
+  overtime_per_hour: 45,
   cancellation: 100,
 }

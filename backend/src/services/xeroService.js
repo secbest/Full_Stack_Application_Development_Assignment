@@ -12,7 +12,23 @@ const XERO_AUTH_BASE = 'https://login.xero.com/identity/connect/authorize'
 const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
 const XERO_CONNECTIONS_URL = 'https://api.xero.com/connections'
 const XERO_BILLS_URL = 'https://api.xero.com/api.xro/2.0/Invoices'
-const SCOPES = 'openid profile email accounting.transactions accounting.contacts offline_access'
+// Scopes requested at authorize time.
+//
+// Xero replaced its broad scopes with granular ones: apps registered after 2 March 2026 are
+// only granted the new set, and apps registered before it keep the broad set until September
+// 2027. `accounting.transactions` therefore no longer exists for a newly created app, and
+// because Xero rejects the ENTIRE authorize request with `invalid_scope` when any one scope is
+// unavailable, requesting it fails before the consent screen even renders - which presents as
+// a broken authorize link rather than a scope problem.
+//
+// accounting.invoices is the granular replacement covering the ACCREC sales invoices and
+// ACCPAY bills this platform creates; accounting.contacts is needed because both pushes
+// identify the client/vendor by Contact name. offline_access yields the refresh token.
+//
+// Overridable via XERO_SCOPES for an app still on the legacy broad scopes, which would need
+// 'openid profile email accounting.transactions accounting.contacts offline_access'.
+const DEFAULT_SCOPES = 'openid profile email accounting.invoices accounting.contacts offline_access'
+const SCOPES = process.env.XERO_SCOPES || DEFAULT_SCOPES
 
 // attempt_count >= this disables the retry button in the sync status panel (UC-08).
 const MAX_SYNC_ATTEMPTS = 3
