@@ -34,11 +34,17 @@ export function NotificationBell() {
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
+  // Shared across refreshUnreadCount/handleToggle/handleItemClick/handleMarkAllRead
+  // (all four are event handlers or callbacks, not the mount effect itself), so a
+  // plain `let cancelled` local to one effect - as used in ReportPage.jsx - can't be
+  // seen by the others. A ref set false in the mount effect's cleanup gives every
+  // function the same "am I still mounted" check before calling setState post-await.
+  const isMountedRef = useRef(true)
 
   const refreshUnreadCount = useCallback(async () => {
     try {
       const { data } = await getUnreadCount()
-      setUnreadCount(data.data.count)
+      if (isMountedRef.current) setUnreadCount(data.data.count)
     } catch {
       // Degrade quietly - keep the last known count, the next poll will recover it.
     }
@@ -49,6 +55,7 @@ export function NotificationBell() {
   // Paused while the tab is hidden so a backgrounded session doesn't hold a Supabase
   // connection open all day, and refetched immediately on becoming visible again.
   useEffect(() => {
+    isMountedRef.current = true
     refreshUnreadCount()
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') refreshUnreadCount()
@@ -58,6 +65,7 @@ export function NotificationBell() {
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
+      isMountedRef.current = false
       clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
@@ -99,11 +107,11 @@ export function NotificationBell() {
     setLoadingList(true)
     try {
       const { data } = await listNotifications()
-      setNotifications(data.data)
+      if (isMountedRef.current) setNotifications(data.data)
     } catch {
-      setNotifications([])
+      if (isMountedRef.current) setNotifications([])
     } finally {
-      setLoadingList(false)
+      if (isMountedRef.current) setLoadingList(false)
     }
   }
 
