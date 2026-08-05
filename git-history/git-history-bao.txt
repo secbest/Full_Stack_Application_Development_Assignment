@@ -1,0 +1,133 @@
+commit 3ddeaf33446c699b30487bfa83e714342339a077
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Thu Aug 6 01:12:02 2026 +0800
+
+    Create handoff-2026-08-06.md
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 6b0f84eb3a6eea56b4d9f88f59544cc5d559b455
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Thu Aug 6 01:11:55 2026 +0800
+
+    feat(quotations): add delete action to intake/bookings tables
+    
+    DELETE /api/intake/:id (rejected submissions only) and DELETE
+    /api/bookings/:id (invoiced bookings only) let the Quotations
+    Specialist clear resolved rows out of the two list tables. Deleting a
+    booking transactionally cleans up its Service Memo, Invoice, invoice
+    line items, and job milestones, but deliberately leaves XeroSyncLog
+    rows in place as the last local trace that a sync happened.
+    
+    Adds a shared ConfirmDialog component so these destructive actions are
+    confirmed in-app instead of via a browser window.confirm() popup.
+    
+    Also fixes a color mismatch between the Bookings stat cards and their
+    own status badges, makes filter pills/stat cards tint to their status
+    color when active on both tables, removes the row hover color change,
+    and makes whole rows (not just the Review button) open the detail
+    modal on click.
+    
+    Fills in test coverage for backend/tests/zheng-bao/ and
+    frontend/tests/zheng-bao/, which previously had no test files.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 8148832abd66c65c39d4230a09bbcb184ed14c77
+Merge: 7ec1e89 18f26c8
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Wed Aug 5 22:17:54 2026 +0800
+
+    Merge remote-tracking branch 'origin/main' into wave-1-1A
+    
+    # Conflicts:
+    #       backend/src/controllers/bookingController.js
+    #       backend/src/controllers/intakeController.js
+    #       backend/src/services/notificationService.js
+    #       backend/src/utils/index.js
+    #       frontend/src/App.jsx
+    #       frontend/src/pages/bookings/IntakeQueuePage.jsx
+    #       frontend/src/pages/intake/PublicIntakeFormPage.jsx
+
+commit 7ec1e893251bee70106b1288fc44473b9045564e
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Wed Aug 5 22:06:18 2026 +0800
+
+    Add public intake form, fix list API response shape, share via QR/link
+    
+    Completes the public POST /api/intake endpoint (PAST_DATE check, notification
+    to Camilla, unique reference numbers) and builds the customer-facing
+    /request-service form and confirmation page per the Wave 1A spec.
+    
+    Fixes a double-nested response bug in listIntakes/listBookings that broke
+    the Intake Queue and Bookings pages whenever real data was returned, and
+    disables API response caching so stale data can't get served back.
+    
+    Adds a Share Intake Form card to the Intake Queue page with a copyable
+    link and an offline-generated QR code for customers to scan.
+
+commit 1f8204ca1a0514f4a5661fb97e68ae024fe75276
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 22:17:07 2026 +0800
+
+    Fix for status timeline
+
+commit a33522eeed64edf772f2f2e197f1971ff5113b82
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 21:11:31 2026 +0800
+
+    Update IntakeQueuePage.jsx
+    
+    small fix for the email over lapping
+
+commit 520c4271cd1c643ba474b8a5bad1165d09029fa2
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 20:54:17 2026 +0800
+
+    added cmd reset for intake to show for the demo
+
+commit 13287f71bfb62756c6d406ca98292af9c077e62b
+Merge: 8c2f8ad cf0d3cc
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 04:05:53 2026 +0800
+
+    Merge hotfix/wave-1-1A: Bookings fixes, crew assignment via real users, filter visibility
+
+commit cf0d3cc8bf3fda488ed09f1a5937de3d7bf68228
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sun Jul 12 03:58:15 2026 +0800
+
+    Fix in_progress booking status mismatching filter/badge/row-tint keys
+    
+    booking.status.charAt(0).toUpperCase() + .slice(1).replace('_',' ') turned
+    in_progress into "In progress" (lowercase p), which matched neither the
+    "In Progress" filter button nor the new STATUS_BADGE_CLASSES/STATUS_ROW_CLASSES
+    keys - confirmed against live data, which has a real in_progress booking.
+    Replaced with an explicit BOOKING_STATUS_LABELS map, same pattern as
+    SERVICE_TYPE_LABELS.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+commit 3bc60ea52a7ded0af3e7fdc41f93e0b92151f76a
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sat Jul 11 23:27:23 2026 +0800
+
+    Create handoff-2026-07-11.md
+
+commit 458fc851b81318189e88469a78325ec1d8305477
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Sat Jul 11 23:15:44 2026 +0800
+
+    Hotfix for wave-1-1A
+
+commit f61a73e8fb8ac79f83ce1b66d2dad79e63a424a4
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Fri Jul 10 23:16:54 2026 +0800
+
+    Create handoff-2026-06-02.md
+
+commit 00f15072defc468569a60ae1ba8219ba4f5598a1
+Author: Mi-dev2 <zhengbaosim@gmail.com>
+Date:   Mon Jul 6 14:54:24 2026 +0800
+
+    Main intake and bookings
