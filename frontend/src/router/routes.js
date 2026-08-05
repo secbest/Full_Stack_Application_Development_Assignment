@@ -10,6 +10,7 @@ import {
   Briefcase,
   History,
   FileBarChart,
+  TrendingDown,
   Users,
   Settings,
 } from 'lucide-react'
@@ -40,6 +41,18 @@ export const NAV_ROUTES = [
     sub: 'Users & access',
     Icon: Users,
     roles: ['managing_director'],
+  },
+
+  // ── Shared: Revenue Leakage report (Kwan Hua) ────────────────────────────────
+  // Visible to the MD and the AR Specialist: the MD reads the number, but Sarah is the
+  // one who adds the missing contract rates the report points at, so gating it to the MD
+  // alone would name the problem to the only person who cannot act on it.
+  {
+    path: '/reports/revenue-leakage',
+    label: 'Revenue Leakage',
+    sub: 'Unbilled charges',
+    Icon: TrendingDown,
+    roles: ['managing_director', 'ar_specialist'],
   },
 
   // ── AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua) ─────────────

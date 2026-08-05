@@ -22,6 +22,47 @@ const vendorInvoiceUploadSchema = Yup.object({
   rebate_percentage: Yup.number().min(0).max(100).default(1.00),
 })
 
+// PATCH /api/vendor-invoices/:id - AP corrections to the OCR-extracted header.
+//
+// The bounds here are load-bearing, not decorative. This route used to read req.body
+// directly, and the only downstream guard was "reject a negative verified_total" - which
+// a NEGATIVE rebate_percentage can never trip, because it makes verified_total LARGER:
+// calculateRebate(1000, -50) yields a rebate of -500 and a verified_total of 1500, i.e.
+// EFAR would pay 1500 on a 1000 invoice. Non-numeric input was just as bad, coercing to
+// NaN and reaching a DECIMAL column. Both are now rejected before the controller runs.
+//
+// Every field is optional (a PATCH may touch one field) but must be valid if present.
+const vendorInvoiceUpdateSchema = Yup.object({
+  vendor_name: Yup.string().trim().min(1, 'vendor_name cannot be blank').max(255),
+  invoice_number: Yup.string().trim().min(1, 'invoice_number cannot be blank').max(100),
+  invoice_date: Yup.string()
+    .matches(/^\d{4}-\d{2}-\d{2}$/, 'invoice_date must be in YYYY-MM-DD format')
+    .nullable(),
+  extracted_total: Yup.number()
+    .typeError('extracted_total must be a number')
+    .positive('extracted_total must be a positive number'),
+  rebate_percentage: Yup.number()
+    .typeError('rebate_percentage must be a number')
+    .min(0, 'rebate_percentage cannot be negative')
+    .max(100, 'rebate_percentage cannot exceed 100'),
+})
+
+// PATCH /api/vendor-invoice-items/:id - AP corrections to one extracted line item.
+//
+// `amount` is deliberately NOT accepted from the client: it is derived server-side as
+// quantity x unit_price so a line item can never claim a total its own figures do not
+// support (previously `amount` was persisted verbatim, so qty 2 x $10 could be stored
+// with amount $999, and that $999 then became the invoice total).
+const vendorInvoiceItemUpdateSchema = Yup.object({
+  description: Yup.string().trim().min(1, 'description cannot be blank').max(500),
+  quantity: Yup.number()
+    .typeError('quantity must be a number')
+    .positive('quantity must be a positive number'),
+  unit_price: Yup.number()
+    .typeError('unit_price must be a number')
+    .min(0, 'unit_price cannot be negative'),
+})
+
 const VENDOR_INVOICE_STATUSES = ['pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed']
 
 // GET /api/vendor-invoices - list query. Applied via validate(..., 'query') so the
@@ -90,7 +131,7 @@ const {
   memoIdParamSchema,
   listServiceMemosQuerySchema,
 } = require('./serviceMemoValidators')
-const { fleetOverviewQuerySchema, vendorExpensesQuerySchema } = require('./dashboardValidators')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema } = require('./dashboardValidators')
 
 // Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
 const { MILESTONE_TYPES, milestoneBodySchema, bookingIdParamSchema } = require('./milestoneValidators')
@@ -114,6 +155,8 @@ module.exports = {
   registerSchema,
   loginSchema,
   vendorInvoiceUploadSchema,
+  vendorInvoiceUpdateSchema,
+  vendorInvoiceItemUpdateSchema,
   vendorInvoiceListQuerySchema,
   syncLogListQuerySchema,
   intakeCreateSchema,
@@ -125,6 +168,7 @@ module.exports = {
   listServiceMemosQuerySchema,
   fleetOverviewQuerySchema,
   vendorExpensesQuerySchema,
+  revenueLeakageQuerySchema,
   userIdParamSchema,
   MILESTONE_TYPES,
   milestoneBodySchema,

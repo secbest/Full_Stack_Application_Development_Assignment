@@ -6,7 +6,9 @@
 // maths can be unit-tested in isolation - the controller does the DB lookups and
 // passes the rows in.
 
-const round2 = (n) => Math.round(n * 100) / 100
+// Shared cents-safe rounding (see utils/money.js for why the naive n*100 form is unsafe).
+// Still re-exported from this module because the pricing unit tests import it from here.
+const { round2 } = require('../utils/money')
 
 const SERVICE_TYPE_LABELS = {
   eas: 'EAS',
@@ -90,17 +92,23 @@ function buildSurchargeLineItems(memo, s) {
 
   // Records a chargeable item the contract cannot price. `detail` carries the recorded
   // value so Sarah can price it manually without reopening the memo.
-  const skip = (surchargeType, detail) =>
+  //
+  // `quantity` is the same numeric quantity the line item WOULD have carried had the
+  // contract priced it. It is stored as a number, not only inside the human-readable
+  // `detail` string, so the revenue leakage report can value the gap (quantity x a peer
+  // contract's rate for the same surcharge) instead of trying to parse "3 h recorded".
+  const skip = (surchargeType, detail, quantity = 1) =>
     unpriced.push({
       surcharge_type: surchargeType,
       label: SURCHARGE_TYPE_LABELS[surchargeType] || surchargeType,
       detail,
+      quantity: round2(quantity),
     })
 
   // Charges a surcharge if the contract prices it, otherwise reports it as unpriced.
   const charge = (applies, surchargeType, description, quantity, detail) => {
     if (!applies) return
-    if (s[surchargeType] === undefined) return skip(surchargeType, detail)
+    if (s[surchargeType] === undefined) return skip(surchargeType, detail, quantity)
     push(description, quantity, s[surchargeType])
   }
 
@@ -115,7 +123,7 @@ function buildSurchargeLineItems(memo, s) {
       if (s.oxygen_per_litre !== undefined) {
         push(`Oxygen Charge - Additional (${extra}L @ $${s.oxygen_per_litre}/L)`, extra, s.oxygen_per_litre)
       } else {
-        skip('oxygen_per_litre', `${extra}L beyond the first 10L`)
+        skip('oxygen_per_litre', `${extra}L beyond the first 10L`, extra)
       }
     }
   }
@@ -133,7 +141,7 @@ function buildSurchargeLineItems(memo, s) {
     if (s.overtime_per_hour !== undefined) {
       push(`Overtime (${overtime} h @ $${s.overtime_per_hour}/h)`, overtime, s.overtime_per_hour)
     } else {
-      skip('overtime_per_hour', `${overtime} h recorded`)
+      skip('overtime_per_hour', `${overtime} h recorded`, overtime)
     }
   }
 
@@ -146,7 +154,7 @@ function buildSurchargeLineItems(memo, s) {
     if (s.waiting_time_per_30min !== undefined) {
       push(`Waiting Time (${blocks} x 30-min block${blocks > 1 ? 's' : ''})`, blocks, s.waiting_time_per_30min)
     } else {
-      skip('waiting_time_per_30min', `${waiting} min (${blocks} chargeable block${blocks > 1 ? 's' : ''})`)
+      skip('waiting_time_per_30min', `${waiting} min (${blocks} chargeable block${blocks > 1 ? 's' : ''})`, blocks)
     }
   }
 

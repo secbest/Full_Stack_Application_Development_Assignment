@@ -23,6 +23,7 @@ import PublicIntakeFormPage from './pages/intake/PublicIntakeFormPage'
 // Managing Director
 import DashboardPage from './pages/dashboard/DashboardPage'
 import ReportPage from './pages/dashboard/ReportPage'
+import RevenueLeakagePage from './pages/dashboard/RevenueLeakagePage'
 import ManagementPage from './pages/dashboard/Management'
 import SettingsPage from './pages/settings/SettingsPage'
 
@@ -88,6 +89,11 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/reports" element={<ReportPage />} />
             <Route path="/management" element={<ManagementPage />} />
+          </Route>
+
+          {/* ── Revenue Leakage report (Kwan Hua): MD reads it, AR acts on it ─ */}
+          <Route element={<RoleRoute roles={['managing_director', 'ar_specialist']} />}>
+            <Route path="/reports/revenue-leakage" element={<RevenueLeakagePage />} />
           </Route>
 
           {/* ── AR Specialist (design Jasper; Wave 3 by Kwan Hua) ──────────── */}

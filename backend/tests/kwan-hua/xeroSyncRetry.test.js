@@ -11,6 +11,7 @@ jest.mock('../../src/models', () => ({
   Invoice: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
   InvoiceLineItem: {},
   Client: {},
+  Booking: {},
   XeroSyncLog: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
 }))
 
@@ -20,8 +21,16 @@ jest.mock('../../src/services', () => ({
     pushBill: jest.fn(),
     pushArInvoice: jest.fn(),
     computeRetryAvailable: jest.fn(() => false),
+    describeMode: jest.fn(() => ({ simulated: true, label: 'SIMULATION', detail: 'test' })),
     MAX_SYNC_ATTEMPTS: 3,
   },
+}))
+
+// retrySync claims the log row under a lock and flips it out of `failed` before pushing,
+// so two concurrent retries cannot both create a record in Xero. Stubbed here because
+// these are unit tests against mocked models.
+jest.mock('../../src/config', () => ({
+  transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })),
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))

@@ -15,6 +15,14 @@ jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }
 
 jest.mock('../../src/controllers/xeroController', () => ({ getFreshConnection: jest.fn() }))
 
+// approveVendorInvoice claims the invoice inside a transaction with a row lock so two
+// concurrent approvals cannot both push to Xero. These are unit tests against mocked
+// models, so the transaction is a stub that just runs the callback and hands it a `t`
+// carrying the LOCK enum the controller passes to findByPk.
+jest.mock('../../src/config', () => ({
+  transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })),
+}))
+
 const { VendorInvoice, XeroSyncLog } = require('../../src/models')
 const { xeroService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
@@ -131,14 +139,48 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     expect(payload(res).code).toBe('DUPLICATE_INVOICE')
   })
 
-  test('503s when Xero is not connected', async () => {
-    VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice())
+  // The invoice is already committed as `approved` by the time the connection is checked,
+  // so a disconnected Xero must leave a recoverable trail (status `failed` + a failed sync
+  // log the retry endpoint accepts) rather than an approved invoice with no sync record.
+  test('503s when Xero is not connected, and records a recoverable failure', async () => {
+    const invoice = makeVendorInvoice()
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
     VendorInvoice.findOne.mockResolvedValue(null)
     xeroController.getFreshConnection.mockResolvedValue(null)
+    XeroSyncLog.create.mockResolvedValue({ id: 9, update: jest.fn() })
+
     const res = mockRes()
     await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, res)
+
     expect(res.status).toHaveBeenCalledWith(503)
     expect(payload(res).code).toBe('XERO_NOT_CONNECTED')
+    expect(invoice.status).toBe('failed')
+    expect(XeroSyncLog.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', entity_type: 'vendor_invoice' }))
+  })
+
+  // Xero does not deduplicate ACCPAY bills, so the status check must happen under the row
+  // lock. A second approval arriving after the first committed sees a non-pending_review
+  // invoice and is rejected instead of pushing a second bill for the same PDF.
+  test('claims the invoice under a row lock so a concurrent approval cannot double-push', async () => {
+    const invoice = makeVendorInvoice()
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    VendorInvoice.findOne.mockResolvedValue(null)
+    xeroController.getFreshConnection.mockResolvedValue({ xero_tenant_id: 'demo', access_token: 'demo' })
+    xeroService.pushBill.mockResolvedValue({ ok: true, xeroRecordId: 'BILL-1' })
+    XeroSyncLog.create.mockResolvedValue({ id: 7, update: jest.fn() })
+
+    await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, mockRes())
+
+    expect(VendorInvoice.findByPk).toHaveBeenCalledWith(1, expect.objectContaining({ lock: 'UPDATE' }))
+    expect(xeroService.pushBill).toHaveBeenCalledTimes(1)
+
+    // The second caller now finds the invoice already synced and must not push again.
+    xeroService.pushBill.mockClear()
+    const res2 = mockRes()
+    await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, res2)
+    expect(res2.status).toHaveBeenCalledWith(409)
+    expect(payload(res2).code).toBe('INVALID_STATUS')
+    expect(xeroService.pushBill).not.toHaveBeenCalled()
   })
 
   test('approves and syncs to Xero on success', async () => {

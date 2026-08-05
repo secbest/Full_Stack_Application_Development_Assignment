@@ -189,6 +189,25 @@ describe('pricingService unpriced surcharge reporting', () => {
     expect(r.unpriced.map((u) => u.surcharge_type).sort()).toEqual(['overtime_per_hour', 'resuscitation'])
   })
 
+  // The leakage report values each gap as quantity x a peer contract's rate, so the
+  // quantity has to be a NUMBER on the entry - not only embedded in the `detail` string,
+  // which would leave the report parsing "3 h recorded" to find a 3.
+  test('records a numeric quantity on every unpriced entry for the leakage report', () => {
+    const noOvertime = SURCHARGE_ROWS.filter((s) => s.surcharge_type !== 'overtime_per_hour')
+    expect(computeInvoiceLineItems(baseMemo({ overtime_hours: 3 }), RATES, noOvertime).unpriced[0].quantity).toBe(3)
+
+    const baseOnly = [{ surcharge_type: 'oxygen_base', amount: '50.00' }]
+    expect(computeInvoiceLineItems(baseMemo({ oxygen_litres_used: 15 }), RATES, baseOnly).unpriced[0].quantity).toBe(5)
+
+    const noWaiting = SURCHARGE_ROWS.filter((s) => s.surcharge_type !== 'waiting_time_per_30min')
+    // Blocks, not raw minutes: waiting time is charged per completed 30-minute block.
+    expect(computeInvoiceLineItems(baseMemo({ waiting_time_minutes: 65 }), RATES, noWaiting).unpriced[0].quantity).toBe(2)
+
+    // A flat, once-per-job surcharge is quantity 1.
+    const noResus = SURCHARGE_ROWS.filter((s) => s.surcharge_type !== 'resuscitation')
+    expect(computeInvoiceLineItems(baseMemo({ resuscitation_performed: true }), RATES, noResus).unpriced[0].quantity).toBe(1)
+  })
+
   test('reports nothing when the contract prices everything recorded', () => {
     const r = computeInvoiceLineItems(
       baseMemo({ resuscitation_performed: true, overtime_hours: 2, oxygen_litres_used: 12, is_jurong_island: true }),

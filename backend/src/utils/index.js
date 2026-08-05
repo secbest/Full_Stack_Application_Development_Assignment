@@ -35,4 +35,6 @@ function internalError(res, err) {
   return error(res, message, 'INTERNAL_ERROR', 500)
 }
 
-module.exports = { success, created, error, notFound, forbidden, internalError }
+const { round2 } = require('./money')
+
+module.exports = { success, created, error, notFound, forbidden, internalError, round2 }

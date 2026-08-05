@@ -1,4 +1,5 @@
-const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, XeroSyncLog } = require('../models')
+const sequelize = require('../config')
+const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, Booking, XeroSyncLog } = require('../models')
 const { xeroService } = require('../services')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
@@ -46,6 +47,10 @@ async function getFreshConnection() {
 async function status(req, res) {
   try {
     const conn = await getActiveConnection()
+    // `mode` tells the settings screen whether pushes are real. In simulation every sync
+    // reports success without contacting Xero, so a UI that cannot distinguish the two
+    // would show a fully green integration that has never sent anything.
+    const mode = xeroService.describeMode()
     if (!conn) {
       return success(res, {
         is_connected: false,
@@ -53,6 +58,7 @@ async function status(req, res) {
         xero_tenant_id: null,
         connected_at: null,
         token_expiry: null,
+        mode,
       })
     }
     return success(res, {
@@ -61,6 +67,7 @@ async function status(req, res) {
       xero_tenant_id: conn.xero_tenant_id,
       connected_at: conn.connected_at,
       token_expiry: conn.token_expiry,
+      mode,
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
@@ -200,15 +207,42 @@ async function listSyncLogs(req, res) {
 // POST /api/xero/sync-logs/:id/retry - UC-08 step 4: retry a failed sync.
 async function retrySync(req, res) {
   try {
-    const log = await XeroSyncLog.findByPk(req.params.id)
-    if (!log) return notFound(res, 'Sync log entry not found.')
-    if (log.status !== 'failed') return error(res, 'Only failed sync log entries can be retried.', 'NOT_FAILED', 409)
-    if (log.attempt_count >= xeroService.MAX_SYNC_ATTEMPTS) {
-      return error(res, 'This sync has failed 3 or more times. Please contact support - this likely indicates a configuration issue in Xero.', 'RETRY_LIMIT_REACHED', 409)
+    // Claim the log row under a lock and flip it to `pending` before pushing. Xero does
+    // not deduplicate, so two concurrent retries on the same log both used to read
+    // status='failed' with the same attempt_count, both push, and create two records in
+    // Xero for one entity. Moving the row out of `failed` inside the transaction means the
+    // second request fails its own status check instead.
+    let log
+    try {
+      log = await sequelize.transaction(async (t) => {
+        const row = await XeroSyncLog.findByPk(req.params.id, { lock: t.LOCK.UPDATE, transaction: t })
+        if (!row) throw Object.assign(new Error('Sync log entry not found.'), { httpCode: 404 })
+        if (row.status !== 'failed') {
+          throw Object.assign(new Error('Only failed sync log entries can be retried.'), { httpCode: 409, code: 'NOT_FAILED' })
+        }
+        if (row.attempt_count >= xeroService.MAX_SYNC_ATTEMPTS) {
+          throw Object.assign(
+            new Error('This sync has failed 3 or more times. Please contact support - this likely indicates a configuration issue in Xero.'),
+            { httpCode: 409, code: 'RETRY_LIMIT_REACHED' }
+          )
+        }
+        await row.update({ status: 'pending' }, { transaction: t })
+        return row
+      })
+    } catch (err) {
+      if (err.httpCode) return error(res, err.message, err.code || 'NOT_FOUND', err.httpCode)
+      throw err
     }
 
+    // Restores the log to `failed` when the retry cannot proceed, so the row does not
+    // sit in `pending` forever (which no screen offers a way out of).
+    const releaseClaim = (message) => log.update({ status: 'failed', error_message: message })
+
     const conn = await getFreshConnection()
-    if (!conn) return error(res, 'Xero is not connected. Ask the Managing Director to reconnect before retrying.', 'XERO_NOT_CONNECTED', 503)
+    if (!conn) {
+      await releaseClaim('Xero is not connected.')
+      return error(res, 'Xero is not connected. Ask the Managing Director to reconnect before retrying.', 'XERO_NOT_CONNECTED', 503)
+    }
 
     // Vendor invoices (AP) push as ACCPAY bills; AR invoices push as ACCREC sales
     // invoices - these are different Xero payload shapes (pushBill vs pushArInvoice),
@@ -219,16 +253,60 @@ async function retrySync(req, res) {
 
     if (log.entity_type === 'vendor_invoice') {
       vendorInvoice = await VendorInvoice.findByPk(log.entity_id, { include: [{ model: VendorInvoiceItem }] })
-      if (!vendorInvoice) return notFound(res, 'The vendor invoice for this sync log no longer exists.')
+      if (!vendorInvoice) {
+        await releaseClaim('The vendor invoice for this sync log no longer exists.')
+        return notFound(res, 'The vendor invoice for this sync log no longer exists.')
+      }
+      // Already in Xero: adopt that record instead of pushing a second bill for it. This
+      // is the case where a previous attempt actually succeeded but the response was lost.
+      if (vendorInvoice.xero_bill_id) {
+        await log.update({ status: 'success', xero_record_id: vendorInvoice.xero_bill_id, error_message: null, synced_at: log.synced_at || new Date() })
+        await vendorInvoice.update({ status: 'synced_to_xero' })
+        return success(res, {
+          id: log.id,
+          status: 'success',
+          attempt_count: log.attempt_count,
+          xero_record_id: vendorInvoice.xero_bill_id,
+          error_message: null,
+          synced_at: log.synced_at,
+          note: 'This invoice was already present in Xero - the existing record was adopted rather than creating a duplicate bill.',
+        })
+      }
       result = await xeroService.pushBill(vendorInvoice, conn)
     } else if (log.entity_type === 'ar_invoice') {
-      arInvoice = await Invoice.findByPk(log.entity_id, { include: [{ model: InvoiceLineItem }, { model: Client, attributes: ['name'] }] })
-      if (!arInvoice) return notFound(res, 'The AR invoice for this sync log no longer exists.')
+      arInvoice = await Invoice.findByPk(log.entity_id, {
+        include: [{ model: InvoiceLineItem }, { model: Client, attributes: ['name'] }, { model: Booking, attributes: ['reference_number', 'scheduled_date'] }],
+      })
+      if (!arInvoice) {
+        await releaseClaim('The AR invoice for this sync log no longer exists.')
+        return notFound(res, 'The AR invoice for this sync log no longer exists.')
+      }
+      if (arInvoice.xero_invoice_id) {
+        await log.update({ status: 'success', xero_record_id: arInvoice.xero_invoice_id, error_message: null, synced_at: log.synced_at || new Date() })
+        await arInvoice.update({ status: 'synced_to_xero' })
+        return success(res, {
+          id: log.id,
+          status: 'success',
+          attempt_count: log.attempt_count,
+          xero_record_id: arInvoice.xero_invoice_id,
+          error_message: null,
+          synced_at: log.synced_at,
+          note: 'This invoice was already present in Xero - the existing record was adopted rather than creating a duplicate invoice.',
+        })
+      }
       result = await xeroService.pushArInvoice(
-        { id: arInvoice.id, client_name: arInvoice.Client ? arInvoice.Client.name : null, total_amount: arInvoice.total_amount, InvoiceLineItems: arInvoice.InvoiceLineItems },
+        {
+          id: arInvoice.id,
+          client_name: arInvoice.Client ? arInvoice.Client.name : null,
+          total_amount: arInvoice.total_amount,
+          InvoiceLineItems: arInvoice.InvoiceLineItems,
+          booking_reference: arInvoice.Booking ? arInvoice.Booking.reference_number : null,
+          service_date: arInvoice.Booking ? arInvoice.Booking.scheduled_date : null,
+        },
         conn
       )
     } else {
+      await releaseClaim(`Unknown sync log entity_type "${log.entity_type}".`)
       return error(res, `Unknown sync log entity_type "${log.entity_type}".`, 'INTERNAL_ERROR', 500)
     }
 

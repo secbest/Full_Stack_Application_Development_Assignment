@@ -5,6 +5,7 @@ require('dotenv').config()
 const { testConnection } = require('./config')
 require('./models')   // initialise all models and associations
 const routes = require('./routes')
+const { xeroService } = require('./services')
 
 const app = express()
 
@@ -37,6 +38,10 @@ const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
   console.log(`EFAR API running on port ${PORT}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
+  // Stated at startup because simulation is the DEFAULT: a deployment with real Xero
+  // credentials that forgets XERO_SIMULATION=false would otherwise report every sync as
+  // successful while nothing ever reaches Xero.
+  xeroService.logMode()
   // Verify the DB is reachable but never crash the process if it isn't.
   // In Node 15+ an unhandled rejection inside an async listen callback kills the process.
   testConnection().catch((err) => {

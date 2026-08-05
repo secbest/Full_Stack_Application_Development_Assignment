@@ -318,12 +318,34 @@ async function findOrCreateSyncLog(invoiceId) {
 async function syncInvoiceToXero(invoice, connection) {
   const client = await Client.findByPk(invoice.client_id, { attributes: ['name'] })
   const items = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id } })
+  // Booking reference + service date travel with the push so the Xero record carries a
+  // Reference and the date of service rather than arriving auto-numbered and stamped with
+  // whenever the sync happened to run.
+  const booking = invoice.booking_id
+    ? await Booking.findByPk(invoice.booking_id, { attributes: ['reference_number', 'scheduled_date'] })
+    : null
+
+  // Already in Xero: never push a second time. Xero does not deduplicate ACCREC invoices,
+  // so a re-entrant call (double-clicked Sync, a batch that includes an already-synced id)
+  // would otherwise bill the client twice for one job.
+  if (invoice.xero_invoice_id) {
+    const existing = await findOrCreateSyncLog(invoice.id)
+    await existing.update({ status: 'success', xero_record_id: invoice.xero_invoice_id, error_message: null, synced_at: existing.synced_at || new Date() })
+    return { ok: true, xeroRecordId: invoice.xero_invoice_id, attempt_count: Number(existing.attempt_count || 0), alreadySynced: true }
+  }
 
   const log = await findOrCreateSyncLog(invoice.id)
   const attempt_count = Number(log.attempt_count || 0) + 1
 
   const result = await xeroService.pushArInvoice(
-    { id: invoice.id, client_name: client ? client.name : null, total_amount: invoice.total_amount, InvoiceLineItems: items },
+    {
+      id: invoice.id,
+      client_name: client ? client.name : null,
+      total_amount: invoice.total_amount,
+      InvoiceLineItems: items,
+      booking_reference: booking ? booking.reference_number : null,
+      service_date: booking ? booking.scheduled_date : null,
+    },
     connection
   )
 

@@ -33,14 +33,52 @@ const SCOPES = process.env.XERO_SCOPES || DEFAULT_SCOPES
 // attempt_count >= this disables the retry button in the sync status panel (UC-08).
 const MAX_SYNC_ATTEMPTS = 3
 
-// In-memory CSRF state store. Sufficient for a single-instance dev/POC server.
-// Production should persist state in a signed cookie or a shared store (e.g. Redis)
-// so it survives restarts and works across multiple instances.
-const pendingStates = new Set()
+// In-memory CSRF state store, state -> issued-at epoch ms. Sufficient for a
+// single-instance dev/POC server. Production should persist state in a signed cookie or a
+// shared store (e.g. Redis) so it survives restarts and works across multiple instances.
+//
+// Entries expire: previously this was a Set that only ever shed a state on a SUCCESSFUL
+// callback, so every abandoned authorize click (user closes the Xero consent tab) leaked
+// one entry for the process lifetime, and a state stayed valid indefinitely.
+const pendingStates = new Map()
+const STATE_TTL_MS = 10 * 60 * 1000
+
+function pruneStates(now = Date.now()) {
+  for (const [state, issuedAt] of pendingStates) {
+    if (now - issuedAt > STATE_TTL_MS) pendingStates.delete(state)
+  }
+}
 
 // POC ships in simulation mode. Only real credentials + an explicit opt-out flip it.
 function isSimulation() {
   return process.env.XERO_SIMULATION !== 'false'
+}
+
+// Logged once at startup and exposed via GET /api/xero/status.
+//
+// Simulation is the DEFAULT and is disabled only by the exact string 'false', so a
+// deployment that supplies real Xero credentials but forgets XERO_SIMULATION=false will
+// report every sync as successful while nothing whatsoever reaches Xero. A billing
+// integration that silently no-ops is the worst failure mode available, so the mode is
+// stated out loud rather than left implicit.
+function describeMode() {
+  const simulated = isSimulation()
+  return {
+    simulated,
+    label: simulated ? 'SIMULATION' : 'LIVE',
+    detail: simulated
+      ? 'Xero calls are simulated - no data is sent to Xero. Set XERO_SIMULATION=false with real credentials to go live.'
+      : 'Connected to the live Xero API.',
+  }
+}
+
+function logMode() {
+  const mode = describeMode()
+  const banner = mode.simulated
+    ? '[xero] MODE: SIMULATION - Xero pushes are faked and nothing reaches Xero. Set XERO_SIMULATION=false to go live.'
+    : '[xero] MODE: LIVE - pushes go to the real Xero API.'
+  console.log(banner)
+  return mode
 }
 
 // UC-08 rule, extracted as a pure function so it can be unit-tested and reused
@@ -60,7 +98,8 @@ function getAuthorizationUrl() {
   }
 
   const state = crypto.randomBytes(16).toString('hex')
-  pendingStates.add(state)
+  pruneStates()
+  pendingStates.set(state, Date.now())
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: XERO_CLIENT_ID,
@@ -76,9 +115,12 @@ function getAuthorizationUrl() {
 // state was never issued or has already been used - the caller redirects with
 // ?error=invalid_state in that case.
 function consumeState(state) {
+  pruneStates()
   if (!state || !pendingStates.has(state)) return false
+  // Single-use even if expired-and-pruned above would have caught it: delete regardless.
+  const issuedAt = pendingStates.get(state)
   pendingStates.delete(state)
-  return true
+  return Date.now() - issuedAt <= STATE_TTL_MS
 }
 
 // ─── Token encryption (AES-256-GCM) ─────────────────────────────────────────
@@ -178,9 +220,20 @@ function withAccountCode(lineItems, accountCode) {
 }
 
 // Resolves the connected tenant id + organisation name after token exchange.
+//
+// Returns `availableOrgs` alongside the chosen one. Where the authorising login has access
+// to more than one Xero organisation, taking tenants[0] silently is a real hazard - an
+// accountant who books for several companies could have EFAR's invoices pushed into
+// another client's ledger with no indication it happened. The first org is still selected
+// so the flow completes, but the alternatives are surfaced (logged here, and returned so
+// the settings screen can show which org was picked and offer to switch).
 async function fetchOrganisation(accessToken) {
   if (isSimulation()) {
-    return { tenantId: 'demo-tenant-efar-2026', orgName: 'Emergencies First Aid & Rescue Pte Ltd' }
+    return {
+      tenantId: 'demo-tenant-efar-2026',
+      orgName: 'Emergencies First Aid & Rescue Pte Ltd',
+      availableOrgs: [{ tenantId: 'demo-tenant-efar-2026', orgName: 'Emergencies First Aid & Rescue Pte Ltd' }],
+    }
   }
   const resp = await fetch(XERO_CONNECTIONS_URL, {
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -188,7 +241,15 @@ async function fetchOrganisation(accessToken) {
   if (!resp.ok) throw new Error(`Xero connections lookup failed (${resp.status})`)
   const tenants = await resp.json()
   if (!Array.isArray(tenants) || tenants.length === 0) throw new Error('No Xero organisation is linked to this login.')
-  return { tenantId: tenants[0].tenantId, orgName: tenants[0].tenantName }
+
+  const availableOrgs = tenants.map((t) => ({ tenantId: t.tenantId, orgName: t.tenantName }))
+  if (availableOrgs.length > 1) {
+    console.warn(
+      `[xero] This login has access to ${availableOrgs.length} Xero organisations: ${availableOrgs.map((o) => o.orgName).join(', ')}. ` +
+      `Connecting to "${availableOrgs[0].orgName}". Verify this is the intended organisation on the Xero settings screen before syncing.`
+    )
+  }
+  return { tenantId: availableOrgs[0].tenantId, orgName: availableOrgs[0].orgName, availableOrgs }
 }
 
 // ─── Bill push (UC-07) ──────────────────────────────────────────────────────
@@ -263,6 +324,16 @@ async function pushArInvoice(invoice, connection) {
         Type: 'ACCREC',
         Contact: { Name: invoice.client_name || (invoice.Client && invoice.Client.name) || 'EFAR Client' },
         LineItems: withAccountCode(items, process.env.XERO_SALES_ACCOUNT_CODE),
+        // Reference and Date carry the invoice's identity into Xero. Without them a synced
+        // sales invoice arrived Xero-auto-numbered and dated the day of the push, with
+        // nothing linking it back to EFAR invoice #42 or the job it came from - so
+        // reconciling Xero against this platform became a manual exercise, which is the
+        // problem the platform exists to remove. pushBill already sent its equivalents.
+        Reference: invoice.booking_reference
+          ? `EFAR Invoice #${invoice.id} / Booking ${invoice.booking_reference}`
+          : `EFAR Invoice #${invoice.id}`,
+        // The date the service was delivered, not the date it happened to be synced.
+        Date: invoice.service_date ? String(invoice.service_date).slice(0, 10) : undefined,
         Status: 'DRAFT',
       }],
     }
@@ -289,7 +360,10 @@ async function pushArInvoice(invoice, connection) {
 
 module.exports = {
   MAX_SYNC_ATTEMPTS,
+  STATE_TTL_MS,
   isSimulation,
+  describeMode,
+  logMode,
   computeRetryAvailable,
   getAuthorizationUrl,
   consumeState,

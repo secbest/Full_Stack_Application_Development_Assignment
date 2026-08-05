@@ -1,12 +1,12 @@
 const { Op } = require('sequelize')
+const sequelize = require('../config')
 const { VendorInvoice, VendorInvoiceItem, User, XeroSyncLog } = require('../models')
 const { cloudinaryService, ocrService, xeroService } = require('../services')
 const notificationService = require('../services/notificationService')
 const { getFreshConnection } = require('./xeroController')
 const { vendorInvoiceUploadSchema } = require('../validators')
-const { success, created, error, notFound } = require('../utils')
+const { success, created, error, notFound, round2 } = require('../utils')
 
-const round2 = (n) => Math.round(n * 100) / 100
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
 
 // Rebate Calculation (UC-05): rebate_amount = extracted_total * (rebate_percentage / 100),
@@ -18,6 +18,15 @@ function calculateRebate(extractedTotal, rebatePercentage) {
   const rebateAmount = round2(extractedTotal * (rebatePercentage / 100))
   const verifiedTotal = round2(extractedTotal - rebateAmount)
   return { rebateAmount, verifiedTotal }
+}
+
+// Turns the reconciliation result into one line an AP Specialist can act on. Prefers the
+// failed check's own detail (e.g. "Line items sum to 980.00 but the invoice total reads
+// 1080.00") over a bare confidence percentage, which says nothing about what to fix.
+function lowConfidenceReason(rec) {
+  const failed = (rec.checks || []).filter((c) => !c.passed)
+  if (failed.length) return failed.map((c) => c.detail).join(' ')
+  return `Extraction confidence ${Math.round((rec.confidence || 0) * 100)}% - please verify the extracted totals.`
 }
 
 // Full detail shape for the two-panel AP review interface (UC-06).
@@ -37,6 +46,11 @@ function serializeInvoice(invoice) {
     verified_total: json.verified_total,
     extraction_confidence: json.extraction_confidence,
     is_low_confidence: json.is_low_confidence,
+    // The reasons behind is_low_confidence, so the review panel can show what failed
+    // rather than only a percentage.
+    extraction_checks: json.extraction_checks || [],
+    extracted_items_sum: json.extracted_items_sum,
+    reconciliation_delta: json.reconciliation_delta,
     status: json.status,
     xero_bill_id: json.xero_bill_id,
     rejection_reason: json.rejection_reason,
@@ -78,24 +92,31 @@ async function uploadVendorInvoice(req, res) {
     try {
       extraction = await ocrService.extractVendorInvoice(req.file.buffer)
     } catch {
-      await VendorInvoice.create({
+      // The placeholder invoice_number must stay inside the column's 100 chars and must
+      // not embed the raw upload filename (it is user-controlled and can be arbitrarily
+      // long). A timestamped marker is enough to keep the unique index happy.
+      const failed = await VendorInvoice.create({
         uploaded_by: req.user.sub,
         vendor_name: 'Unknown Vendor',
-        invoice_number: `PENDING-${req.file.originalname}-${Date.now()}`,
+        invoice_number: `PENDING-${Date.now()}`,
         pdf_url: pdfUrl,
         rebate_percentage: rebatePercentage,
         status: 'extraction_failed',
       })
+      // The id is returned in the payload: the message tells the caller to retry via
+      // /vendor-invoices/:id/reextract, and previously never said what :id was.
       return error(
         res,
-        'Gemini could not extract data from this PDF. The invoice has been saved with status `extraction_failed` - use POST /api/vendor-invoices/:id/reextract to retry.',
+        'Gemini could not extract data from this PDF. The invoice has been saved with status `extraction_failed` - retry with POST /api/vendor-invoices/:id/reextract, or enter the fields manually.',
         'OCR_EXTRACTION_FAILED',
-        502
+        502,
+        { data: { id: failed.id, status: failed.status, pdf_url: failed.pdf_url } }
       )
     }
 
     const extractedTotal = extraction.extracted_total ?? null
     const { rebateAmount, verifiedTotal } = calculateRebate(extractedTotal, rebatePercentage)
+    const rec = extraction.reconciliation
 
     let invoice
     try {
@@ -109,8 +130,14 @@ async function uploadVendorInvoice(req, res) {
         rebate_percentage: rebatePercentage,
         rebate_amount: rebateAmount,
         verified_total: verifiedTotal,
-        extraction_confidence: extraction.confidence ?? null,
-        is_low_confidence: (extraction.confidence ?? 0) < 0.80,
+        // Confidence and the low-confidence flag now come from ocrService.reconcile(),
+        // which cross-checks the extraction's own arithmetic. A model cannot vouch for an
+        // invoice whose line items do not add up to its stated total.
+        extraction_confidence: rec.confidence,
+        is_low_confidence: rec.isLowConfidence,
+        extraction_checks: rec.checks,
+        extracted_items_sum: rec.itemsSum,
+        reconciliation_delta: rec.discrepancy,
         status: 'pending_review',
       })
     } catch (err) {
@@ -132,13 +159,15 @@ async function uploadVendorInvoice(req, res) {
       )
     )
 
-    // UC-04 edge case: flag low-confidence extractions for closer manual review.
+    // UC-04 edge case: flag low-confidence extractions for closer manual review. The body
+    // names the specific check that failed rather than just a percentage, so the AP
+    // Specialist knows what to look at before opening the PDF.
     if (invoice.is_low_confidence) {
       notificationService.create({
         user_id: invoice.uploaded_by,
         type: 'ocr_low_confidence',
         title: `Low-confidence OCR on ${invoice.vendor_name}`,
-        body: `Extraction confidence ${Math.round((invoice.extraction_confidence || 0) * 100)}% - please verify the extracted totals.`,
+        body: lowConfidenceReason(rec),
         link: `/vendor-invoices/${invoice.id}`,
       })
     }
@@ -282,33 +311,77 @@ async function updateVendorInvoice(req, res) {
 // push to Xero as a draft bill. The response reflects the post-sync status.
 async function approveVendorInvoice(req, res) {
   try {
-    const invoice = await VendorInvoice.findByPk(req.params.id, { include: [{ model: VendorInvoiceItem }] })
-    if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    if (invoice.status !== 'pending_review') {
-      return error(res, 'Only invoices with status `pending_review` can be approved', 'INVALID_STATUS', 409)
-    }
-    if (invoice.extracted_total === null || invoice.extracted_total === undefined) {
-      return error(res, '`extracted_total` must be set before the invoice can be approved', 'MISSING_TOTAL', 409)
+    // Claim the invoice inside a transaction with a row lock before doing anything
+    // external. Xero does not deduplicate ACCPAY bills, so two concurrent approvals
+    // (a double-clicked button, a retried request) previously both read
+    // status='pending_review', both pushed, and created two bills for one PDF. The lock
+    // serialises them; the loser sees the status check fail and is rejected.
+    let invoice
+    let approvedAt
+    try {
+      ({ invoice, approvedAt } = await sequelize.transaction(async (t) => {
+        const inv = await VendorInvoice.findByPk(req.params.id, {
+          include: [{ model: VendorInvoiceItem }],
+          lock: t.LOCK.UPDATE,
+          transaction: t,
+        })
+        if (!inv) throw Object.assign(new Error('Vendor invoice not found.'), { httpCode: 404 })
+        if (inv.status !== 'pending_review') {
+          throw Object.assign(
+            new Error('Only invoices with status `pending_review` can be approved'),
+            { httpCode: 409, code: 'INVALID_STATUS' }
+          )
+        }
+        if (inv.extracted_total === null || inv.extracted_total === undefined) {
+          throw Object.assign(
+            new Error('`extracted_total` must be set before the invoice can be approved'),
+            { httpCode: 409, code: 'MISSING_TOTAL' }
+          )
+        }
+
+        // Duplicate guard: another already-approved/synced invoice with the same identity.
+        const dup = await VendorInvoice.findOne({
+          where: {
+            id: { [Op.ne]: inv.id },
+            vendor_name: inv.vendor_name,
+            invoice_number: inv.invoice_number,
+            status: { [Op.in]: ['approved', 'synced_to_xero'] },
+          },
+          transaction: t,
+        })
+        if (dup) {
+          throw Object.assign(
+            new Error('An invoice with this number from this vendor already exists. Please verify before approving.'),
+            { httpCode: 409, code: 'DUPLICATE_INVOICE' }
+          )
+        }
+
+        const at = new Date()
+        await inv.update({ status: 'approved', approved_by: req.user.sub, approved_at: at }, { transaction: t })
+        return { invoice: inv, approvedAt: at }
+      }))
+    } catch (err) {
+      if (err.httpCode) return error(res, err.message, err.code || 'NOT_FOUND', err.httpCode)
+      throw err
     }
 
-    // Duplicate guard: another already-approved/synced invoice with the same identity.
-    const dup = await VendorInvoice.findOne({
-      where: {
-        id: { [Op.ne]: invoice.id },
-        vendor_name: invoice.vendor_name,
-        invoice_number: invoice.invoice_number,
-        status: { [Op.in]: ['approved', 'synced_to_xero'] },
-      },
-    })
-    if (dup) {
-      return error(res, 'An invoice with this number from this vendor already exists. Please verify before approving.', 'DUPLICATE_INVOICE', 409)
-    }
-
+    // From here the invoice is committed as `approved` and owned by this request. A
+    // connection failure now leaves it approved-but-unsynced, which is a state the sync
+    // status screen shows and the retry endpoint can recover - not a silent dead end.
     const conn = await getFreshConnection()
-    if (!conn) return error(res, 'Xero is not connected. Ask the Managing Director to reconnect before retrying.', 'XERO_NOT_CONNECTED', 503)
-
-    const approvedAt = new Date()
-    await invoice.update({ status: 'approved', approved_by: req.user.sub, approved_at: approvedAt })
+    if (!conn) {
+      const log = await XeroSyncLog.create({
+        entity_type: 'vendor_invoice',
+        entity_id: invoice.id,
+        status: 'failed',
+        attempt_count: 1,
+        error_message: 'Xero is not connected.',
+      })
+      await invoice.update({ status: 'failed' })
+      return error(res, 'Xero is not connected. Ask the Managing Director to reconnect, then retry the sync from the Xero Sync Status screen.', 'XERO_NOT_CONNECTED', 503, {
+        data: { id: invoice.id, status: 'failed', sync_log: { id: log.id, status: 'failed', attempt_count: 1 } },
+      })
+    }
 
     const log = await XeroSyncLog.create({ entity_type: 'vendor_invoice', entity_id: invoice.id, status: 'pending', attempt_count: 1 })
     const result = await xeroService.pushBill(invoice, conn)
@@ -404,7 +477,7 @@ async function reextractVendorInvoice(req, res) {
 
     const extractedTotal = extraction.extracted_total ?? null
     const { rebateAmount, verifiedTotal } = calculateRebate(extractedTotal, Number(invoice.rebate_percentage))
-    const confidence = extraction.confidence ?? null
+    const rec = extraction.reconciliation
     await invoice.update({
       vendor_name: extraction.vendor_name,
       invoice_number: extraction.invoice_number,
@@ -412,8 +485,11 @@ async function reextractVendorInvoice(req, res) {
       extracted_total: extractedTotal,
       rebate_amount: rebateAmount,
       verified_total: verifiedTotal,
-      extraction_confidence: confidence,
-      is_low_confidence: (confidence ?? 0) < 0.80,
+      extraction_confidence: rec.confidence,
+      is_low_confidence: rec.isLowConfidence,
+      extraction_checks: rec.checks,
+      extracted_items_sum: rec.itemsSum,
+      reconciliation_delta: rec.discrepancy,
       status: 'pending_review',
     })
 
@@ -434,7 +510,7 @@ async function reextractVendorInvoice(req, res) {
         user_id: invoice.uploaded_by,
         type: 'ocr_low_confidence',
         title: `Low-confidence OCR on ${invoice.vendor_name}`,
-        body: `Re-extraction confidence ${Math.round((confidence || 0) * 100)}% - please verify the extracted totals.`,
+        body: `Re-extraction: ${lowConfidenceReason(rec)}`,
         link: `/vendor-invoices/${invoice.id}`,
       })
     }
