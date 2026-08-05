@@ -42,11 +42,20 @@ export function NotificationBell() {
   // seen by the others. A ref set false in the mount effect's cleanup gives every
   // function the same "am I still mounted" check before calling setState post-await.
   const isMountedRef = useRef(true)
+  // Guards against an in-flight unread-count request resolving after a newer one has
+  // been issued (or after a local optimistic update). Without this, a poll tick fired
+  // just before "Mark all as read" can still be awaiting its response when the click's
+  // optimistic setUnreadCount(0) runs, then land afterwards and clobber it back to the
+  // stale pre-mark-all count. Every call bumps the token before awaiting and both the
+  // request and any optimistic write check the token still matches before applying -
+  // whichever happens last wins, instead of whichever network response arrives last.
+  const unreadCountTokenRef = useRef(0)
 
   const refreshUnreadCount = useCallback(async () => {
+    const token = ++unreadCountTokenRef.current
     try {
       const { data } = await getUnreadCount()
-      if (isMountedRef.current) setUnreadCount(data.data.count)
+      if (isMountedRef.current && unreadCountTokenRef.current === token) setUnreadCount(data.data.count)
     } catch {
       // Degrade quietly - keep the last known count, the next poll will recover it.
     }
@@ -115,7 +124,9 @@ export function NotificationBell() {
     setOpen(true)
     setLoadingList(true)
     try {
-      const { data } = await listNotifications()
+      // unread_only: once something is read it drops out of the dropdown - the list
+      // is a to-do queue, not a history log.
+      const { data } = await listNotifications({ unread_only: 'true' })
       if (isMountedRef.current) setNotifications(data.data)
     } catch {
       if (isMountedRef.current) setNotifications([])
@@ -127,7 +138,8 @@ export function NotificationBell() {
   async function handleItemClick(notification) {
     setOpen(false)
     if (!notification.is_read) {
-      setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, is_read: true } : n)))
+      unreadCountTokenRef.current += 1
+      setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
       setUnreadCount((prev) => Math.max(0, prev - 1))
       try {
         await markNotificationRead(notification.id)
@@ -139,7 +151,8 @@ export function NotificationBell() {
   }
 
   async function handleMarkAllRead() {
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+    unreadCountTokenRef.current += 1
+    setNotifications([])
     setUnreadCount(0)
     try {
       await markAllNotificationsRead()

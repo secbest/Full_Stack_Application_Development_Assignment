@@ -94,7 +94,7 @@ describe('NotificationBell - dropdown', () => {
     expect(mock.history.patch[0].url).toBe('/notifications/1/read')
   })
 
-  test('"Mark all as read" calls the read-all endpoint and clears the badge', async () => {
+  test('"Mark all as read" calls the read-all endpoint, clears the badge, and empties the list', async () => {
     mock.onGet('/notifications/unread-count').reply(200, { success: true, data: { count: 2 } })
     mock.onGet('/notifications').reply(200, { success: true, data: [notification(), notification({ id: 2 })] })
     mock.onPatch('/notifications/read-all').reply(200, { success: true, data: { marked_read: true } })
@@ -108,6 +108,66 @@ describe('NotificationBell - dropdown', () => {
 
     await waitFor(() => expect(mock.history.patch).toHaveLength(1))
     expect(mock.history.patch[0].url).toBe('/notifications/read-all')
+    expect(screen.queryByText('2')).not.toBeInTheDocument()
+    expect(screen.queryByText('New job assigned')).not.toBeInTheDocument()
+    expect(screen.getByText('No notifications yet.')).toBeInTheDocument()
+  })
+
+  test('only fetches unread notifications when the dropdown opens', async () => {
+    mock.onGet('/notifications/unread-count').reply(200, { success: true, data: { count: 0 } })
+    mock.onGet('/notifications').reply(200, { success: true, data: [] })
+    const user = userEvent.setup()
+    renderBell()
+
+    await user.click(screen.getByRole('button', { name: /notifications/i }))
+    await waitFor(() => expect(mock.history.get.some((r) => r.url === '/notifications')).toBe(true))
+
+    const listRequest = mock.history.get.find((r) => r.url === '/notifications')
+    expect(listRequest.params).toEqual({ unread_only: 'true' })
+  })
+})
+
+describe('NotificationBell - mark all as read race', () => {
+  test('a stale in-flight poll response does not resurrect the badge after mark-all-read', async () => {
+    jest.useFakeTimers({ legacyFakeTimers: false })
+    let resolveStalePoll
+    let getCount = 0
+    mock.onGet('/notifications/unread-count').reply(() => {
+      getCount += 1
+      if (getCount === 1) return [200, { success: true, data: { count: 2 } }]
+      // The 30s poll's request - stays pending, simulating one already in flight
+      // when the user clicks "Mark all as read" below.
+      return new Promise((resolve) => {
+        resolveStalePoll = () => resolve([200, { success: true, data: { count: 2 } }])
+      })
+    })
+    mock.onGet('/notifications').reply(200, { success: true, data: [notification(), notification({ id: 2 })] })
+    mock.onPatch('/notifications/read-all').reply(200, { success: true, data: { marked_read: true } })
+
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime })
+    renderBell()
+    await screen.findByText('2')
+
+    // Fire the 30s poll - its GET is held pending by the mock above.
+    await jest.advanceTimersByTimeAsync(30000)
+    expect(getCount).toBe(2)
+
+    await user.click(screen.getByRole('button', { name: /notifications/i }))
+    await screen.findByText('Mark all as read')
+    await user.click(screen.getByText('Mark all as read'))
+    await waitFor(() => expect(mock.history.patch).toHaveLength(1))
+    expect(screen.queryByText('2')).not.toBeInTheDocument()
+
+    // The stale poll (issued before the mark-all click) finally resolves with the
+    // pre-update count. It must not clobber the just-cleared badge.
+    // The stale poll (issued before the mark-all click) finally resolves with the
+    // pre-update count. It must not clobber the just-cleared badge. Real timers are
+    // needed here because React's scheduler uses a real MessageChannel/timer under
+    // the hood to flush the update - fake timers can leave it pending indefinitely.
+    resolveStalePoll()
+    jest.useRealTimers()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
     expect(screen.queryByText('2')).not.toBeInTheDocument()
   })
 })
