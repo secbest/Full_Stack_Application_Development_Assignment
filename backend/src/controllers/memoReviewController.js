@@ -198,10 +198,10 @@ async function returnMemo(req, res) {
     if (memo.submitted_by) {
       notificationService.create({
         user_id: memo.submitted_by,
-        type: 'memo_submitted',
+        type: 'memo_returned',
         title: 'A service memo was returned for correction',
         body: note,
-        link: `/memos/${memo.id}`,
+        link: '/memos/history',
       })
     }
 

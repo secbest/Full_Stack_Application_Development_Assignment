@@ -145,7 +145,7 @@ async function createServiceMemo(req, res) {
       // Manpower-only standby memos (client feedback item 4) have no patient - fall
       // back to the booking reference so the notification still identifies the job.
       body: `Memo for booking #${booking.id} (${memo.patient_name || booking.reference_number}) is awaiting review.`,
-      link: `/memos/${memo.id}`,
+      link: '/service-memos',
     })
   }
 
