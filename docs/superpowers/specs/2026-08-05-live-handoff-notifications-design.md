@@ -199,6 +199,8 @@ on the crew; `In Progress` means the crew has actually activated.
 | `memoReviewController.js:202` | type `memo_submitted` -> `memo_returned` |
 | `invoiceController.js:284` | `user_id: invoice.approved_by \|\| null` -> fall back to the AR Specialist when `approved_by` is null, so the sync-failure alert cannot vanish |
 
+The fallback intentionally reuses the same `User.findOne({ where: { role: 'ar_specialist' } })` lookup already used in `serviceMemoController`, not `findAll`. Unlike the intake fan-out in Layer B - where multiple Quotations Specialists is a realistic near-term scenario worth fixing now - a second AR Specialist is not something this change introduces or needs to solve; it stays consistent with the codebase's existing single-AR-specialist assumption rather than fixing it opportunistically here.
+
 ### Layer F - Cleanup
 
 Delete `frontend/src/pages/bookings/intakeSeedData.js`. Nothing imports it; it is a
