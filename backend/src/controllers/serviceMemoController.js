@@ -142,17 +142,21 @@ async function createServiceMemo(req, res) {
 
   // Non-fatal by design (UC-05 edge case) - the memo above is already committed even if
   // this notification fails. The AR Specialist's review queue is the reliable fallback.
-  const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
-  if (arSpecialist) {
-    await notificationService.create({
-      user_id: arSpecialist.id,
-      type: 'memo_submitted',
-      title: 'New service memo ready for review',
-      // Manpower-only standby memos (client feedback item 4) have no patient - fall
-      // back to the booking reference so the notification still identifies the job.
-      body: `Memo for booking #${booking.id} (${memo.patient_name || booking.reference_number}) is awaiting review.`,
-      link: '/service-memos',
-    })
+  try {
+    const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
+    if (arSpecialist) {
+      await notificationService.create({
+        user_id: arSpecialist.id,
+        type: 'memo_submitted',
+        title: 'New service memo ready for review',
+        // Manpower-only standby memos (client feedback item 4) have no patient - fall
+        // back to the booking reference so the notification still identifies the job.
+        body: `Memo for booking #${booking.id} (${memo.patient_name || booking.reference_number}) is awaiting review.`,
+        link: '/service-memos',
+      })
+    }
+  } catch (notifyErr) {
+    console.error('[createServiceMemo] Failed to notify the AR Specialist:', notifyErr.message)
   }
 
   return created(res, serializeMemo(memo, signature))

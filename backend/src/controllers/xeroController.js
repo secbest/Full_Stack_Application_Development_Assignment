@@ -1,8 +1,18 @@
 const sequelize = require('../config')
-const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, Booking, XeroSyncLog } = require('../models')
+const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, Booking, User, XeroSyncLog } = require('../models')
 const { xeroService } = require('../services')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
+
+async function resolveArSpecialistId() {
+  try {
+    const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
+    return arSpecialist ? arSpecialist.id : null
+  } catch (err) {
+    console.error('[xeroController] Failed to resolve the AR Specialist fallback for a retry-failure notification:', err.message)
+    return null
+  }
+}
 
 // Single active Xero org at a time - the most recently connected row with is_connected = true.
 async function getActiveConnection() {
@@ -340,13 +350,16 @@ async function retrySync(req, res) {
     }
     if (arInvoice) {
       await arInvoice.update({ status: 'failed' })
-      notificationService.create({
-        user_id: arInvoice.approved_by || null,
-        type: 'xero_sync_failed',
-        title: `Xero sync failed again for invoice #${arInvoice.id}`,
-        body: result.error,
-        link: '/xero/sync-status',
-      })
+      const recipientId = arInvoice.approved_by || (await resolveArSpecialistId())
+      if (recipientId) {
+        notificationService.create({
+          user_id: recipientId,
+          type: 'xero_sync_failed',
+          title: `Xero sync failed again for invoice #${arInvoice.id}`,
+          body: result.error,
+          link: '/xero/sync-status',
+        })
+      }
     }
     return success(res, {
       id: log.id,

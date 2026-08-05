@@ -31,7 +31,10 @@ async function listNotifications(req, res) {
     const where = { user_id: req.user.sub }
     if (unread_only === 'true') where.is_read = false
 
-    const parsedLimit = Math.min(parseInt(limit, 10) || DEFAULT_LIMIT, MAX_LIMIT)
+    const requestedLimit = Number.parseInt(limit, 10)
+    const parsedLimit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), MAX_LIMIT)
+      : DEFAULT_LIMIT
     const notifications = await Notification.findAll({
       where,
       order: [['created_at', 'DESC']],
@@ -55,7 +58,11 @@ async function getUnreadCount(req, res) {
 
 async function markAsRead(req, res) {
   try {
-    const notification = await Notification.findOne({ where: { id: String(req.params.id), user_id: req.user.sub } })
+    const notificationId = Number(req.params.id)
+    if (!Number.isInteger(notificationId) || notificationId <= 0) {
+      return error(res, '`id` must be a positive integer.', 'VALIDATION_ERROR', 400)
+    }
+    const notification = await Notification.findOne({ where: { id: notificationId, user_id: req.user.sub } })
     if (!notification) return notFound(res, 'Notification not found.')
     await notification.update({ is_read: true })
     return success(res, { id: notification.id, is_read: true })

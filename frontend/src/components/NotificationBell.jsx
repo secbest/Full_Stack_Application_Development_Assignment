@@ -7,6 +7,8 @@ import {
 } from '@/api/notifications'
 
 const POLL_MS = 30000
+const MENU_WIDTH = 320
+const VIEWPORT_GUTTER = 8
 
 function formatRelativeTime(isoString) {
   const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000))
@@ -31,7 +33,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [loadingList, setLoadingList] = useState(false)
-  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
+  const [menuPos, setMenuPos] = useState({ top: 0, left: VIEWPORT_GUTTER })
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
   // Shared across refreshUnreadCount/handleToggle/handleItemClick/handleMarkAllRead
@@ -101,7 +103,14 @@ export function NotificationBell() {
     }
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
-      setMenuPos({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) })
+      // Align the panel's right edge with the bell when space permits, then clamp it
+      // inside the viewport. This matters on desktop, where the bell sits near the
+      // left edge inside the sidebar and an unclamped right alignment renders most of
+      // the 320px panel off-screen.
+      const preferredLeft = rect.right - MENU_WIDTH
+      const maxLeft = Math.max(VIEWPORT_GUTTER, window.innerWidth - MENU_WIDTH - VIEWPORT_GUTTER)
+      const left = Math.min(Math.max(VIEWPORT_GUTTER, preferredLeft), maxLeft)
+      setMenuPos({ top: rect.bottom + VIEWPORT_GUTTER, left })
     }
     setOpen(true)
     setLoadingList(true)
@@ -162,8 +171,10 @@ export function NotificationBell() {
       {open && createPortal(
         <div
           ref={menuRef}
-          style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-          className="w-80 max-h-96 overflow-y-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg z-50"
+          role="dialog"
+          aria-label="Notifications panel"
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="w-80 max-w-[calc(100vw-1rem)] max-h-96 overflow-y-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg z-50"
         >
           {loadingList ? (
             <p className="px-4 py-6 text-sm text-center text-[#64748B]">Loading...</p>

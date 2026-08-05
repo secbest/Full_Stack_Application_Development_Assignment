@@ -62,6 +62,22 @@ describe('NotificationBell - badge', () => {
 })
 
 describe('NotificationBell - dropdown', () => {
+  test('keeps the dropdown inside the viewport when mounted in the left sidebar', async () => {
+    mock.onGet('/notifications/unread-count').reply(200, { success: true, data: { count: 0 } })
+    mock.onGet('/notifications').reply(200, { success: true, data: [] })
+    const user = userEvent.setup()
+    renderBell()
+    const bell = await screen.findByRole('button', { name: /notifications/i })
+    jest.spyOn(bell, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60, right: 220, left: 180, top: 20, width: 40, height: 40, x: 180, y: 20,
+      toJSON: () => {},
+    })
+
+    await user.click(bell)
+
+    expect(await screen.findByRole('dialog', { name: /notifications panel/i })).toHaveStyle({ left: '8px' })
+  })
+
   test('clicking an unread notification marks it read and navigates to its link', async () => {
     mock.onGet('/notifications/unread-count').reply(200, { success: true, data: { count: 1 } })
     mock.onGet('/notifications').reply(200, { success: true, data: [notification()] })

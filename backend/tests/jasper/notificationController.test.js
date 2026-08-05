@@ -58,6 +58,22 @@ describe('listNotifications', () => {
       where: { user_id: 5, is_read: false },
     }))
   })
+
+  test('clamps invalid limits to a safe range', async () => {
+    Notification.findAll.mockResolvedValue([])
+
+    const negativeRes = mockRes()
+    await listNotifications(mockReq({ query: { limit: '-20' } }), negativeRes)
+    expect(Notification.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 1 }))
+
+    const excessiveRes = mockRes()
+    await listNotifications(mockReq({ query: { limit: '5000' } }), excessiveRes)
+    expect(Notification.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }))
+
+    const malformedRes = mockRes()
+    await listNotifications(mockReq({ query: { limit: 'not-a-number' } }), malformedRes)
+    expect(Notification.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 20 }))
+  })
 })
 
 describe('getUnreadCount', () => {
@@ -79,8 +95,17 @@ describe('markAsRead', () => {
     const res = mockRes()
     await markAsRead(mockReq({ sub: 5, params: { id: 99 } }), res)
 
-    expect(Notification.findOne).toHaveBeenCalledWith({ where: { id: '99', user_id: 5 } })
+    expect(Notification.findOne).toHaveBeenCalledWith({ where: { id: 99, user_id: 5 } })
     expect(res.status).toHaveBeenCalledWith(404)
+  })
+
+  test('rejects a malformed id before querying PostgreSQL', async () => {
+    const res = mockRes()
+    await markAsRead(mockReq({ sub: 5, params: { id: 'not-a-number' } }), res)
+
+    expect(Notification.findOne).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(payload(res).code).toBe('VALIDATION_ERROR')
   })
 
   test('marks the caller\'s own notification read', async () => {

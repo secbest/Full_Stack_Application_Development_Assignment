@@ -303,15 +303,21 @@ async function resubmitMemo(req, res) {
       resubmitted_at: new Date(),
     })
 
-    const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
-    if (arSpecialist) {
-      notificationService.create({
-        user_id: arSpecialist.id,
-        type: 'memo_submitted',
-        title: 'A returned service memo was corrected and resubmitted',
-        body: `Memo #${memo.id} is back in the review queue.`,
-        link: `/memos/${memo.id}`,
-      })
+    // The memo update is already committed. Notification lookup/delivery is best-effort
+    // and must not turn a successful correction into a misleading 500 response.
+    try {
+      const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
+      if (arSpecialist) {
+        await notificationService.create({
+          user_id: arSpecialist.id,
+          type: 'memo_submitted',
+          title: 'A returned service memo was corrected and resubmitted',
+          body: `Memo #${memo.id} is back in the review queue.`,
+          link: '/service-memos',
+        })
+      }
+    } catch (notifyErr) {
+      console.error('[resubmitMemo] Failed to notify the AR Specialist:', notifyErr.message)
     }
 
     return success(res, {

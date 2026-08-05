@@ -17,7 +17,7 @@ jest.mock('../../src/models', () => ({
   InvoiceLineItem: { findAll: jest.fn() },
   User: { findOne: jest.fn() },
   PricingContract: {},
-  XeroSyncLog: { create: jest.fn() },
+  XeroSyncLog: { findOne: jest.fn(), findOrCreate: jest.fn() },
 }))
 jest.mock('../../src/config', () => ({ transaction: jest.fn((cb) => cb({})) }))
 jest.mock('../../src/services/cloudinaryService', () => ({ uploadBuffer: jest.fn() }))
@@ -37,7 +37,12 @@ function mockRes() {
   return res
 }
 
-beforeEach(() => jest.clearAllMocks())
+beforeEach(() => {
+  jest.clearAllMocks()
+  const syncLog = { attempt_count: 0, update: jest.fn().mockResolvedValue() }
+  XeroSyncLog.findOne.mockResolvedValue(null)
+  XeroSyncLog.findOrCreate.mockResolvedValue([syncLog, true])
+})
 
 describe('serviceMemoController - memo_submitted link fix', () => {
   const { createServiceMemo } = require('../../src/controllers/serviceMemoController')
@@ -57,13 +62,27 @@ describe('serviceMemoController - memo_submitted link fix', () => {
 
     expect(notificationService.create).toHaveBeenCalledWith(expect.objectContaining({ link: '/service-memos' }))
   })
+
+  test('still returns 201 when the AR Specialist lookup fails after the memo is committed', async () => {
+    Booking.findByPk.mockResolvedValue({ id: 10, reference_number: 'BKG-2026-00010', status: 'in_progress', update: jest.fn().mockResolvedValue() })
+    ServiceMemo.findOne.mockResolvedValue(null)
+    ServiceMemo.create = jest.fn().mockResolvedValue({ id: 7, patient_name: 'Test Patient' })
+    require('../../src/models').MemoSignature.create.mockResolvedValue({ id: 1 })
+    User.findOne.mockRejectedValue(new Error('connection reset'))
+
+    const res = mockRes()
+    await createServiceMemo({ body: { booking_id: 10, signature: {} }, user: { sub: 99 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(notificationService.create).not.toHaveBeenCalled()
+  })
 })
 
 describe('memoReviewController - returnMemo link + type fix', () => {
-  const { returnMemo } = require('../../src/controllers/memoReviewController')
+  const { returnMemo, resubmitMemo } = require('../../src/controllers/memoReviewController')
 
   test('uses type memo_returned and links to /memos/history, not /memos/:id', async () => {
-    const memo = { id: 5, submitted_by: 99, update: jest.fn().mockResolvedValue() }
+    const memo = { id: 5, status: 'submitted', submitted_by: 99, update: jest.fn().mockResolvedValue() }
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
 
@@ -74,6 +93,24 @@ describe('memoReviewController - returnMemo link + type fix', () => {
       type: 'memo_returned',
       link: '/memos/history',
     }))
+  })
+
+  test('resubmission links back to the real AR review route and remains successful if recipient lookup fails', async () => {
+    const memo = { id: 5, status: 'returned', submitted_by: 99, update: jest.fn().mockResolvedValue() }
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    User.findOne.mockRejectedValue(new Error('connection reset'))
+
+    const res = mockRes()
+    await resubmitMemo({ params: { id: 5 }, body: {}, user: { sub: 99, role: 'field_crew' } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(notificationService.create).not.toHaveBeenCalled()
+
+    User.findOne.mockResolvedValue({ id: 11 })
+    const secondRes = mockRes()
+    memo.status = 'returned'
+    await resubmitMemo({ params: { id: 5 }, body: {}, user: { sub: 99, role: 'field_crew' } }, secondRes)
+    expect(notificationService.create).toHaveBeenCalledWith(expect.objectContaining({ link: '/service-memos' }))
   })
 })
 
@@ -92,7 +129,6 @@ describe('invoiceController - Xero sync-failure fallback', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'Xero rejected the invoice' })
-    XeroSyncLog.create.mockResolvedValue({})
     User.findOne.mockResolvedValue({ id: 11, role: 'ar_specialist' })
 
     const res = mockRes()
@@ -110,7 +146,6 @@ describe('invoiceController - Xero sync-failure fallback', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'Xero rejected the invoice' })
-    XeroSyncLog.create.mockResolvedValue({})
     User.findOne.mockRejectedValue(new Error('connection reset'))
 
     const res = mockRes()
@@ -126,8 +161,6 @@ describe('invoiceController - Xero sync-failure fallback', () => {
     Client.findByPk.mockResolvedValue({ name: 'TTSH' })
     InvoiceLineItem.findAll.mockResolvedValue([])
     xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'Xero rejected the invoice' })
-    XeroSyncLog.create.mockResolvedValue({})
-
     const res = mockRes()
     await retryXero({ params: { id: 1 } }, res)
 

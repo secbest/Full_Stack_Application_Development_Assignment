@@ -7,7 +7,7 @@
 // These assertions deliberately test *state and gating*, not layout. jsdom does not
 // evaluate CSS, so a test claiming `md:hidden` "hides" something would be asserting on a
 // class string, not on behaviour. The layouts themselves are verified in a real browser.
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import MockAdapter from 'axios-mock-adapter'
@@ -172,7 +172,7 @@ describe('AppLayout - crossing the breakpoint', () => {
     await user.click(hamburger())
     expect(hamburger()).toHaveAttribute('aria-expanded', 'true')
 
-    setTestViewportWidth(DESKTOP)
+    act(() => setTestViewportWidth(DESKTOP))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(document.body.style.overflow).not.toBe('hidden')
@@ -188,7 +188,7 @@ describe('AppLayout - notification bell', () => {
   })
 
   test('renders in the expanded desktop sidebar header', async () => {
-    setTestViewportWidth(DESKTOP)
+    act(() => setTestViewportWidth(DESKTOP))
     renderShell()
 
     expect(await screen.findByRole('button', { name: /notifications/i })).toBeInTheDocument()
@@ -196,7 +196,7 @@ describe('AppLayout - notification bell', () => {
 
   test('remains available in the collapsed desktop rail', async () => {
     const user = userEvent.setup()
-    setTestViewportWidth(DESKTOP)
+    act(() => setTestViewportWidth(DESKTOP))
     renderShell()
 
     await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
