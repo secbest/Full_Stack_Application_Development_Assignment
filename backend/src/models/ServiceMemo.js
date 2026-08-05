@@ -48,11 +48,21 @@ const ServiceMemo = sequelize.define('ServiceMemo', {
   patient_weight_kg:       { type: DataTypes.DECIMAL(5, 1), allowNull: true },
   is_jurong_island:        { type: DataTypes.BOOLEAN,      allowNull: false, defaultValue: false },
 
+  // 'returned' is a distinct state, not a bounce back to 'submitted': a memo the AR
+  // Specialist sent back for correction must leave her review queue until the crew has
+  // actually corrected it, otherwise it reappears indistinguishable from a fresh
+  // submission and gets reviewed again in a loop.
   status: {
-    type: DataTypes.ENUM('submitted', 'reviewed', 'invoiced'),
+    type: DataTypes.ENUM('submitted', 'returned', 'reviewed', 'invoiced'),
     allowNull: false,
     defaultValue: 'submitted',
   },
+
+  // When AR last returned the memo, and when the crew last resubmitted it. The queue's
+  // "time in queue" is measured from the resubmission, not the original creation, so a
+  // corrected memo isn't instantly branded overdue for time it spent with the crew.
+  returned_at:    { type: DataTypes.DATE, allowNull: true },
+  resubmitted_at: { type: DataTypes.DATE, allowNull: true },
 
   // Written only by the AR review endpoints (Jasper's Wave 3): the correction note
   // left when a memo is returned to the field crew. Surfaced in the crew's Memo History.

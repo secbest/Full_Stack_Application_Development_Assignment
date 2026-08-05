@@ -19,6 +19,20 @@ const VendorInvoice = sequelize.define('VendorInvoice', {
   verified_total:       { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   extraction_confidence: { type: DataTypes.FLOAT,      allowNull: true },
   is_low_confidence:    { type: DataTypes.BOOLEAN,     allowNull: false, defaultValue: false },
+
+  // The verifiable checks behind is_low_confidence: [{ check, passed, detail }].
+  // is_low_confidence used to rest solely on a confidence score the model reported about
+  // itself, which told the AP Specialist a number but never a reason. These are arithmetic
+  // and format facts (do the line items sum to the stated total, does each line's amount
+  // match quantity x unit price, is there a usable date) so the review screen can show
+  // WHY an invoice needs a closer look. Written by ocrService.reconcile().
+  extraction_checks: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+
+  // Sum of the extracted line items at extraction time, and its distance from the total
+  // printed on the invoice. Persisted so the discrepancy survives into the review panel
+  // instead of being recomputed (and possibly disagreeing) on every read.
+  extracted_items_sum:  { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  reconciliation_delta: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   status: {
     type: DataTypes.ENUM('pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed'),
     allowNull: false,

@@ -31,8 +31,9 @@ async function findActiveContract(clientId, onDate = new Date()) {
 async function listPendingReview(req, res) {
   try {
     const { page = 1, limit = 20 } = req.query
-    const p = Number(page)
-    const l = Number(limit)
+    const p = Math.max(1, Number(page) || 1)
+    // Bounded so ?limit=100000 can't request the whole table in one unpaginated query.
+    const l = Math.min(100, Math.max(1, Number(limit) || 20))
 
     const { rows, count } = await ServiceMemo.findAndCountAll({
       where: { status: 'submitted' },
@@ -45,17 +46,27 @@ async function listPendingReview(req, res) {
 
     const now = Date.now()
     return success(res, {
-      data: rows.map((m) => ({
-        id: m.id,
-        booking_id: m.booking_id,
-        booking_reference: m.Booking ? m.Booking.reference_number : null,
-        client_name: m.Booking && m.Booking.Client ? m.Booking.Client.name : null,
-        job_date: m.Booking ? m.Booking.scheduled_date : null,
-        service_type: m.service_type,
-        transfer_type: m.transfer_type,
-        submitted_at: m.createdAt,
-        hours_since_submission: Math.round(((now - new Date(m.createdAt).getTime()) / HOURS) * 10) / 10,
-      })),
+      data: rows.map((m) => {
+        // Age the memo from its resubmission when it has been corrected, so time spent with
+        // the crew isn't charged against Sarah's SLA.
+        const queuedSince = m.resubmitted_at ? new Date(m.resubmitted_at) : new Date(m.createdAt)
+        return {
+          id: m.id,
+          booking_id: m.booking_id,
+          booking_reference: m.Booking ? m.Booking.reference_number : null,
+          client_name: m.Booking && m.Booking.Client ? m.Booking.Client.name : null,
+          job_date: m.Booking ? m.Booking.scheduled_date : null,
+          service_type: m.service_type,
+          transfer_type: m.transfer_type,
+          submitted_at: m.createdAt,
+          // Flags a memo that has been round-tripped at least once, so Sarah knows she is
+          // looking at a correction she asked for rather than a first submission.
+          was_returned: !!m.returned_at,
+          resubmitted_at: m.resubmitted_at,
+          queued_since: queuedSince,
+          hours_since_submission: Math.round(((now - queuedSince.getTime()) / HOURS) * 10) / 10,
+        }
+      }),
       meta: { total: count, page: p, limit: l },
     })
   } catch (err) {
@@ -71,6 +82,9 @@ async function approveMemo(req, res) {
       include: [{ model: Booking, include: [{ model: Client, attributes: ['id', 'name'] }] }],
     })
     if (!memo) return notFound(res, 'No memo with this id.')
+    if (memo.status === 'returned') {
+      return error(res, 'Memo was returned to the crew for correction and has not been resubmitted yet - it cannot be approved.', 'MEMO_RETURNED', 409)
+    }
     if (memo.status !== 'submitted') {
       return error(res, 'Memo has already been approved or an invoice already exists for it.', 'MEMO_ALREADY_REVIEWED', 409)
     }
@@ -85,6 +99,9 @@ async function approveMemo(req, res) {
 
     // No active contract -> create an unmatched invoice (needs manual pricing) and 422.
     if (!contract) {
+      // No contract means nothing could be priced, so everything chargeable on the memo is
+      // recorded as unpriced - that list is what Sarah works through to price it by hand.
+      const { unpriced } = pricingService.computeInvoiceLineItems(memo, [], [])
       const invoice = await sequelize.transaction(async (t) => {
         await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
         return Invoice.create({
@@ -94,6 +111,7 @@ async function approveMemo(req, res) {
           contract_id: null,
           subtotal: 0, tax_amount: 0, total_amount: 0,
           status: 'unmatched',
+          unpriced_surcharges: unpriced,
         }, { transaction: t })
       })
       return error(
@@ -122,6 +140,7 @@ async function approveMemo(req, res) {
           contract_id: contract.id,
           subtotal: 0, tax_amount: 0, total_amount: 0,
           status: 'unmatched',
+          unpriced_surcharges: result.unpriced,
         }, { transaction: t })
       })
       return error(
@@ -143,6 +162,7 @@ async function approveMemo(req, res) {
         tax_amount: 0,
         total_amount: result.subtotal,
         status: 'matched',
+        unpriced_surcharges: result.unpriced,
       }, { transaction: t })
 
       await InvoiceLineItem.bulkCreate(
@@ -162,6 +182,7 @@ async function approveMemo(req, res) {
         subtotal: invoice.subtotal,
         tax_amount: invoice.tax_amount,
         total_amount: invoice.total_amount,
+        unpriced_surcharges: invoice.unpriced_surcharges || [],
         line_items: lineItems.map((li) => ({
           id: li.id,
           description: li.description,
@@ -169,6 +190,7 @@ async function approveMemo(req, res) {
           unit_price: li.unit_price,
           amount: li.amount,
           is_manual_adjustment: li.is_manual_adjustment,
+          was_manually_edited: li.was_manually_edited,
         })),
       },
     })
@@ -178,7 +200,8 @@ async function approveMemo(req, res) {
 }
 
 // PATCH /api/service-memos/:id/return - UC-03 alt flow: return the memo to the crew
-// with a correction note. Status reverts to 'submitted' and the crew is notified.
+// with a correction note. Status becomes 'returned' so the memo leaves the AR review
+// queue until the crew resubmits it.
 async function returnMemo(req, res) {
   try {
     const note = typeof req.body.note === 'string' ? req.body.note.trim() : ''
@@ -187,13 +210,37 @@ async function returnMemo(req, res) {
     const memo = await ServiceMemo.findByPk(req.params.id)
     if (!memo) return notFound(res, 'No memo with this id.')
 
-    // Block return if an invoice for this memo is already approved/synced.
+    // Any existing invoice blocks the return, not just an approved/synced one. Returning a
+    // memo that already has a 'matched' invoice used to strand it permanently: the memo went
+    // back to the crew while its invoice lived on, and re-approving then failed because an
+    // invoice already existed, leaving no available action on either record. Reject the
+    // return instead and make the resolution explicit.
     const invoice = await Invoice.findOne({ where: { memo_id: memo.id } })
-    if (invoice && ['approved', 'synced_to_xero'].includes(invoice.status)) {
-      return error(res, 'Memo is linked to an invoice that has already been approved or synced - cannot be returned.', 'MEMO_ALREADY_INVOICED', 409)
+    if (invoice) {
+      const isLocked = ['approved', 'synced_to_xero'].includes(invoice.status)
+      return error(
+        res,
+        isLocked
+          ? `Memo is linked to invoice #${invoice.id}, which has already been ${invoice.status === 'approved' ? 'approved' : 'synced to Xero'} - it cannot be returned. Raise a credit note in Xero instead.`
+          : `Memo has already been approved and generated invoice #${invoice.id} - it cannot be returned. Adjust the invoice's line items directly, or reject the match on invoice #${invoice.id} first.`,
+        'MEMO_ALREADY_INVOICED',
+        409
+      )
     }
 
-    await memo.update({ status: 'submitted', ar_note: note, reviewed_by: req.user.sub })
+    if (memo.status === 'returned') {
+      return error(res, 'Memo has already been returned to the crew and is awaiting their correction.', 'MEMO_ALREADY_RETURNED', 409)
+    }
+    if (memo.status !== 'submitted') {
+      return error(res, `Only a memo in \`submitted\` status can be returned (this one is \`${memo.status}\`).`, 'MEMO_NOT_SUBMITTED', 409)
+    }
+
+    await memo.update({
+      status: 'returned',
+      ar_note: note,
+      reviewed_by: req.user.sub,
+      returned_at: new Date(),
+    })
 
     if (memo.submitted_by) {
       notificationService.create({
@@ -205,10 +252,76 @@ async function returnMemo(req, res) {
       })
     }
 
-    return success(res, { memo_id: memo.id, memo_status: 'submitted', note_recorded: true })
+    return success(res, { memo_id: memo.id, memo_status: 'returned', note_recorded: true })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }
 }
 
-module.exports = { findActiveContract, listPendingReview, approveMemo, returnMemo }
+// PATCH /api/service-memos/:id/resubmit - the other half of the return loop. The crew
+// corrects the billing-relevant fields AR flagged and pushes the memo back into the review
+// queue. Without this a returned memo had no route forward at all: memos are created once
+// per booking (unique booking_id) and there is no memo-update endpoint, so the crew could
+// read the correction note and do nothing about it.
+async function resubmitMemo(req, res) {
+  try {
+    const memo = await ServiceMemo.findByPk(req.params.id)
+    if (!memo) return notFound(res, 'No memo with this id.')
+
+    // Field crew may only resubmit their own memos. Same 404 as elsewhere so a crew member
+    // can't probe which memo ids exist.
+    if (req.user.role === 'field_crew' && memo.submitted_by !== req.user.sub) {
+      return notFound(res, 'No memo with this id.')
+    }
+    if (memo.status !== 'returned') {
+      return error(res, `Only a memo in \`returned\` status can be resubmitted (this one is \`${memo.status}\`).`, 'MEMO_NOT_RETURNED', 409)
+    }
+
+    // Only the fields that drive pricing are correctable here. Identity fields
+    // (booking_id, submitted_by) and the signature are deliberately not editable - a
+    // correction is a re-statement of what happened on the job, not a new memo.
+    const CORRECTABLE = [
+      'job_start_time', 'job_end_time', 'overtime_hours', 'evacuation_floors',
+      'patient_name', 'hospital_destination', 'additional_charges_notes',
+      'hospital_stamp_image_url', 'service_type', 'transfer_type', 'is_office_hours',
+      'oxygen_litres_used', 'has_inconvenience_fee', 'disposables_used',
+      'resuscitation_performed', 'suction_performed', 'waiting_time_minutes',
+      'patient_weight_kg', 'is_jurong_island',
+    ]
+    const updates = {}
+    for (const field of CORRECTABLE) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field]
+    }
+
+    await memo.update({
+      ...updates,
+      status: 'submitted',
+      // The correction note has been acted on; clearing it keeps the crew's Memo History
+      // showing a note only while a correction is actually outstanding. returned_at is
+      // retained as the audit record that this memo was bounced once.
+      ar_note: null,
+      resubmitted_at: new Date(),
+    })
+
+    const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
+    if (arSpecialist) {
+      notificationService.create({
+        user_id: arSpecialist.id,
+        type: 'memo_submitted',
+        title: 'A returned service memo was corrected and resubmitted',
+        body: `Memo #${memo.id} is back in the review queue.`,
+        link: `/memos/${memo.id}`,
+      })
+    }
+
+    return success(res, {
+      memo_id: memo.id,
+      memo_status: 'submitted',
+      fields_updated: Object.keys(updates),
+    })
+  } catch (err) {
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+module.exports = { findActiveContract, listPendingReview, approveMemo, returnMemo, resubmitMemo }

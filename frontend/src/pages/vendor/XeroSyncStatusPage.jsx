@@ -3,7 +3,7 @@
 // max-retry warning (3 attempts).
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { History, RefreshCw, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { History, RefreshCw, AlertTriangle, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
@@ -125,7 +125,7 @@ export default function XeroSyncStatusPage() {
                         <span className={`text-xs font-medium ${log.attempt_count >= MAX_ATTEMPTS ? 'text-rose-600' : 'text-slate-600'}`}>{log.attempt_count} / {MAX_ATTEMPTS}</span>
                       </td>
                       <td className="px-4 py-2"><span className="text-xs text-slate-500 font-mono">{log.xero_record_id || '—'}</span></td>
-                      <td className="px-4 py-2"><span className="text-xs text-rose-600 max-w-[220px] truncate block" title={log.error_message}>{log.error_message || '—'}</span></td>
+                      <td className="px-4 py-2"><ErrorDetails message={log.error_message} /></td>
                       <td className="px-4 py-2"><span className="text-xs text-slate-500">{log.synced_at ? new Date(log.synced_at).toLocaleString() : '—'}</span></td>
                       <td className="px-4 py-2">
                         {log.status === 'failed' && (
@@ -147,6 +147,22 @@ export default function XeroSyncStatusPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function ErrorDetails({ message }) {
+  if (!message) return <span className="text-xs text-slate-400">—</span>
+
+  return (
+    <details className="group min-w-[120px] max-w-[260px]">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded text-xs font-medium text-rose-600 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 [&::-webkit-details-marker]:hidden">
+        View reason
+        <ChevronDown size={13} aria-hidden="true" className="transition-transform group-open:rotate-180" />
+      </summary>
+      <p className="mt-2 whitespace-normal break-words rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs leading-relaxed text-rose-700">
+        {message}
+      </p>
+    </details>
   )
 }
 

@@ -1,8 +1,7 @@
 const { VendorInvoice, VendorInvoiceItem } = require('../models')
 const { calculateRebate } = require('./vendorInvoiceController')
-const { success, error, notFound } = require('../utils')
+const { success, error, notFound, round2 } = require('../utils')
 
-const round2 = (n) => Math.round(n * 100) / 100
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
 
 // PATCH /api/vendor-invoice-items/:id - UC-06: correct one OCR-extracted line item.
@@ -18,32 +17,33 @@ async function updateVendorInvoiceItem(req, res) {
       return error(res, 'Line items cannot be edited - parent invoice is not in an editable status', 'INVALID_STATUS', 409)
     }
 
-    const { description, quantity, unit_price, amount } = req.body
-    if (amount !== undefined && !(Number(amount) > 0)) {
-      return error(res, '`amount` must be a positive number', 'INVALID_AMOUNT', 400)
-    }
+    // `amount` is never taken from the request (the validator strips it): it is derived
+    // from the line's own figures. Persisting a client-supplied amount let a line item
+    // claim a total its quantity and unit price did not support - qty 2 x $10 could be
+    // stored as $999, and that $999 then became the invoice's extracted_total.
+    const { description, quantity, unit_price } = req.body
 
     const updates = {}
     if (description !== undefined) updates.description = description
     if (quantity !== undefined) updates.quantity = quantity
     if (unit_price !== undefined) updates.unit_price = unit_price
-    if (amount !== undefined) updates.amount = amount
+
+    // Recompute this line's amount whenever either factor moves. Previously the parent
+    // total was only refreshed when `amount` was supplied, so editing unit_price alone
+    // left both the line's amount and the invoice total stale.
+    const newQuantity = quantity !== undefined ? Number(quantity) : Number(item.quantity)
+    const newUnitPrice = unit_price !== undefined ? Number(unit_price) : Number(item.unit_price)
+    updates.amount = round2(newQuantity * newUnitPrice)
+
     await item.update(updates)
 
-    // Recompute the parent total from all line items when the amount changed.
-    let parentSummary = {
-      id: parent.id,
-      extracted_total: parent.extracted_total,
-      rebate_amount: parent.rebate_amount,
-      verified_total: parent.verified_total,
-    }
-    if (amount !== undefined) {
-      const items = await VendorInvoiceItem.findAll({ where: { vendor_invoice_id: parent.id } })
-      const total = round2(items.reduce((sum, i) => sum + Number(i.amount), 0))
-      const { rebateAmount, verifiedTotal } = calculateRebate(total, Number(parent.rebate_percentage))
-      await parent.update({ extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal })
-      parentSummary = { id: parent.id, extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal }
-    }
+    // The parent's extracted_total is the sum of its line items, so it is recomputed on
+    // every line edit - not just the ones that happened to send an amount.
+    const items = await VendorInvoiceItem.findAll({ where: { vendor_invoice_id: parent.id } })
+    const total = round2(items.reduce((sum, i) => sum + Number(i.amount), 0))
+    const { rebateAmount, verifiedTotal } = calculateRebate(total, Number(parent.rebate_percentage))
+    await parent.update({ extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal })
+    const parentSummary = { id: parent.id, extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal }
 
     return success(res, {
       id: item.id,

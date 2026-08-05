@@ -13,7 +13,7 @@ const {
   listServiceMemos,
   getServiceMemoById,
 } = require('../controllers/serviceMemoController')
-const { listPendingReview, approveMemo, returnMemo } = require('../controllers/memoReviewController')
+const { listPendingReview, approveMemo, returnMemo, resubmitMemo } = require('../controllers/memoReviewController')
 
 // Order matters: authenticate -> authorise (role) -> validate (shape) -> controller.
 // Auth failures should never leak whether a payload was well-formed, so auth always runs first.
@@ -55,6 +55,10 @@ router.get(
 router.get('/pending-review', authenticate, authorise('ar_specialist', 'managing_director'), listPendingReview)
 router.patch('/:id/approve', authenticate, authorise('ar_specialist'), approveMemo)
 router.patch('/:id/return', authenticate, authorise('ar_specialist'), returnMemo)
+
+// The crew's half of the return loop - corrects a returned memo and puts it back in the
+// review queue. Managing Director included so a stuck memo can be unblocked without Ravi.
+router.patch('/:id/resubmit', authenticate, authorise('field_crew', 'managing_director'), resubmitMemo)
 
 router.get(
   '/:id',

@@ -14,6 +14,11 @@ const Invoice = sequelize.define('Invoice', {
   contract_id: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'pricing_contracts', key: 'id' } },
   approved_by: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'users',             key: 'id' } },
   subtotal:      { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
+  // Deliberately always 0 in this platform, and the column exists only so the invoice
+  // shape mirrors Xero's. EFAR's pricing contracts are quoted GST-exclusive and Xero is
+  // the master ledger: GST is applied there, by the tax rate configured against the Xero
+  // account code, at the point the draft invoice is approved. Computing GST here as well
+  // would mean two systems owning the same number and disagreeing when a rate changes.
   tax_amount:    { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
   total_amount:  { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
   status: {
@@ -23,6 +28,11 @@ const Invoice = sequelize.define('Invoice', {
   },
   xero_invoice_id: { type: DataTypes.STRING(255), allowNull: true },
   approved_at:     { type: DataTypes.DATE,        allowNull: true },
+  // Chargeable items the crew recorded on the memo that the matched contract has no rate
+  // for, as [{ surcharge_type, label, detail }]. Written by the pricing engine at approval
+  // time and surfaced on the Invoice Detail screen so the AR Specialist can price them by
+  // hand instead of the charge silently disappearing. Empty array = nothing was dropped.
+  unpriced_surcharges: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
 }, {
   tableName: 'invoices',
   underscored: true,

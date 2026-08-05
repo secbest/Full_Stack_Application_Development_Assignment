@@ -1,5 +1,6 @@
 const { Op } = require('sequelize')
-const { Booking, ServiceMemo, Invoice, VendorInvoice } = require('../models')
+const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, SurchargeSchedule, Client } = require('../models')
+const { leakageService } = require('../services')
 const { success } = require('../utils')
 
 const BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'invoiced']
@@ -158,4 +159,56 @@ async function vendorExpenses(req, res) {
   })
 }
 
-module.exports = { fleetOverview, vendorExpenses }
+// GET /api/dashboard/revenue-leakage - the revenue leakage report.
+//
+// Every invoice carries `unpriced_surcharges`: charges the crew recorded on the memo that
+// the client's contract had no rate for. The pricing engine has always refused to drop
+// them silently, but nothing read the column, so the platform was quietly accumulating an
+// exact record of its own leakage. This turns that record into the report the Managing
+// Director needs: how much is going unbilled, which surcharge causes it, and which
+// contract to fix first.
+//
+// Values are ESTIMATES and labelled as such - by definition there is no contracted rate
+// for these charges, so the report prices them off the median rate other active contracts
+// charge for the same surcharge, and separately counts anything it cannot value at all.
+async function revenueLeakage(req, res) {
+  const { date_from, date_to } = req.query
+  const from = date_from || `${new Date().getFullYear()}-01-01`
+  const to = date_to || toDateOnly(new Date())
+
+  // Invoices created in the window that recorded at least one unpriced surcharge. The
+  // JSONB emptiness test is done in JS rather than SQL to stay portable across databases
+  // (the same reasoning as fleetOverview's set difference above).
+  const invoices = await Invoice.findAll({
+    where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+    include: [
+      { model: Client, attributes: ['id', 'name'], required: false },
+      { model: PricingContract, attributes: ['id', 'contract_name'], required: false },
+    ],
+  })
+
+  // Reference rates come from every surcharge row in the system: if any contract prices
+  // oxygen_per_litre, that is a defensible basis for valuing a contract that does not.
+  const surchargeRows = await SurchargeSchedule.findAll({ attributes: ['surcharge_type', 'amount'] })
+
+  const rows = invoices.map((inv) => ({
+    id: inv.id,
+    client_id: inv.client_id,
+    client_name: inv.Client ? inv.Client.name : null,
+    contract_id: inv.contract_id,
+    contract_name: inv.PricingContract ? inv.PricingContract.contract_name : null,
+    created_at: inv.createdAt,
+    unpriced_surcharges: inv.unpriced_surcharges || [],
+  }))
+
+  const report = leakageService.buildLeakageReport(rows, surchargeRows)
+
+  return success(res, {
+    period: { from, to },
+    ...report,
+    // Stated in the payload so the UI cannot present an estimate as a billed figure.
+    basis_note: 'Amounts are estimates. Unpriced surcharges have no contracted rate by definition, so each is valued at the median rate other contracts charge for the same surcharge type. Items with no reference rate anywhere in the system are counted but valued at zero.',
+  })
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage }

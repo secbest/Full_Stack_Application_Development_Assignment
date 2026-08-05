@@ -18,8 +18,9 @@
     "db:seed:pricing": "node src/scripts/seed-pricing.js",
     "db:seed:revenue": "node src/scripts/seed-more-revenue-invoices.js",
     "db:seed:vendor-invoice": "node src/scripts/seed-sample-vendor-invoice.js",
+    "db:seed:leakage": "node src/scripts/seed-leakage-demo.js",
     "db:reset:vendor-invoice-sync": "node src/scripts/reset-demo-vendor-invoice-sync.js",
-    "db:setup": "npm run db:sync && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing && npm run db:seed:revenue && npm run db:seed:vendor-invoice && npm run db:reset:vendor-invoice-sync",
+    "db:setup": "npm run db:sync && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing && npm run db:seed:revenue && npm run db:seed:vendor-invoice && npm run db:reset:vendor-invoice-sync && npm run db:seed:leakage",
     "db:reset": "node src/scripts/reset-all.js"
   },
   "dependencies": {

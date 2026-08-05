@@ -28,6 +28,7 @@ Authorization: Bearer <token>
 | 12 | PATCH | `/api/vendor-invoice-items/:id` | UC-06 | Yes |
 | 13 | GET | `/api/xero/sync-logs` | UC-08 | Yes |
 | 14 | POST | `/api/xero/sync-logs/:id/retry` | UC-08 | Yes |
+| 15 | GET | `/api/dashboard/revenue-leakage` | UC-09 | Yes |
 
 ---
 
@@ -704,6 +705,93 @@ Redirects to `/settings/xero?connected=true`
 | 409 | `RETRY_LIMIT_REACHED` | This sync has failed 3 or more times. Please contact support - this likely indicates a configuration issue in Xero. |
 | 409 | `NOT_FAILED` | Only failed sync log entries can be retried |
 | 503 | `XERO_NOT_CONNECTED` | Xero is not connected. Ask the Managing Director to reconnect before retrying. |
+
+---
+
+## 15. GET `/api/dashboard/revenue-leakage`
+
+Aggregates the `unpriced_surcharges` recorded on invoices into a revenue leakage report:
+charges the crew logged on a memo that the client's pricing contract had no rate for, so
+they never reached an invoice.
+
+**Auth:** `managing_director`, `ar_specialist`. The MD reads the figure; the AR Specialist
+adds the missing contract rates the report points at, so restricting it to the MD alone
+would name the problem to the only person who cannot act on it.
+
+### Query parameters
+
+| Name | Type | Default | Notes |
+|---|---|---|---|
+| `date_from` | `YYYY-MM-DD` | 1 Jan of the current year | Invoice creation date, inclusive |
+| `date_to` | `YYYY-MM-DD` | today | Inclusive to end of day |
+
+Dates are validated as strings, not coerced to `Date`, because the controller builds an
+explicit end-of-day bound from `date_to`.
+
+### Estimation basis
+
+These charges have no contracted rate by definition, so every amount is an **estimate** and
+is labelled as one in the response (`basis_note`). Each unpriced entry is valued at
+`quantity x median rate charged for the same surcharge type by all other contracts`
+(`contract_peer_median`). Where no contract anywhere prices that surcharge, the entry is
+counted but valued at zero (`no_reference_rate`) rather than guessed at.
+
+Two counters state the report's own blind spots rather than rounding them away:
+
+- `items_without_reference_rate` - counted, could not be valued.
+- `items_without_recorded_quantity` - entries written before the pricing engine stored a
+  numeric quantity, treated as 1 unit. This UNDER-states leakage rather than parsing a
+  human-readable string like `"6 h recorded"` to find a number.
+
+### 200 Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "period": { "from": "2020-01-01", "to": "2026-12-31" },
+    "summary": {
+      "estimated_leakage": 909.00,
+      "affected_invoice_count": 3,
+      "unpriced_item_count": 6,
+      "items_without_reference_rate": 0,
+      "items_without_recorded_quantity": 1,
+      "top_recommendation": "Sembawang Marine 2026 (incomplete surcharge schedule) is missing 3 surcharge rate(s), accounting for an estimated $909.00 of unbilled charges across 3 invoice(s)."
+    },
+    "by_surcharge_type": [
+      { "surcharge_type": "overtime_per_hour", "label": "Overtime", "occurrences": 3, "total_quantity": 18, "unit_rate": 45.00, "basis": "contract_peer_median", "estimated_amount": 810.00 }
+    ],
+    "by_contract": [
+      { "contract_id": 2, "contract_name": "Sembawang Marine 2026 (incomplete surcharge schedule)", "client_id": 8, "client_name": "Sembawang Marine Services", "affected_invoices": 3, "missing_surcharge_types": ["overtime_per_hour", "oxygen_per_litre", "waiting_time_per_30min"], "estimated_amount": 909.00 }
+    ],
+    "affected_invoices": [
+      { "invoice_id": 8, "client_id": 8, "client_name": "Sembawang Marine Services", "contract_id": 2, "created_at": "2026-08-05T00:00:00.000Z", "unpriced_count": 2, "estimated_amount": 406.00 }
+    ],
+    "reference_rates": {
+      "overtime_per_hour": { "median": 45.00, "sampleSize": 1, "min": 45.00, "max": 45.00 }
+    },
+    "basis_note": "Amounts are estimates. ..."
+  }
+}
+```
+
+`reference_rates` is returned so any estimate in the report can be audited back to the
+rates it was derived from.
+
+### Errors
+
+| Status | Code | Message |
+|--------|------|---------|
+| 400 | `VALIDATION_ERROR` | `date_from`/`date_to` not in YYYY-MM-DD format, or `date_from` after `date_to` |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not `managing_director` or `ar_specialist` |
+
+### Demo data
+
+The default seeded contract prices every surcharge, so the report is correctly empty.
+`npm run db:seed:leakage` creates a client on a contract deliberately missing three
+surcharge rates, plus three booking -> memo -> invoice chains that recorded exactly those
+charges. Included in `npm run db:setup`.
 
 ---
 
