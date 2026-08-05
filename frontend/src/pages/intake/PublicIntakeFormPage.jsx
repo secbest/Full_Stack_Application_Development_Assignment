@@ -13,8 +13,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RequiredLabel } from '@/components/RequiredLabel'
 import { FieldError } from '@/components/FieldError'
+import { LocationAutocomplete } from '@/components/LocationAutocomplete'
 import { submitIntake } from '@/api/intake'
-import { intakeCreateSchema, SERVICE_TYPES, SERVICE_TYPE_LABELS, SERVICE_TIERS, SERVICE_TIER_LABELS } from '@/validation/intakeValidation'
+import { intakeCreateSchema, SERVICE_TYPES, SERVICE_TYPE_LABELS } from '@/validation/intakeValidation'
 
 const INITIAL_VALUES = {
   customer_name: '',
@@ -22,7 +23,6 @@ const INITIAL_VALUES = {
   contact_email: '',
   contact_phone: '',
   service_type: '',
-  service_tier: '',
   preferred_date: '',
   preferred_time: '',
   pickup_location: '',
@@ -85,17 +85,17 @@ export default function PublicIntakeFormPage() {
           <CardTitle>Request Ambulance Service</CardTitle>
           <CardDescription><span className="text-[#EF4444]">*</span> Required field</CardDescription>
         </CardHeader>
-        <form onSubmit={formik.handleSubmit}>
+        <form onSubmit={formik.handleSubmit} autoComplete="on">
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <RequiredLabel htmlFor="customer_name">Full Name</RequiredLabel>
-                <Input id="customer_name" name="customer_name" placeholder="John Tan" value={formik.values.customer_name} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                <Input id="customer_name" name="customer_name" autoComplete="name" placeholder="John Tan" value={formik.values.customer_name} onChange={formik.handleChange} onBlur={formik.handleBlur} />
                 <FieldError formik={formik} name="customer_name" />
               </div>
               <div>
                 <RequiredLabel htmlFor="organisation">Organisation</RequiredLabel>
-                <Input id="organisation" name="organisation" placeholder="Changi General Hospital" value={formik.values.organisation} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                <Input id="organisation" name="organisation" autoComplete="organization" placeholder="Changi General Hospital" value={formik.values.organisation} onChange={formik.handleChange} onBlur={formik.handleBlur} />
                 <FieldError formik={formik} name="organisation" />
               </div>
             </div>
@@ -103,37 +103,26 @@ export default function PublicIntakeFormPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <RequiredLabel htmlFor="contact_email">Contact Email</RequiredLabel>
-                <Input id="contact_email" name="contact_email" type="email" placeholder="john.tan@cgh.com.sg" value={formik.values.contact_email} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                <Input id="contact_email" name="contact_email" type="email" autoComplete="email" placeholder="john.tan@cgh.com.sg" value={formik.values.contact_email} onChange={formik.handleChange} onBlur={formik.handleBlur} />
                 <FieldError formik={formik} name="contact_email" />
               </div>
               <div>
                 <RequiredLabel htmlFor="contact_phone">Contact Phone</RequiredLabel>
-                <Input id="contact_phone" name="contact_phone" placeholder="91234567" value={formik.values.contact_phone} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+                <Input id="contact_phone" name="contact_phone" type="tel" inputMode="numeric" autoComplete="tel" placeholder="91234567" value={formik.values.contact_phone} onChange={formik.handleChange} onBlur={formik.handleBlur} />
                 <FieldError formik={formik} name="contact_phone" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <RequiredLabel htmlFor="service_type">Service Type</RequiredLabel>
-                <Select value={formik.values.service_type} onValueChange={(v) => formik.setFieldValue('service_type', v)}>
-                  <SelectTrigger id="service_type"><SelectValue placeholder="Select a service type…" /></SelectTrigger>
-                  <SelectContent>
-                    {SERVICE_TYPES.map((t) => <SelectItem key={t} value={t}>{SERVICE_TYPE_LABELS[t]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <FieldError formik={formik} name="service_type" />
-              </div>
-              <div>
-                <RequiredLabel htmlFor="service_tier">Service Tier</RequiredLabel>
-                <Select value={formik.values.service_tier} onValueChange={(v) => formik.setFieldValue('service_tier', v)}>
-                  <SelectTrigger id="service_tier"><SelectValue placeholder="Select a service tier…" /></SelectTrigger>
-                  <SelectContent>
-                    {SERVICE_TIERS.map((t) => <SelectItem key={t} value={t}>{SERVICE_TIER_LABELS[t]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <FieldError formik={formik} name="service_tier" />
-              </div>
+            <div>
+              <RequiredLabel htmlFor="service_type">Service Type</RequiredLabel>
+              <Select value={formik.values.service_type} onValueChange={(v) => formik.setFieldValue('service_type', v)}>
+                <SelectTrigger id="service_type"><SelectValue placeholder="Select a service type…" /></SelectTrigger>
+                <SelectContent>
+                  {SERVICE_TYPES.map((t) => <SelectItem key={t} value={t}>{SERVICE_TYPE_LABELS[t]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <FieldError formik={formik} name="service_type" />
+              <p className="mt-1.5 text-xs text-slate-500">Our quotations team will assess the appropriate service tier.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -151,13 +140,27 @@ export default function PublicIntakeFormPage() {
 
             <div>
               <RequiredLabel htmlFor="pickup_location">Pickup Location</RequiredLabel>
-              <Input id="pickup_location" name="pickup_location" placeholder="Changi General Hospital, 2 Simei Street 3, Singapore 529889" value={formik.values.pickup_location} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+              <LocationAutocomplete
+                id="pickup_location"
+                name="pickup_location"
+                placeholder="Search for the pickup address"
+                value={formik.values.pickup_location}
+                onChange={(value) => formik.setFieldValue('pickup_location', value)}
+                onBlur={() => formik.setFieldTouched('pickup_location', true)}
+              />
               <FieldError formik={formik} name="pickup_location" />
             </div>
 
             <div>
               <RequiredLabel htmlFor="destination">Destination</RequiredLabel>
-              <Input id="destination" name="destination" placeholder="Singapore General Hospital, Outram Road, Singapore 169608" value={formik.values.destination} onChange={formik.handleChange} onBlur={formik.handleBlur} />
+              <LocationAutocomplete
+                id="destination"
+                name="destination"
+                placeholder="Search for the destination address"
+                value={formik.values.destination}
+                onChange={(value) => formik.setFieldValue('destination', value)}
+                onBlur={() => formik.setFieldTouched('destination', true)}
+              />
               <FieldError formik={formik} name="destination" />
             </div>
 

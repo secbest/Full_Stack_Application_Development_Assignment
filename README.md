@@ -87,7 +87,7 @@ Interim prototype walkthrough presented to **Geraldine (EFAR)** and **Doris Tan 
 - Node.js 18+
 - npm 9+
 - A `.env` file in `backend/` based on `backend/.env.example` (Supabase URL, JWT secrets, Cloudinary, Gemini, Xero keys)
-- A `.env` file in `frontend/` based on `frontend/.env.example` (backend API URL)
+- A `.env` file in `frontend/` based on `frontend/.env.example` (backend API URL and, for customer address search, a Google Maps browser API key)
 
 ### Database setup (run once per environment)
 
@@ -100,6 +100,13 @@ npm run db:seed:intakes   # inserts demo intake_submissions (requires db:seed fi
 npm run db:seed:bookings  # inserts demo bookings for Ravi Kumar (requires db:seed + db:seed:clients first)
 npm run db:seed:xero      # inserts demo Xero connection + vendor invoices (AP - Kwan Hua)
 npm run db:seed:pricing   # inserts pricing contract + rates + surcharges + review-queue memos (AR Wave 3 - Kwan Hua; requires the seeds above)
+```
+
+An existing database created before customers stopped choosing the service tier also needs this
+non-destructive, idempotent constraint update:
+
+```bash
+npm run db:fix-intake-tier-nullable
 ```
 
 > **Upgrading an existing database:** `db:sync` runs `sequelize.sync({ alter: true })`, which adds new
@@ -135,6 +142,11 @@ cd frontend
 npm install
 npm run dev
 ```
+
+For Google-style pickup and destination suggestions, set `VITE_GOOGLE_MAPS_API_KEY` in
+`frontend/.env`, enable **Maps JavaScript API** and **Places API (New)** for that Google Cloud
+project, and restrict the browser key to the application's allowed web origins. Without a key, both
+fields remain usable as normal address inputs. See Google's [Place Autocomplete setup guide](https://developers.google.com/maps/documentation/javascript/place-autocomplete-new).
 
 ### Backend
 

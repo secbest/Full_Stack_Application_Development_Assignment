@@ -37,6 +37,7 @@ const SERVICE_TYPE_LABELS = {
 // The call centre posts a case about an hour before its start time (EFAR, 00:18:26),
 // so a confirmed job "belongs to now" once it is within this window.
 const ACTIVATION_WINDOW_MS = 60 * 60 * 1000
+const CURRENT_JOB_REFRESH_MS = 30 * 1000
 
 // "Upcoming jobs" means jobs with something still to do. A completed/invoiced booking
 // already has its memo submitted - it belongs in Memo History, not here. Without this
@@ -197,6 +198,7 @@ export default function MyJobsPage() {
   const [jobs, setJobs] = useState([])
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [milestoneBusy, setMilestoneBusy] = useState(false)
+  const [now, setNow] = useState(() => new Date())
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -217,9 +219,17 @@ export default function MyJobsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const currentJob = useMemo(() => (status === 'ready' ? selectCurrentJob(jobs) : null), [status, jobs])
+  // Keep an open crew dashboard live. Previously the current-job window was only
+  // evaluated when jobs loaded, so a booking could pass its scheduled time while
+  // remaining stuck in Upcoming until the crew manually refreshed the whole page.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), CURRENT_JOB_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const currentJob = useMemo(() => (status === 'ready' ? selectCurrentJob(jobs, now) : null), [status, jobs, now])
   const otherJobs = jobs.filter((j) => j.id !== currentJob?.id && UPCOMING_STATUSES.includes(j.status))
-  const filteredJobs = otherJobs.filter((j) => matchesDateFilter(j, dateFilter))
+  const filteredJobs = otherJobs.filter((j) => matchesDateFilter(j, dateFilter, now))
 
   async function handleRecordMilestone(milestoneType) {
     if (!currentJob) return

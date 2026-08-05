@@ -9,6 +9,7 @@
     "test": "jest",
     "db:sync": "node src/scripts/sync-db.js",
     "db:fix-notification-enum": "node src/scripts/add-notification-enum-values.js",
+    "db:fix-intake-tier-nullable": "node src/scripts/fix-intake-tier-nullable.js",
     "db:seed": "node src/scripts/seed-users.js",
     "db:seed:clients": "node src/scripts/seed-clients.js",
     "db:seed:intakes": "node src/scripts/seed-intakes.js",

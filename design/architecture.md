@@ -150,6 +150,7 @@ Used in the AP vendor invoice processing workflow to eliminate manual data entry
 ```
 VITE_API_BASE_URL=        # Deployed Render backend URL
 VITE_CLOUDINARY_CLOUD_NAME=
+VITE_GOOGLE_MAPS_API_KEY= # Browser-restricted key for customer location autocomplete
 ```
 
 **Backend (`backend/.env`)**

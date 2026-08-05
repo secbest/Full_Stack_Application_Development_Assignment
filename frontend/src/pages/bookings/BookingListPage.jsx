@@ -664,7 +664,7 @@ export default function BookingListPage() {
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Service Tier</div>
-                    <div className="text-sm text-slate-900">{viewedIntake.service_tier.charAt(0).toUpperCase() + viewedIntake.service_tier.slice(1)}</div>
+                    <div className="text-sm text-slate-900">{viewedIntake.service_tier ? viewedIntake.service_tier.charAt(0).toUpperCase() + viewedIntake.service_tier.slice(1) : 'To be assessed'}</div>
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Preferred Date</div>

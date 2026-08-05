@@ -86,7 +86,7 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     expect(within(hero).getByText('On the way')).toBeInTheDocument()
   })
 
-  test('a confirmed job today starting within the next hour becomes the hero, offering "Activated"', async () => {
+  test('a confirmed job today starting within the next hour becomes the hero, offering "Start Job"', async () => {
     const soon = new Date(Date.now() + 30 * 60 * 1000)
     mock.onGet('/bookings/my-jobs').reply(200, {
       success: true,
@@ -95,7 +95,7 @@ describe('MyJobsPage - current-job hero selection (client feedback #3)', () => {
     renderPage()
 
     const hero = await screen.findByTestId('current-job-hero')
-    expect(within(hero).getByRole('button', { name: 'Activated' })).toBeEnabled()
+    expect(within(hero).getByRole('button', { name: 'Start Job' })).toBeEnabled()
   })
 
   test('with no in_progress job and nothing inside the window there is no hero, and Upcoming jobs is still visible', async () => {
@@ -187,10 +187,10 @@ describe('MyJobsPage - live milestone stepper (client feedback #1)', () => {
     renderPage()
 
     const hero = await screen.findByTestId('current-job-hero')
-    await user.click(within(hero).getByRole('button', { name: 'Activated' }))
+    await user.click(within(hero).getByRole('button', { name: 'Start Job' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('already been recorded')
-    expect(within(hero).getByRole('button', { name: 'Activated' })).toBeEnabled()
+    expect(within(hero).getByRole('button', { name: 'Start Job' })).toBeEnabled()
   })
 })
 

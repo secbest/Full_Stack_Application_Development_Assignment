@@ -6,7 +6,7 @@ import api from '../../api';
 
 const serviceTypeLabels = {
   eas: 'EAS (Emergency Ambulance Services)',
-  mts: 'MTS (Medical Transfer Services)',
+  mts: 'MTS (Medical Transport Services)',
   event_standby: 'Event Standby',
   workplace_standby: 'Workplace Standby',
 };
@@ -22,7 +22,7 @@ function formatServiceType(type) {
 }
 
 function formatServiceTier(tier) {
-  return serviceTierLabels[tier] || tier
+  return serviceTierLabels[tier] || 'To be assessed'
 }
 
 function formatDate(dateString) {
@@ -115,9 +115,13 @@ export default function IntakeQueuePage() {
   }, [])
 
   async function handleConfirmBooking(intake) {
+    if (!actionTier) {
+      setToast({ type: 'error', message: 'Select a service tier before confirming the booking.' })
+      return
+    }
     try {
       const body = {
-        service_tier: actionTier ? actionTier.toLowerCase() : null,
+        service_tier: actionTier.toLowerCase(),
         notes: internalNotes.trim() || null,
       }
       await api.post(`/intake/${intake.id}/confirm`, body)
@@ -382,8 +386,9 @@ export default function IntakeQueuePage() {
                   <div className="text-sm font-semibold text-slate-900">Action</div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium uppercase text-slate-500">Service Tier</label>
-                  <select value={actionTier} onChange={(e) => setActionTier(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none">
+                  <label htmlFor="action_service_tier" className="text-xs font-medium uppercase text-slate-500">Service Tier <span className="text-red-500">*</span></label>
+                  <select id="action_service_tier" value={actionTier} onChange={(e) => setActionTier(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none">
+                    <option value="" disabled>Select service tier</option>
                     <option value="Basic">Basic</option>
                     <option value="Advanced">Advanced</option>
                     <option value="Critical">Critical</option>

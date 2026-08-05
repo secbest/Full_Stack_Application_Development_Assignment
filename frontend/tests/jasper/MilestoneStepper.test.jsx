@@ -54,15 +54,15 @@ describe('MilestoneStepper - breadcrumb layout', () => {
       />
     )
 
-    await user.click(screen.getByRole('button', { name: /Activated - recorded/i }))
+    await user.click(screen.getByRole('button', { name: /Start Job - recorded/i }))
 
     expect(screen.getByTestId('milestone-caption')).toHaveTextContent(expectedTime('2026-08-04T00:45:00Z'))
   })
 
-  test('with no milestones recorded yet, "Activated" is the action button and there is no caption', () => {
+  test('with no milestones recorded yet, "Start Job" is the action button and there is no caption', () => {
     render(<MilestoneStepper milestones={[]} onRecord={() => {}} />)
 
-    expect(screen.getByTestId('milestone-next-action')).toHaveTextContent('Activated')
+    expect(screen.getByTestId('milestone-next-action')).toHaveTextContent('Start Job')
     expect(screen.queryByTestId('milestone-caption')).not.toBeInTheDocument()
   })
 

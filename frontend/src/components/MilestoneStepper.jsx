@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 export const MILESTONE_SEQUENCE = ['activated', 'arrived_at_location', 'en_route', 'arrived_at_destination', 'job_completed']
 
 export const MILESTONE_LABELS = {
-  activated: 'Activated',
+  activated: 'Start Job',
   arrived_at_location: 'Arrived at Location',
   en_route: 'On the way',
   arrived_at_destination: 'Arrived at Destination',

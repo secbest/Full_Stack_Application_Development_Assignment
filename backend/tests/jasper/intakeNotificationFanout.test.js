@@ -30,7 +30,6 @@ function validBody(overrides = {}) {
     contact_email: 'john.tan@cgh.com.sg',
     contact_phone: '91234567',
     service_type: 'eas',
-    service_tier: 'basic',
     preferred_date: '2026-09-01',
     preferred_time: '10:00',
     pickup_location: 'Changi General Hospital',
@@ -69,6 +68,7 @@ describe('createIntake - notification fan-out', () => {
       user_id: 8, type: 'new_intake_submission', link: '/intake-queue',
     }))
     expect(res.status).toHaveBeenCalledWith(201)
+    expect(IntakeSubmission.create).toHaveBeenCalledWith(expect.objectContaining({ service_tier: null }))
   })
 
   test('still returns 201 when the specialist lookup itself throws', async () => {
