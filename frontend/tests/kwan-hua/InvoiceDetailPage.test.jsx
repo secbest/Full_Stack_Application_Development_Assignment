@@ -39,21 +39,92 @@ import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 function baseInvoice(overrides = {}) {
   return {
     id: 9,
+    client_id: 1,
     booking_reference: 'BK-2026-0142',
     client_name: 'Tan Tock Seng Hospital',
     contract_name: 'TTSH - FY2027',
     memo_id: 55,
     subtotal: '850.00',
-    tax_amount: '0.00',
-    total_amount: '850.00',
+    gst_rate_percent: '9.00',
+    gst_effective_date: '2026-06-10',
+    tax_amount: '76.50',
+    total_amount: '926.50',
     status: 'matched',
     xero_invoice_id: null,
+    unpriced_surcharges: [],
     line_items: [
       { id: 1, description: 'EAS - Office Hours', quantity: '1', unit_price: '850.00', amount: '850.00', is_manual_adjustment: false },
     ],
     ...overrides,
   }
 }
+
+describe('InvoiceDetailPage - retry automatic matching', () => {
+  test('explains unpriced charges clearly when no active contract exists', async () => {
+    mock.onGet('/invoices/9').reply(200, {
+      success: true,
+      data: baseInvoice({
+        status: 'unmatched',
+        contract_name: null,
+        subtotal: '0.00',
+        total_amount: '0.00',
+        line_items: [],
+        unpriced_surcharges: [
+          { surcharge_type: 'oxygen_base', label: 'Oxygen (base)', detail: '2L used' },
+          { surcharge_type: 'disposables_base', label: 'Disposables', detail: 'recorded on memo' },
+        ],
+      }),
+    })
+
+    renderDetail()
+
+    expect(await screen.findByText('2 recorded charges awaiting pricing')).toBeInTheDocument()
+    expect(screen.getByText(/no active contract was available to price them/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no active contract has no rate/i)).not.toBeInTheDocument()
+  })
+
+  test('retries an unmatched invoice and renders the contract-priced result', async () => {
+    const user = userEvent.setup()
+    const unmatched = baseInvoice({
+      status: 'unmatched', contract_name: null, subtotal: '0.00', total_amount: '0.00', line_items: [],
+    })
+    mock.onGet('/invoices/9').replyOnce(200, { success: true, data: unmatched })
+    mock.onPost('/invoices/9/rematch').reply(200, {
+      success: true,
+      data: { invoice_id: 9, status: 'matched', contract_id: 4, subtotal: 1200, total_amount: 1200, warning: null },
+    })
+    mock.onGet('/invoices/9').reply(200, {
+      success: true,
+      data: baseInvoice({
+        status: 'matched', contract_name: 'TTSH - FY2027', subtotal: '1200.00', total_amount: '1200.00',
+        line_items: [{ id: 3, description: 'EAS - Two-Way Hospital', quantity: '1', unit_price: '1200.00', amount: '1200.00', is_manual_adjustment: false }],
+      }),
+    })
+
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Invoice #9' })
+    expect(screen.getByText(/Automatic pricing needs a contract or matching rate/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Retry Match/i }))
+
+    expect(await screen.findByText('EAS - Two-Way Hospital')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invoice matched successfully')
+    expect(mock.history.post).toHaveLength(1)
+    expect(mock.history.post[0].url).toBe('/invoices/9/rematch')
+  })
+
+  test('uses the proper Xero product name in the locked invoice message', async () => {
+    mock.onGet('/invoices/9').reply(200, {
+      success: true,
+      data: baseInvoice({ status: 'synced_to_xero', xero_invoice_id: 'xero-invoice-9' }),
+    })
+
+    renderDetail()
+
+    expect(await screen.findByText('This invoice has been synced to Xero - line items are locked.')).toBeInTheDocument()
+    expect(screen.getByText('GST (9%)')).toBeInTheDocument()
+  })
+})
 
 let mock
 

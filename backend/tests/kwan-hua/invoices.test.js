@@ -1,30 +1,51 @@
 jest.mock('../../src/models', () => ({
   Invoice: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
-  InvoiceLineItem: { findAll: jest.fn(), create: jest.fn(), findOne: jest.fn() },
-  Booking: { update: jest.fn() },
+  InvoiceLineItem: { findAll: jest.fn(), create: jest.fn(), findOne: jest.fn(), count: jest.fn(), bulkCreate: jest.fn() },
+  Booking: { update: jest.fn(), findByPk: jest.fn() },
   Client: { findByPk: jest.fn() },
-  ServiceMemo: { update: jest.fn() },
-  PricingContract: {},
-  User: {},
+  ServiceMemo: { update: jest.fn(), findByPk: jest.fn() },
+  PricingContract: { findOne: jest.fn() },
+  PricingRate: { findAll: jest.fn() },
+  SurchargeSchedule: { findAll: jest.fn() },
+  User: { findOne: jest.fn() },
   // findOrCreate: the sync log is now one row per invoice, incremented per attempt, rather
   // than a fresh row each time. findOne: the retry endpoint reads it to enforce the cap.
   XeroSyncLog: { create: jest.fn(), findOrCreate: jest.fn(), findOne: jest.fn() },
 }))
 
+jest.mock('../../src/config', () => ({
+  transaction: jest.fn((cb) => cb({ LOCK: { UPDATE: 'UPDATE' } })),
+}))
+
 jest.mock('../../src/services', () => ({
   xeroService: { pushArInvoice: jest.fn(), MAX_SYNC_ATTEMPTS: 3 },
+  pricingService: { computeInvoiceLineItems: jest.fn() },
+  gstService: {
+    buildSnapshot: jest.fn(),
+    calculateTotals: jest.fn((items, rate) => {
+      const subtotal = items.reduce((sum, item) => sum + Number(item.amount), 0)
+      const tax_amount = Math.round(items.reduce(
+        (sum, item) => sum + Math.round(Number(item.amount) * Number(rate)) / 100,
+        0
+      ) * 100) / 100
+      return { subtotal, tax_amount, total_amount: subtotal + tax_amount }
+    }),
+  },
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
 
 jest.mock('../../src/controllers/xeroController', () => ({ getFreshConnection: jest.fn() }))
 
-const { Invoice, InvoiceLineItem, Client, XeroSyncLog } = require('../../src/models')
-const { xeroService } = require('../../src/services')
+const {
+  Invoice, InvoiceLineItem, Booking, Client, ServiceMemo, PricingContract,
+  PricingRate, SurchargeSchedule, XeroSyncLog,
+} = require('../../src/models')
+const { xeroService, pricingService, gstService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  addLineItem, updateLineItem, deleteLineItem, batchApprove, retryXero, listInvoices,
+  addLineItem, updateLineItem, deleteLineItem, rematchInvoice, batchApprove, retryXero, listInvoices,
 } = require('../../src/controllers/invoiceController')
 
 function mockRes() {
@@ -37,7 +58,12 @@ function payload(res) {
   return res.json.mock.calls[0][0]
 }
 function makeInvoice(overrides = {}) {
-  const obj = { id: 1, status: 'matched', tax_amount: 0, subtotal: 850, total_amount: 850, ...overrides }
+  const obj = {
+    id: 1, status: 'matched', subtotal: 850,
+    gst_rate_id: 3, gst_rate_percent: 9, gst_effective_date: '2026-08-01', xero_tax_type: 'OUTPUT',
+    tax_amount: 76.5, total_amount: 926.5,
+    ...overrides,
+  }
   obj.update = jest.fn(async (fields) => { Object.assign(obj, fields); return obj })
   return obj
 }
@@ -57,6 +83,75 @@ beforeEach(() => {
   syncLog = makeSyncLog()
   XeroSyncLog.findOrCreate.mockResolvedValue([syncLog, true])
   XeroSyncLog.findOne.mockResolvedValue(null)
+  gstService.buildSnapshot.mockResolvedValue({
+    gst_rate_id: 3, gst_rate_percent: 9, gst_effective_date: '2026-08-01', xero_tax_type: 'OUTPUT',
+  })
+})
+
+describe('rematchInvoice', () => {
+  test('keeps the invoice unmatched when no contract covers the service date', async () => {
+    const invoice = makeInvoice({ id: 10, status: 'unmatched', memo_id: 5, booking_id: 8, client_id: 12 })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    ServiceMemo.findByPk.mockResolvedValue({ id: 5, service_type: 'eas', transfer_type: 'two_way_hospital', is_office_hours: true })
+    Booking.findByPk.mockResolvedValue({ id: 8, scheduled_date: '2026-08-01' })
+    InvoiceLineItem.count.mockResolvedValue(0)
+    PricingContract.findOne.mockResolvedValue(null)
+
+    const res = mockRes()
+    await rematchInvoice({ params: { id: 10 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(422)
+    expect(payload(res).code).toBe('NO_ACTIVE_CONTRACT')
+    expect(invoice.update).not.toHaveBeenCalled()
+    expect(InvoiceLineItem.bulkCreate).not.toHaveBeenCalled()
+  })
+
+  test('reprices an unmatched invoice after the missing contract and rate are added', async () => {
+    const invoice = makeInvoice({
+      id: 10, status: 'unmatched', memo_id: 5, booking_id: 8, client_id: 12,
+      contract_id: null, tax_amount: 0, subtotal: 0, total_amount: 0,
+    })
+    const memo = { id: 5, service_type: 'eas', transfer_type: 'two_way_hospital', is_office_hours: true }
+    const generatedLine = {
+      description: 'EAS - Two-Way Hospital Transfer (Office Hours)',
+      quantity: 1, unit_price: 1200, amount: 1200, is_manual_adjustment: false,
+    }
+    Invoice.findByPk.mockResolvedValue(invoice)
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    Booking.findByPk.mockResolvedValue({ id: 8, scheduled_date: '2026-08-01' })
+    InvoiceLineItem.count.mockResolvedValue(0)
+    PricingContract.findOne.mockResolvedValue({ id: 7 })
+    PricingRate.findAll.mockResolvedValue([{ id: 3, time_of_day: 'office_hours', base_amount: 1200 }])
+    SurchargeSchedule.findAll.mockResolvedValue([])
+    pricingService.computeInvoiceLineItems.mockReturnValue({
+      matched: true, lineItems: [generatedLine], subtotal: 1200, unpriced: [],
+    })
+    InvoiceLineItem.findAll.mockResolvedValue([{ id: 99, ...generatedLine }])
+
+    const res = mockRes()
+    await rematchInvoice({ params: { id: 10 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(invoice.update).toHaveBeenCalledWith(expect.objectContaining({
+      contract_id: 7, status: 'matched', subtotal: 1200, tax_amount: 108, total_amount: 1308,
+    }), expect.anything())
+    expect(InvoiceLineItem.bulkCreate).toHaveBeenCalledWith(
+      [expect.objectContaining({ invoice_id: 10, amount: 1200 })],
+      expect.anything()
+    )
+    expect(payload(res).data).toMatchObject({ invoice_id: 10, status: 'matched', contract_id: 7 })
+  })
+
+  test('does not overwrite an invoice that has already left unmatched status', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ status: 'adjusted' }))
+    const res = mockRes()
+
+    await rematchInvoice({ params: { id: 1 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVOICE_NOT_UNMATCHED')
+    expect(PricingContract.findOne).not.toHaveBeenCalled()
+  })
 })
 
 describe('addLineItem (UC-05)', () => {

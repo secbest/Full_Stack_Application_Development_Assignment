@@ -1,9 +1,12 @@
 // Owner: Kwan Hua (Wave 3 takeover of the AR stream). AR design authored by Jasper (design/jasper/).
 const { Op } = require('sequelize')
+const sequelize = require('../config')
 const {
-  Invoice, InvoiceLineItem, Booking, Client, ServiceMemo, PricingContract, User, XeroSyncLog,
+  Invoice, InvoiceLineItem, Booking, Client, ServiceMemo, PricingContract, PricingRate,
+  SurchargeSchedule, User, XeroSyncLog,
 } = require('../models')
-const { xeroService } = require('../services')
+const { xeroService, pricingService, gstService } = require('../services')
+const { findActiveContract } = require('../services/activeContractService')
 const notificationService = require('../services/notificationService')
 const { getFreshConnection } = require('./xeroController')
 const { success, created, error, notFound } = require('../utils')
@@ -47,13 +50,19 @@ function exclusiveEndOfDay(value) {
   return next
 }
 
-// Recomputes subtotal/total from the current line items and persists it.
+// Recomputes GST-exclusive subtotal, GST and total from the current line items using the
+// rate frozen on the invoice. It never looks up the current rate, because doing so would
+// rewrite an older invoice when a new GST period begins.
 async function recalcInvoiceTotals(invoice) {
+  if (invoice.gst_rate_percent === null || invoice.gst_rate_percent === undefined) {
+    const err = new Error('This legacy invoice has no GST-rate snapshot. Run the GST migration before editing or approving it.')
+    err.code = 'GST_RATE_NOT_SNAPSHOTTED'
+    throw err
+  }
   const items = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id } })
-  const subtotal = round2(items.reduce((sum, li) => sum + Number(li.amount), 0))
-  const total = round2(subtotal + Number(invoice.tax_amount || 0))
-  await invoice.update({ subtotal, total_amount: total })
-  return { subtotal, total_amount: total }
+  const totals = gstService.calculateTotals(items, invoice.gst_rate_percent)
+  await invoice.update(totals)
+  return totals
 }
 
 // GET /api/invoices - UC-05/06/10: filterable AR invoice queue.
@@ -99,6 +108,8 @@ async function listInvoices(req, res) {
         client_name: inv.Client ? inv.Client.name : null,
         memo_id: inv.memo_id,
         subtotal: inv.subtotal,
+        gst_rate_percent: inv.gst_rate_percent,
+        gst_effective_date: inv.gst_effective_date,
         tax_amount: inv.tax_amount,
         total_amount: inv.total_amount,
         status: inv.status,
@@ -138,6 +149,9 @@ async function getInvoiceById(req, res) {
       contract_id: invoice.contract_id,
       contract_name: invoice.PricingContract ? invoice.PricingContract.contract_name : null,
       subtotal: invoice.subtotal,
+      gst_rate_percent: invoice.gst_rate_percent,
+      gst_effective_date: invoice.gst_effective_date,
+      xero_tax_type: invoice.xero_tax_type,
       tax_amount: invoice.tax_amount,
       total_amount: invoice.total_amount,
       status: invoice.status,
@@ -214,7 +228,7 @@ async function addLineItem(req, res) {
         engine_unit_price: item.engine_unit_price,
         engine_amount: item.engine_amount,
       },
-      invoice: { id: invoice.id, subtotal: totals.subtotal, total_amount: totals.total_amount, status: invoice.status },
+      invoice: { id: invoice.id, ...totals, status: invoice.status },
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
@@ -278,7 +292,7 @@ async function updateLineItem(req, res) {
         engine_unit_price: item.engine_unit_price,
         engine_amount: item.engine_amount,
       },
-      invoice: { id: invoice.id, subtotal: totals.subtotal, total_amount: totals.total_amount, status: invoice.status },
+      invoice: { id: invoice.id, ...totals, status: invoice.status },
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
@@ -304,7 +318,7 @@ async function deleteLineItem(req, res) {
     const totals = await recalcInvoiceTotals(invoice)
     return success(res, {
       message: 'Line item deleted.',
-      invoice: { id: invoice.id, subtotal: totals.subtotal, total_amount: totals.total_amount, status: invoice.status },
+      invoice: { id: invoice.id, ...totals, status: invoice.status },
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
@@ -355,7 +369,11 @@ async function syncInvoiceToXero(invoice, connection) {
     {
       id: invoice.id,
       client_name: client ? client.name : null,
+      subtotal: invoice.subtotal,
+      gst_rate_percent: invoice.gst_rate_percent,
+      tax_amount: invoice.tax_amount,
       total_amount: invoice.total_amount,
+      xero_tax_type: invoice.xero_tax_type,
       InvoiceLineItems: items,
       booking_reference: booking ? booking.reference_number : null,
       service_date: booking ? booking.scheduled_date : null,
@@ -388,6 +406,153 @@ async function syncInvoiceToXero(invoice, connection) {
     })
   }
   return { ok: false, error: result.error, attempt_count }
+}
+
+// POST /api/invoices/:id/rematch - rerun automatic pricing for an invoice that was
+// created unmatched. This is the missing second half of the recovery instruction shown
+// after memo approval: creating a contract or rate does not mutate an already-created
+// invoice by itself, so AR needs an explicit, auditable action to try the engine again.
+async function rematchInvoice(req, res) {
+  try {
+    const outcome = await sequelize.transaction(async (t) => {
+      const invoice = await Invoice.findByPk(req.params.id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      })
+      if (!invoice) {
+        return { error: { message: 'No invoice with this id.', code: 'NOT_FOUND', status: 404 } }
+      }
+      if (invoice.status !== 'unmatched') {
+        return {
+          error: {
+            message: `Only an \`unmatched\` invoice can be matched again (this one is \`${invoice.status}\`).`,
+            code: 'INVOICE_NOT_UNMATCHED',
+            status: 409,
+          },
+        }
+      }
+
+      const [memo, booking, existingLineCount] = await Promise.all([
+        ServiceMemo.findByPk(invoice.memo_id, { transaction: t }),
+        Booking.findByPk(invoice.booking_id, { transaction: t }),
+        InvoiceLineItem.count({ where: { invoice_id: invoice.id }, transaction: t }),
+      ])
+      if (!memo || !booking) {
+        return {
+          error: {
+            message: 'The invoice is missing its source memo or booking and cannot be matched automatically.',
+            code: 'INVOICE_SOURCE_MISSING',
+            status: 409,
+          },
+        }
+      }
+      // An unmatched invoice normally has no line items. Refuse to replace unexpected
+      // rows rather than silently deleting pricing work that may have been written by a
+      // previous version or an administrator.
+      if (existingLineCount > 0) {
+        return {
+          error: {
+            message: 'This unmatched invoice already has line items. Remove or reconcile them before retrying automatic matching.',
+            code: 'INVOICE_HAS_LINE_ITEMS',
+            status: 409,
+          },
+        }
+      }
+
+      const serviceDate = new Date(booking.scheduled_date)
+      const contract = await findActiveContract(invoice.client_id, serviceDate, { transaction: t })
+      if (!contract) {
+        return {
+          error: {
+            message: 'No active pricing contract covers this client and service date yet.',
+            code: 'NO_ACTIVE_CONTRACT',
+            status: 422,
+          },
+        }
+      }
+
+      const [rates, surcharges] = await Promise.all([
+        PricingRate.findAll({
+          where: {
+            contract_id: contract.id,
+            service_type: memo.service_type,
+            transfer_type: memo.transfer_type,
+          },
+          transaction: t,
+        }),
+        SurchargeSchedule.findAll({ where: { contract_id: contract.id }, transaction: t }),
+      ])
+      const result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
+      if (!result.matched) {
+        return {
+          error: {
+            message: "The active contract still has no rate for this memo's service, transfer and time combination.",
+            code: 'NO_MATCHING_RATE',
+            status: 422,
+          },
+        }
+      }
+
+      let gstSnapshot = {
+        gst_rate_id: invoice.gst_rate_id,
+        gst_rate_percent: invoice.gst_rate_percent === null || invoice.gst_rate_percent === undefined
+          ? null
+          : Number(invoice.gst_rate_percent),
+        gst_effective_date: invoice.gst_effective_date,
+        xero_tax_type: invoice.xero_tax_type,
+      }
+      if (gstSnapshot.gst_rate_percent === null) {
+        gstSnapshot = await gstService.buildSnapshot(booking.scheduled_date, { transaction: t })
+      }
+      const totals = gstService.calculateTotals(result.lineItems, gstSnapshot.gst_rate_percent)
+
+      await InvoiceLineItem.bulkCreate(
+        result.lineItems.map((li) => ({ ...li, invoice_id: invoice.id })),
+        { transaction: t }
+      )
+      await invoice.update({
+        contract_id: contract.id,
+        ...gstSnapshot,
+        ...totals,
+        status: 'matched',
+        unpriced_surcharges: result.unpriced,
+      }, { transaction: t })
+
+      return {
+        invoice,
+        warning: result.unpriced.length > 0
+          ? {
+              code: 'UNPRICED_SURCHARGES',
+              message: `${result.unpriced.length} recorded charge${result.unpriced.length === 1 ? '' : 's'} still need manual pricing before approval.`,
+            }
+          : null,
+      }
+    })
+
+    if (outcome.error) {
+      return error(res, outcome.error.message, outcome.error.code, outcome.error.status)
+    }
+
+    const lineItems = await InvoiceLineItem.findAll({
+      where: { invoice_id: outcome.invoice.id },
+      order: [['id', 'ASC']],
+    })
+    return success(res, {
+      invoice_id: outcome.invoice.id,
+      status: outcome.invoice.status,
+      contract_id: outcome.invoice.contract_id,
+      subtotal: outcome.invoice.subtotal,
+      gst_rate_percent: outcome.invoice.gst_rate_percent,
+      gst_effective_date: outcome.invoice.gst_effective_date,
+      tax_amount: outcome.invoice.tax_amount,
+      total_amount: outcome.invoice.total_amount,
+      unpriced_surcharges: outcome.invoice.unpriced_surcharges || [],
+      line_items: lineItems,
+      warning: outcome.warning,
+    })
+  } catch (err) {
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
 }
 
 // POST /api/invoices/batch-approve - UC-06: approve matched/adjusted invoices and push
@@ -468,6 +633,7 @@ module.exports = {
   recalcInvoiceTotals,
   listInvoices,
   getInvoiceById,
+  rematchInvoice,
   addLineItem,
   updateLineItem,
   deleteLineItem,

@@ -38,6 +38,22 @@ const vendorInvoiceUpdateSchema = Yup.object({
   invoice_date: Yup.string()
     .matches(/^\d{4}-\d{2}-\d{2}$/, 'invoice_date must be in YYYY-MM-DD format')
     .nullable(),
+  due_date: Yup.string()
+    .matches(/^\d{4}-\d{2}-\d{2}$/, 'due_date must be in YYYY-MM-DD format')
+    .nullable(),
+  currency_code: Yup.string().trim().uppercase().matches(/^[A-Z]{3}$/, 'currency_code must be a 3-letter ISO code'),
+  supplier_gst_registration_no: Yup.string().trim().max(50).nullable(),
+  gst_treatment: Yup.string().oneOf(['standard_rated', 'zero_rated', 'exempt', 'non_gst', 'disallowed']),
+  xero_account_code: Yup.string().trim().min(1, 'xero_account_code cannot be blank').max(20),
+  subtotal_excluding_gst: Yup.number()
+    .typeError('subtotal_excluding_gst must be a number')
+    .min(0, 'subtotal_excluding_gst cannot be negative'),
+  gst_amount: Yup.number()
+    .typeError('gst_amount must be a number')
+    .min(0, 'gst_amount cannot be negative'),
+  total_including_gst: Yup.number()
+    .typeError('total_including_gst must be a number')
+    .positive('total_including_gst must be a positive number'),
   extracted_total: Yup.number()
     .typeError('extracted_total must be a number')
     .positive('extracted_total must be a positive number'),
@@ -45,6 +61,10 @@ const vendorInvoiceUpdateSchema = Yup.object({
     .typeError('rebate_percentage must be a number')
     .min(0, 'rebate_percentage cannot be negative')
     .max(100, 'rebate_percentage cannot exceed 100'),
+})
+
+const vendorInvoiceApproveSchema = Yup.object({
+  confirm_low_confidence: Yup.boolean().default(false),
 })
 
 // PATCH /api/vendor-invoice-items/:id - AP corrections to one extracted line item.
@@ -155,6 +175,7 @@ module.exports = {
   loginSchema,
   vendorInvoiceUploadSchema,
   vendorInvoiceUpdateSchema,
+  vendorInvoiceApproveSchema,
   vendorInvoiceItemUpdateSchema,
   vendorInvoiceListQuerySchema,
   syncLogListQuerySchema,

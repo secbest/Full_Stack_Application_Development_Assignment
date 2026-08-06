@@ -36,6 +36,11 @@ export async function getInvoice(id) {
   return res.data.data
 }
 
+export async function rematchInvoice(id) {
+  const res = await api.post(`/invoices/${id}/rematch`)
+  return res.data.data
+}
+
 export async function addLineItem(invoiceId, payload) {
   const res = await api.post(`/invoices/${invoiceId}/line-items`, payload)
   return res.data.data // { data: item, invoice }

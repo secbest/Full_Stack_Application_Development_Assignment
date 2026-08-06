@@ -257,25 +257,98 @@ async function fetchOrganisation(accessToken) {
 // Never throws: returns { ok, xeroRecordId } on success or { ok:false, error }
 // on failure so the caller can persist the sync-log outcome uniformly.
 async function pushBill(invoice, connection) {
-  if (isSimulation()) {
-    return { ok: true, xeroRecordId: crypto.randomUUID() }
-  }
-
   try {
-    const accessToken = decryptToken(connection.access_token)
-    const lineItems = (invoice.VendorInvoiceItems || []).map((item) => ({
+    const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100
+    const gstRate = Number(invoice.gst_rate_percent)
+    const storedSubtotal = Number(invoice.subtotal_excluding_gst)
+    const storedTax = Number(invoice.gst_amount)
+    const storedTotal = Number(invoice.total_including_gst)
+    const storedNet = Number(invoice.verified_total)
+    const missingAmount = [
+      invoice.gst_rate_percent,
+      invoice.subtotal_excluding_gst,
+      invoice.gst_amount,
+      invoice.total_including_gst,
+      invoice.verified_total,
+    ].some((value) => value === null || value === undefined || value === '')
+    if (!invoice.due_date || !invoice.xero_account_code || !invoice.xero_tax_type
+      || missingAmount || ![gstRate, storedSubtotal, storedTax, storedTotal, storedNet].every(Number.isFinite)) {
+      return {
+        ok: false,
+        error: 'AP accounting fields are incomplete. Set the due date, expense account, GST treatment, tax amounts, and net payable before syncing.',
+      }
+    }
+
+    let lineItems = (invoice.VendorInvoiceItems || []).map((item) => ({
       Description: item.description,
       Quantity: Number(item.quantity),
       UnitAmount: Number(item.unit_price),
+      AccountCode: invoice.xero_account_code,
+      TaxType: invoice.xero_tax_type,
+      TaxAmount: roundMoney(Number(item.amount || 0) * gstRate / 100),
     }))
-    const items = lineItems.length ? lineItems : [{ Description: invoice.vendor_name, Quantity: 1, UnitAmount: Number(invoice.verified_total || invoice.extracted_total || 0) }]
+    // Retry compatibility for invoices approved before line-level AP controls existed.
+    // New approvals cannot reach this path without line items (validateForApproval blocks
+    // them), but a historical failed sync must remain recoverable after the migration.
+    if (!lineItems.length && storedSubtotal > 0) {
+      lineItems = [{
+        Description: invoice.vendor_name || 'Legacy vendor invoice',
+        Quantity: 1,
+        UnitAmount: storedSubtotal,
+        AccountCode: invoice.xero_account_code,
+        TaxType: invoice.xero_tax_type,
+        TaxAmount: storedTax,
+      }]
+    }
+    if (!lineItems.length) return { ok: false, error: 'At least one AP invoice line item is required before syncing.' }
+
+    const calculatedSubtotal = roundMoney(lineItems.reduce(
+      (sum, item) => sum + roundMoney(item.Quantity * item.UnitAmount), 0
+    ))
+    const calculatedTax = roundMoney(lineItems.reduce((sum, item) => sum + item.TaxAmount, 0))
+    if (Math.abs(calculatedSubtotal - storedSubtotal) > 0.01 || Math.abs(calculatedTax - storedTax) > 0.01) {
+      return {
+        ok: false,
+        error: `AP invoice totals are inconsistent: lines/tax calculate to ${calculatedSubtotal.toFixed(2)} + ${calculatedTax.toFixed(2)}, but the invoice stores ${storedSubtotal.toFixed(2)} + ${storedTax.toFixed(2)}.`,
+      }
+    }
+    if (Math.abs(roundMoney(storedSubtotal + storedTax) - storedTotal) > 0.01) {
+      return { ok: false, error: 'AP subtotal plus GST does not equal the stored total including GST.' }
+    }
+
+    const rebateAmount = roundMoney(Number(invoice.rebate_amount || 0))
+    const items = [...lineItems]
+    if (rebateAmount > 0) {
+      // The EFAR rebate is a reduction after the supplier invoice's stated GST. Keeping
+      // it as a no-tax negative line preserves the input GST printed on the source invoice
+      // while making Xero's draft total equal EFAR's approved net payable.
+      items.push({
+        Description: `EFAR rebate (${Number(invoice.rebate_percentage || 0).toFixed(2)}%)`,
+        Quantity: 1,
+        UnitAmount: -rebateAmount,
+        AccountCode: invoice.xero_account_code,
+        TaxType: 'NONE',
+        TaxAmount: 0,
+      })
+    }
+    if (Math.abs(roundMoney(storedTotal - rebateAmount) - storedNet) > 0.01) {
+      return { ok: false, error: 'AP net payable does not equal total including GST less rebate.' }
+    }
+
+    if (isSimulation()) return { ok: true, xeroRecordId: crypto.randomUUID() }
+
+    const accessToken = decryptToken(connection.access_token)
     const payload = {
       Invoices: [{
         Type: 'ACCPAY',
         Contact: { Name: invoice.vendor_name },
         InvoiceNumber: invoice.invoice_number,
         Date: invoice.invoice_date || undefined,
-        LineItems: withAccountCode(items, process.env.XERO_PURCHASE_ACCOUNT_CODE),
+        DueDate: invoice.due_date,
+        CurrencyCode: invoice.currency_code || 'SGD',
+        Reference: `EFAR AP #${invoice.id}`,
+        LineItems: items,
+        LineAmountTypes: 'Exclusive',
         Status: 'DRAFT',
       }],
     }
@@ -295,6 +368,8 @@ async function pushBill(invoice, connection) {
       const msg = json?.Elements?.[0]?.ValidationErrors?.[0]?.Message || json?.Message || `Xero returned ${resp.status}`
       return { ok: false, error: msg }
     }
+    const validationMessage = json?.Invoices?.[0]?.ValidationErrors?.[0]?.Message
+    if (validationMessage) return { ok: false, error: validationMessage }
     return { ok: true, xeroRecordId: json?.Invoices?.[0]?.InvoiceID || null }
   } catch (err) {
     return { ok: false, error: err.message }
@@ -305,25 +380,55 @@ async function pushBill(invoice, connection) {
 // Same never-throws contract as pushBill. In simulation mode it returns a Xero-style
 // invoice id (e.g. INV-XR-20260622-0042) so the AR sync flow is demoable offline.
 async function pushArInvoice(invoice, connection) {
-  if (isSimulation()) {
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const seq = String(invoice.id || 0).padStart(4, '0')
-    return { ok: true, xeroRecordId: `INV-XR-${stamp}-${seq}` }
-  }
-
   try {
-    const accessToken = decryptToken(connection.access_token)
+    const gstRate = Number(invoice.gst_rate_percent)
+    const storedTax = Number(invoice.tax_amount)
+    if (!Number.isFinite(gstRate) || !invoice.xero_tax_type || !Number.isFinite(storedTax)) {
+      return {
+        ok: false,
+        error: 'GST configuration is missing from this invoice. Run the GST migration or regenerate the invoice before syncing.',
+      }
+    }
+
     const lineItems = (invoice.InvoiceLineItems || invoice.line_items || []).map((item) => ({
       Description: item.description,
       Quantity: Number(item.quantity),
       UnitAmount: Number(item.unit_price),
+      TaxType: invoice.xero_tax_type,
+      // EFAR freezes the invoice's GST at creation. Supplying the line tax prevents a
+      // future Xero rate-table change from altering this historical draft on sync.
+      TaxAmount: Math.round((Number(item.amount || 0) * gstRate / 100 + Number.EPSILON) * 100) / 100,
     }))
-    const items = lineItems.length ? lineItems : [{ Description: 'EFAR ambulance services', Quantity: 1, UnitAmount: Number(invoice.total_amount || 0) }]
+    const items = lineItems.length ? lineItems : [{
+      Description: 'EFAR ambulance services',
+      Quantity: 1,
+      UnitAmount: Number(invoice.subtotal || 0),
+      TaxType: invoice.xero_tax_type,
+      TaxAmount: storedTax,
+    }]
+    const calculatedTax = Math.round((items.reduce((sum, item) => sum + Number(item.TaxAmount || 0), 0) + Number.EPSILON) * 100) / 100
+    if (Math.abs(calculatedTax - storedTax) > 0.001) {
+      return {
+        ok: false,
+        error: `Invoice GST is inconsistent: stored tax is ${storedTax.toFixed(2)} but its line items total ${calculatedTax.toFixed(2)}. Recalculate the invoice before syncing.`,
+      }
+    }
+
+    // Simulation follows the same validation and tax calculations as live mode. Otherwise
+    // a demo could report a successful sync for an invoice that live Xero would reject.
+    if (isSimulation()) {
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      const seq = String(invoice.id || 0).padStart(4, '0')
+      return { ok: true, xeroRecordId: `INV-XR-${stamp}-${seq}` }
+    }
+
+    const accessToken = decryptToken(connection.access_token)
     const payload = {
       Invoices: [{
         Type: 'ACCREC',
         Contact: { Name: invoice.client_name || (invoice.Client && invoice.Client.name) || 'EFAR Client' },
         LineItems: withAccountCode(items, process.env.XERO_SALES_ACCOUNT_CODE),
+        LineAmountTypes: 'Exclusive',
         // Reference and Date carry the invoice's identity into Xero. Without them a synced
         // sales invoice arrived Xero-auto-numbered and dated the day of the push, with
         // nothing linking it back to EFAR invoice #42 or the job it came from - so

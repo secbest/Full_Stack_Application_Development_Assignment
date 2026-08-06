@@ -27,6 +27,9 @@ require('../models') // register all models + associations so force-sync knows e
 // Order matters: users before clients/bookings (created_by), clients before intakes/
 // pricing, bookings before memos/invoices, etc.
 const SEED_STEPS = [
+  // Seeds the legal GST periods before any invoice seed calculates its totals.
+  'migrate-gst.js',
+  'migrate-ap-controls.js',
   'seed-users.js',
   'seed-clients.js',
   'seed-intakes.js',

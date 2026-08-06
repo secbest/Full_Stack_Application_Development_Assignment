@@ -98,9 +98,25 @@ export default function XeroConnectPage() {
       <Card>
         <CardHeader>
           <CardTitle>Xero OAuth2 Status</CardTitle>
-          <CardDescription>Connect EFAR to Xero to enable AP bill sync, AR invoice sync, and bank feed ingestion.</CardDescription>
+          <CardDescription>Connect EFAR to Xero to enable AP bill and AR invoice sync.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!loading && status?.mode && (
+            <div
+              data-testid="xero-mode"
+              className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${
+                status.mode.simulated
+                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border-blue-200 bg-blue-50 text-blue-800'
+              }`}
+            >
+              <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold tracking-wide">
+                {status.mode.label}
+              </span>
+              <span>{status.mode.detail}</span>
+            </div>
+          )}
+
           {loading ? (
             <p className="text-sm text-slate-400">Loading…</p>
           ) : status?.is_connected ? (
@@ -118,7 +134,7 @@ export default function XeroConnectPage() {
 
               {isExpired && (
                 <div className="flex items-center gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-                  <AlertTriangle size={14} /> Access token has expired. {isAdmin ? 'Reconnect to restore syncing.' : 'Ask the Managing Director to reconnect.'}
+                  <AlertTriangle size={14} /> Access token has expired. It will auto-refresh on the next sync; reconnect only if that refresh fails.
                 </div>
               )}
               {!isExpired && expiringSoon && (

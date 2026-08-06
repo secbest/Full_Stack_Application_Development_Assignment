@@ -22,6 +22,20 @@ const { cloudinaryService } = require('../services')
 const FIXTURE_PDF = path.join(__dirname, 'fixtures', 'CMD-2026-01187.pdf')
 const PLACEHOLDER_PDF = 'https://res.cloudinary.com/efar/raw/upload/v1750000000/vendor-invoices/placeholder.pdf'
 
+function noGstAccounting(total, dueDate) {
+  return {
+    due_date: dueDate,
+    currency_code: 'SGD',
+    gst_treatment: 'non_gst',
+    gst_rate_percent: 0,
+    xero_tax_type: 'NRINPUT',
+    xero_account_code: process.env.XERO_PURCHASE_ACCOUNT_CODE || '400',
+    subtotal_excluding_gst: total,
+    gst_amount: 0,
+    total_including_gst: total,
+  }
+}
+
 async function resolveSamplePdfUrl() {
   try {
     const buffer = fs.readFileSync(FIXTURE_PDF)
@@ -69,6 +83,7 @@ async function main() {
         vendor_name: 'Esso Petroleum Pte Ltd',
         invoice_number: 'INV-2026-00891',
         invoice_date: '2026-06-18',
+        ...noGstAccounting(1840, '2026-07-18'),
         pdf_url: samplePdfUrl,
         extracted_total: 1840.00,
         rebate_percentage: 1.00,
@@ -95,6 +110,7 @@ async function main() {
         vendor_name: 'SBS Transit Parts',
         invoice_number: 'INV-2026-00450',
         invoice_date: '2026-06-14',
+        ...noGstAccounting(640, '2026-07-14'),
         pdf_url: samplePdfUrl,
         extracted_total: 640.00,
         rebate_percentage: 1.00,
@@ -136,6 +152,7 @@ async function main() {
         vendor_name: 'Jurong Medical Supplies',
         invoice_number: 'INV-2026-00512',
         invoice_date: '2026-06-19',
+        ...noGstAccounting(312.50, '2026-07-19'),
         pdf_url: samplePdfUrl,
         extracted_total: 312.50,
         rebate_percentage: 1.00,
@@ -163,6 +180,7 @@ async function main() {
         vendor_name: 'Esso Petroleum Pte Ltd',
         invoice_number: 'INV-2026-00893',
         invoice_date: '2026-06-20',
+        ...noGstAccounting(980, '2026-07-20'),
         pdf_url: samplePdfUrl,
         extracted_total: 980.00,
         rebate_percentage: 1.00,
@@ -177,6 +195,9 @@ async function main() {
     console.log(`[seed-xero] ${invoiceDCreated ? '  Created' : 'Skipped (exists)'}: vendor_invoices #${invoiceD.id} (Esso Petroleum, sync failed)`)
 
     if (invoiceDCreated) {
+      await VendorInvoiceItem.bulkCreate([
+        { vendor_invoice_id: invoiceD.id, description: 'Diesel fuel', quantity: 1.00, unit_price: 980.00, amount: 980.00 },
+      ])
       await XeroSyncLog.findOrCreate({
         where: { entity_type: 'vendor_invoice', entity_id: invoiceD.id },
         defaults: {

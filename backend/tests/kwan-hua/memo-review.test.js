@@ -18,12 +18,13 @@ jest.mock('../../src/config', () => ({
 
 jest.mock('../../src/services', () => ({
   pricingService: { computeInvoiceLineItems: jest.fn() },
+  gstService: { buildSnapshot: jest.fn(), calculateTotals: jest.fn() },
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
 
 const { ServiceMemo, PricingContract, PricingRate, SurchargeSchedule, Invoice, InvoiceLineItem } = require('../../src/models')
-const { pricingService } = require('../../src/services')
+const { pricingService, gstService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
 const { approveMemo, returnMemo, resubmitMemo, listPendingReview } = require('../../src/controllers/memoReviewController')
 
@@ -47,7 +48,20 @@ function makeMemo(overrides = {}) {
   return obj
 }
 
-beforeEach(() => jest.clearAllMocks())
+beforeEach(() => {
+  jest.clearAllMocks()
+  gstService.buildSnapshot.mockResolvedValue({
+    gst_rate_id: 3,
+    gst_rate_percent: 9,
+    gst_effective_date: '2026-06-10',
+    xero_tax_type: 'OUTPUT',
+  })
+  gstService.calculateTotals.mockImplementation((items, rate) => {
+    const subtotal = items.reduce((sum, item) => sum + Number(item.amount), 0)
+    const tax_amount = Math.round(subtotal * Number(rate)) / 100
+    return { subtotal, tax_amount, total_amount: subtotal + tax_amount }
+  })
+})
 
 describe('approveMemo (UC-03 -> UC-04)', () => {
   test('404s when the memo does not exist', async () => {
@@ -74,7 +88,23 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     expect(payload(res).code).toBe('MEMO_ALREADY_REVIEWED')
   })
 
-  test('creates an unmatched invoice + 422 when the client has no active contract', async () => {
+  test('stops invoice creation when no verified GST period covers the service date', async () => {
+    ServiceMemo.findByPk.mockResolvedValue(makeMemo())
+    Invoice.findOne.mockResolvedValue(null)
+    gstService.buildSnapshot.mockRejectedValue(Object.assign(
+      new Error('No verified Singapore GST rate is configured for 2026-06-10.'),
+      { code: 'GST_RATE_NOT_CONFIGURED' }
+    ))
+
+    const res = mockRes()
+    await approveMemo({ params: { id: 1 }, user: { sub: 2 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(422)
+    expect(payload(res).code).toBe('GST_RATE_NOT_CONFIGURED')
+    expect(Invoice.create).not.toHaveBeenCalled()
+  })
+
+  test('returns the unmatched invoice as a warning-bearing success when the client has no active contract', async () => {
     const memo = makeMemo()
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
@@ -85,13 +115,14 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
       matched: false, lineItems: [], subtotal: 0,
       unpriced: [{ surcharge_type: 'resuscitation', label: 'Resuscitation', detail: 'performed' }],
     })
-    Invoice.create.mockResolvedValue({ id: 42 })
+    Invoice.create.mockResolvedValue({ id: 42, status: 'unmatched', subtotal: 0, tax_amount: 0, total_amount: 0, unpriced_surcharges: [] })
 
     const res = mockRes()
     await approveMemo({ params: { id: 1 }, user: { sub: 2 } }, res)
 
-    expect(res.status).toHaveBeenCalledWith(422)
-    expect(payload(res).code).toBe('NO_ACTIVE_CONTRACT')
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(payload(res).data.warning.code).toBe('NO_ACTIVE_CONTRACT')
+    expect(payload(res).data.invoice).toMatchObject({ id: 42, status: 'unmatched' })
     expect(Invoice.create).toHaveBeenCalledWith(
       expect.objectContaining({
         contract_id: null,
@@ -111,7 +142,7 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     expect(payload(res).code).toBe('MEMO_RETURNED')
   })
 
-  test('creates an unmatched invoice + 422 when no rate row matches the memo', async () => {
+  test('returns the unmatched invoice as a warning-bearing success when no rate row matches the memo', async () => {
     const memo = makeMemo()
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
@@ -119,13 +150,14 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     PricingRate.findAll.mockResolvedValue([])
     SurchargeSchedule.findAll.mockResolvedValue([])
     pricingService.computeInvoiceLineItems.mockReturnValue({ matched: false, lineItems: [], subtotal: 0, unpriced: [] })
-    Invoice.create.mockResolvedValue({ id: 43 })
+    Invoice.create.mockResolvedValue({ id: 43, status: 'unmatched', subtotal: 0, tax_amount: 0, total_amount: 0, unpriced_surcharges: [] })
 
     const res = mockRes()
     await approveMemo({ params: { id: 1 }, user: { sub: 2 } }, res)
 
-    expect(res.status).toHaveBeenCalledWith(422)
-    expect(payload(res).code).toBe('NO_MATCHING_RATE')
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(payload(res).data.warning.code).toBe('NO_MATCHING_RATE')
+    expect(payload(res).data.invoice).toMatchObject({ id: 43, status: 'unmatched' })
     expect(Invoice.create).toHaveBeenCalledWith(
       expect.objectContaining({ contract_id: 7, status: 'unmatched' }),
       expect.anything()
@@ -145,7 +177,10 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
       subtotal: 850,
       unpriced: [],
     })
-    Invoice.create.mockResolvedValue({ id: 44, status: 'matched', subtotal: 850, tax_amount: 0, total_amount: 850 })
+    Invoice.create.mockResolvedValue({
+      id: 44, status: 'matched', subtotal: 850, gst_rate_percent: 9,
+      gst_effective_date: '2026-06-10', tax_amount: 76.5, total_amount: 926.5,
+    })
     InvoiceLineItem.bulkCreate.mockResolvedValue([])
     InvoiceLineItem.findAll.mockResolvedValue([
       { id: 1, description: 'EAS - One-Way Hospital Transfer', quantity: 1, unit_price: 850, amount: 850, is_manual_adjustment: false },
@@ -157,6 +192,11 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     expect(res.status).toHaveBeenCalledWith(200)
     expect(payload(res).data.memo_status).toBe('reviewed')
     expect(payload(res).data.invoice.status).toBe('matched')
+    expect(payload(res).data.invoice).toMatchObject({ gst_rate_percent: 9, tax_amount: 76.5, total_amount: 926.5 })
+    expect(Invoice.create).toHaveBeenCalledWith(
+      expect.objectContaining({ gst_rate_id: 3, gst_rate_percent: 9, tax_amount: 76.5, total_amount: 926.5 }),
+      expect.anything()
+    )
     expect(payload(res).data.invoice.line_items).toHaveLength(1)
     expect(memo.status).toBe('reviewed')
   })

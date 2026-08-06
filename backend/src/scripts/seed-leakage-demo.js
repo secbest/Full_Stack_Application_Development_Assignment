@@ -28,6 +28,7 @@ const {
   Invoice, InvoiceLineItem,
 } = require('../models')
 const { round2 } = require('../utils/money')
+const gstService = require('../services/gstService')
 
 const CLIENT_NAME = 'Sembawang Marine Services'
 const CLIENT_EMAIL = 'accounts@sembawangmarine.com.sg'
@@ -166,14 +167,15 @@ async function main() {
       // Only the base rate reached the invoice - the recorded surcharges above are exactly
       // what the contract could not price, so they are reported instead of billed.
       const subtotal = round2(BASE_AMOUNT)
+      const gstSnapshot = await gstService.buildSnapshot(booking.scheduled_date)
+      const totals = gstService.calculateTotals([{ amount: subtotal }], gstSnapshot.gst_rate_percent)
       const invoice = await Invoice.create({
         memo_id: memo.id,
         booking_id: booking.id,
         client_id: client.id,
         contract_id: contract.id,
-        subtotal,
-        tax_amount: 0,
-        total_amount: subtotal,
+        ...gstSnapshot,
+        ...totals,
         status: 'matched',
         unpriced_surcharges: job.unpriced,
       })
@@ -187,7 +189,7 @@ async function main() {
       })
 
       created += 1
-      console.log(`[seed-leakage-demo] ${job.ref} -> invoice #${invoice.id}: $${subtotal.toFixed(2)} billed, ${job.unpriced.length} charge(s) unpriced`)
+      console.log(`[seed-leakage-demo] ${job.ref} -> invoice #${invoice.id}: $${totals.total_amount.toFixed(2)} incl. GST billed, ${job.unpriced.length} charge(s) unpriced`)
     }
 
     console.log(`\n[seed-leakage-demo] Done (${created} new invoice chain(s)).`)

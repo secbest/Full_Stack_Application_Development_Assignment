@@ -14,6 +14,7 @@
 require('dotenv').config()
 const sequelize = require('../config')
 const { User, Client, Booking, ServiceMemo, Invoice, InvoiceLineItem } = require('../models')
+const gstService = require('../services/gstService')
 
 const round2 = (n) => Math.round(n * 100) / 100
 
@@ -154,32 +155,33 @@ async function main() {
         status: 'invoiced',
       })
 
-      // Totals are derived from the line items so the detail view's line-item table
-      // always sums to the summary subtotal/total (tax is 0 in this pre-GST demo data).
-      const subtotal = round2(item.lineItems.reduce((sum, l) => sum + l.quantity * l.unit_price, 0))
-      const tax = 0
-      const total = round2(subtotal + tax)
-
-      const invoice = await Invoice.create({
-        memo_id: memo.id,
-        booking_id: booking.id,
-        client_id: client.id,
-        subtotal,
-        tax_amount: tax,
-        total_amount: total,
-        status: item.status,
-      })
-
-      await InvoiceLineItem.bulkCreate(item.lineItems.map((l) => ({
-        invoice_id: invoice.id,
+      // Pricing contracts are GST-exclusive. Use the same effective-dated calculation as
+      // the live memo workflow so demo invoices reconcile with both EFAR and Xero.
+      const lineRows = item.lineItems.map((l) => ({
         description: l.description,
         quantity: l.quantity,
         unit_price: l.unit_price,
         amount: round2(l.quantity * l.unit_price),
         is_manual_adjustment: l.manual,
+      }))
+      const gstSnapshot = await gstService.buildSnapshot(today)
+      const totals = gstService.calculateTotals(lineRows, gstSnapshot.gst_rate_percent)
+
+      const invoice = await Invoice.create({
+        memo_id: memo.id,
+        booking_id: booking.id,
+        client_id: client.id,
+        ...gstSnapshot,
+        ...totals,
+        status: item.status,
+      })
+
+      await InvoiceLineItem.bulkCreate(lineRows.map((line) => ({
+        invoice_id: invoice.id,
+        ...line,
       })))
 
-      console.log(`[seed-more-revenue-invoices]   Created: ${item.ref} - ${client.name} - $${total.toFixed(2)} (${item.status}, ${item.lineItems.length} line items)`)
+      console.log(`[seed-more-revenue-invoices]   Created: ${item.ref} - ${client.name} - $${totals.total_amount.toFixed(2)} incl. GST (${item.status}, ${item.lineItems.length} line items)`)
     }
 
     console.log('\n[seed-more-revenue-invoices] Done.')

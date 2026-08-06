@@ -15,6 +15,7 @@ const Notification        = require('./Notification')
 const PricingContract     = require('./PricingContract')
 const PricingRate         = require('./PricingRate')
 const SurchargeSchedule   = require('./SurchargeSchedule')
+const GstRate             = require('./GstRate')
 const Invoice             = require('./Invoice')
 const InvoiceLineItem     = require('./InvoiceLineItem')
 
@@ -29,6 +30,7 @@ const JobMilestone        = require('./JobMilestone')
 const XeroConnection      = require('./XeroConnection')
 const VendorInvoice       = require('./VendorInvoice')
 const VendorInvoiceItem   = require('./VendorInvoiceItem')
+const VendorInvoiceAudit  = require('./VendorInvoiceAudit')
 const XeroSyncLog         = require('./XeroSyncLog')
 
 
@@ -54,6 +56,7 @@ User.hasMany(ServiceMemo,       { foreignKey: 'submitted_by',   as: 'submittedMe
 User.hasMany(ServiceMemo,       { foreignKey: 'reviewed_by',    as: 'reviewedMemos' })
 User.hasMany(VendorInvoice,     { foreignKey: 'uploaded_by',    as: 'uploadedVendorInvoices' })
 User.hasMany(VendorInvoice,     { foreignKey: 'approved_by',    as: 'approvedVendorInvoices' })
+User.hasMany(VendorInvoiceAudit,{ foreignKey: 'user_id',        as: 'vendorInvoiceAuditEvents' })
 
 // ── Client ───────────────────────────────────────────────────────────────────
 // A Client has many bookings over time, one active pricing contract, and many invoices.
@@ -96,6 +99,10 @@ PricingContract.hasMany(PricingRate,      { foreignKey: 'contract_id', onDelete:
 PricingContract.hasMany(SurchargeSchedule, { foreignKey: 'contract_id', onDelete: 'CASCADE' })
 PricingContract.hasMany(Invoice,          { foreignKey: 'contract_id' })
 
+// Effective-dated GST configuration. Invoice also stores a rate snapshot so changing the
+// active period never rewrites historical tax.
+GstRate.hasMany(Invoice, { foreignKey: 'gst_rate_id' })
+
 // ── PricingRate ───────────────────────────────────────────────────────────────
 // Each rate row belongs to exactly one contract.
 PricingRate.belongsTo(PricingContract, { foreignKey: 'contract_id' })
@@ -109,6 +116,7 @@ Invoice.belongsTo(ServiceMemo,    { foreignKey: 'memo_id' })
 Invoice.belongsTo(Booking,        { foreignKey: 'booking_id' })
 Invoice.belongsTo(Client,         { foreignKey: 'client_id' })
 Invoice.belongsTo(PricingContract, { foreignKey: 'contract_id' })
+Invoice.belongsTo(GstRate,         { foreignKey: 'gst_rate_id' })
 Invoice.belongsTo(User,           { foreignKey: 'approved_by', as: 'approvedBy' })
 Invoice.hasMany(InvoiceLineItem,  { foreignKey: 'invoice_id', onDelete: 'CASCADE' })
 // Polymorphic: AR invoices use XeroSyncLog with entity_type = 'ar_invoice'. constraints:
@@ -136,13 +144,18 @@ MemoSignature.belongsTo(ServiceMemo, { foreignKey: 'memo_id' })
 // approved_by is the AP Specialist who reviewed and approved the OCR result.
 VendorInvoice.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploadedBy' })
 VendorInvoice.belongsTo(User, { foreignKey: 'approved_by', as: 'approvedBy' })
+VendorInvoice.belongsTo(GstRate, { foreignKey: 'gst_rate_id', as: 'gstRate' })
 VendorInvoice.hasMany(VendorInvoiceItem, { foreignKey: 'vendor_invoice_id', onDelete: 'CASCADE' })
+VendorInvoice.hasMany(VendorInvoiceAudit, { foreignKey: 'vendor_invoice_id', as: 'auditTrail', onDelete: 'CASCADE' })
 // Polymorphic: vendor invoices use XeroSyncLog with entity_type = 'vendor_invoice'.
 // constraints: false for the same reason as Invoice.hasMany above.
 VendorInvoice.hasMany(XeroSyncLog, { foreignKey: 'entity_id', scope: { entity_type: 'vendor_invoice' }, as: 'syncLogs', constraints: false })
 
 // ── VendorInvoiceItem ─────────────────────────────────────────────────────────
 VendorInvoiceItem.belongsTo(VendorInvoice, { foreignKey: 'vendor_invoice_id' })
+
+VendorInvoiceAudit.belongsTo(VendorInvoice, { foreignKey: 'vendor_invoice_id' })
+VendorInvoiceAudit.belongsTo(User, { foreignKey: 'user_id', as: 'actor' })
 
 // ── XeroConnection ────────────────────────────────────────────────────────────
 // Standalone - no FK associations. Queried as a singleton (WHERE id = 1 or first()).
@@ -169,6 +182,7 @@ module.exports = {
   PricingContract,
   PricingRate,
   SurchargeSchedule,
+  GstRate,
   Invoice,
   InvoiceLineItem,
 
@@ -183,5 +197,6 @@ module.exports = {
   XeroConnection,
   VendorInvoice,
   VendorInvoiceItem,
+  VendorInvoiceAudit,
   XeroSyncLog,
 }

@@ -3,6 +3,21 @@ jest.mock('../../src/models', () => ({
   VendorInvoice: {},
 }))
 
+jest.mock('../../src/config', () => ({
+  transaction: jest.fn(async (fn) => fn({})),
+}))
+
+jest.mock('../../src/services', () => ({
+  apInvoiceService: { calculateTax: jest.fn(() => 0) },
+  vendorInvoiceAuditService: {
+    record: jest.fn(async () => ({})),
+    diff: jest.fn((before, after, fields) => fields.reduce((out, field) => {
+      if (String(before[field]) !== String(after[field])) out[field] = { from: before[field], to: after[field] }
+      return out
+    }, {})),
+  },
+}))
+
 const { VendorInvoiceItem } = require('../../src/models')
 const { updateVendorInvoiceItem } = require('../../src/controllers/vendorInvoiceItemController')
 

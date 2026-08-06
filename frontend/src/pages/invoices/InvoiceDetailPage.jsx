@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatusBadge } from '@/components/StatusBadge'
 import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
-import { getInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
+import { getInvoice, rematchInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
 import { SURCHARGE_TYPES } from '@/validation/contractValidation'
 import { SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS } from '@/lib/contractLabels'
 
@@ -17,6 +17,10 @@ const money = (n) => `$${Number(n || 0).toFixed(2)}`
 const MAX_UNIT_PRICE = 50000
 const MAX_QUANTITY = 999
 const LOCKED = ['approved', 'synced_to_xero']
+const LOCKED_STATUS_LABELS = {
+  approved: 'approved',
+  synced_to_xero: 'synced to Xero',
+}
 // 'other' isn't a real surcharge_type - it just tells the form to leave description/
 // unit_price blank for manual entry instead of auto-filling from the published schedule.
 const ADJUSTMENT_TYPE_OPTIONS = [...SURCHARGE_TYPES, 'other']
@@ -110,6 +114,20 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function handleRematch() {
+    setBusy(true)
+    try {
+      const result = await rematchInvoice(invoice.id)
+      if (result.warning) toast.warning(`Invoice matched. ${result.warning.message}`)
+      else toast.success('Invoice matched successfully using the active pricing contract.')
+      await load()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'The invoice still could not be matched.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleApprove() {
     setBusy(true)
     try {
@@ -154,6 +172,11 @@ export default function InvoiceDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={invoice.status} />
+          {invoice.status === 'unmatched' && (
+            <button onClick={handleRematch} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-40">
+              <RefreshCw size={16} /> Retry Match
+            </button>
+          )}
           {['matched', 'adjusted'].includes(invoice.status) && (
             <button onClick={handleApprove} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
               <UploadCloud size={16} /> Approve &amp; Sync
@@ -167,17 +190,33 @@ export default function InvoiceDetailPage() {
         </div>
       </div>
 
+      {invoice.status === 'unmatched' && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Automatic pricing needs a contract or matching rate</p>
+            <p className="mt-0.5 text-xs text-amber-800">
+              Create or update the client's pricing contract so it covers the booking's service date and memo combination, then select Retry Match. You can also price every charge manually below.
+            </p>
+          </div>
+          <button onClick={() => navigate('/pricing-contracts')} className="mt-3 shrink-0 rounded-md border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:mt-0">
+            View Pricing Contracts
+          </button>
+        </div>
+      )}
+
       {/* Charges the crew recorded that this contract has no rate for. Without this the
           engine would drop them silently, which is the exact revenue leakage the platform
           exists to prevent - so it is a prominent warning, not a footnote. */}
       {invoice.unpriced_surcharges?.length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
           <p className="text-sm font-semibold text-amber-900">
-            {invoice.unpriced_surcharges.length} recorded charge{invoice.unpriced_surcharges.length > 1 ? 's' : ''} not priced by this contract
+            {invoice.unpriced_surcharges.length} recorded charge{invoice.unpriced_surcharges.length > 1 ? 's' : ''} awaiting pricing
           </p>
           <p className="mt-0.5 text-xs text-amber-800">
-            The crew recorded these on the memo but {invoice.contract_name ? 'the matched contract' : 'no active contract'} has no rate for them.
-            They are <strong>not</strong> included in the total. Add them as adjustments below, or add the missing rates to the contract.
+            {invoice.contract_name
+              ? 'The crew recorded these on the memo, but the matched contract has no rate for them.'
+              : 'The crew recorded these on the memo, but no active contract was available to price them.'}{' '}
+            They are <strong>not</strong> included in the total. Add them as adjustments below, or add the missing rates and select Retry Match while the invoice is unmatched.
           </p>
           <ul className="mt-2 space-y-1">
             {invoice.unpriced_surcharges.map((u) => (
@@ -200,7 +239,12 @@ export default function InvoiceDetailPage() {
             <Row label="Memo ID" value={`#${invoice.memo_id}`} />
             <div className="border-t border-slate-100 pt-3" />
             <Row label="Subtotal" value={money(invoice.subtotal)} />
-            <Row label="Tax" value={money(invoice.tax_amount)} />
+            <Row
+              label={invoice.gst_rate_percent === null || invoice.gst_rate_percent === undefined
+                ? 'GST'
+                : `GST (${Number(invoice.gst_rate_percent)}%)`}
+              value={money(invoice.tax_amount)}
+            />
             <Row label="Total" value={money(invoice.total_amount)} bold />
             {invoice.xero_invoice_id && <Row label="Xero ID" value={invoice.xero_invoice_id} mono />}
           </CardContent>
@@ -223,7 +267,7 @@ export default function InvoiceDetailPage() {
             )}
           </CardHeader>
           <CardContent>
-            {locked && <div className="mb-3 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-500">This invoice is {invoice.status.replace(/_/g, ' ')} - line items are locked.</div>}
+            {locked && <div className="mb-3 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-500">This invoice has been {LOCKED_STATUS_LABELS[invoice.status] || invoice.status.replace(/_/g, ' ')} - line items are locked.</div>}
 
             {adding && !locked && (
               <div className="mb-3 grid grid-cols-[1.3fr_1.7fr_0.7fr_0.9fr_auto] gap-2 items-end rounded-lg border border-slate-200 bg-slate-50 p-3">

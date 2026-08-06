@@ -115,7 +115,11 @@ describe('pushArInvoice carries the invoice identity into Xero', () => {
   test('sends a Reference naming the EFAR invoice and its booking', async () => {
     const fetchMock = stubXeroOk()
     const result = await xeroService.pushArInvoice(
-      { id: 42, client_name: 'Jurong Shipyard', total_amount: 500, InvoiceLineItems: [], booking_reference: 'BK-2026-0031', service_date: '2026-07-14' },
+      {
+        id: 42, client_name: 'Jurong Shipyard', subtotal: 500, gst_rate_percent: 9,
+        tax_amount: 45, total_amount: 545, xero_tax_type: 'OUTPUT', InvoiceLineItems: [],
+        booking_reference: 'BK-2026-0031', service_date: '2026-07-14',
+      },
       connection()
     )
 
@@ -126,11 +130,16 @@ describe('pushArInvoice carries the invoice identity into Xero', () => {
     expect(sent.Type).toBe('ACCREC')
     expect(sent.Status).toBe('DRAFT')
     expect(sent.Contact).toEqual({ Name: 'Jurong Shipyard' })
+    expect(sent.LineAmountTypes).toBe('Exclusive')
+    expect(sent.LineItems[0]).toMatchObject({ UnitAmount: 500, TaxType: 'OUTPUT', TaxAmount: 45 })
   })
 
   test('still sends a usable Reference when the invoice has no linked booking', async () => {
     const fetchMock = stubXeroOk()
-    await xeroService.pushArInvoice({ id: 7, client_name: 'Acme', total_amount: 100, InvoiceLineItems: [] }, connection())
+    await xeroService.pushArInvoice({
+      id: 7, client_name: 'Acme', subtotal: 100, gst_rate_percent: 9,
+      tax_amount: 9, total_amount: 109, xero_tax_type: 'OUTPUT', InvoiceLineItems: [],
+    }, connection())
     const sent = payloadFrom(fetchMock)
     expect(sent.Reference).toBe('EFAR Invoice #7')
     expect(sent.Date).toBeUndefined()
@@ -141,7 +150,96 @@ describe('pushArInvoice carries the invoice identity into Xero', () => {
       ok: false,
       json: async () => ({ Elements: [{ ValidationErrors: [{ Message: 'Contact name is required' }] }] }),
     })
-    const result = await xeroService.pushArInvoice({ id: 9, total_amount: 10, InvoiceLineItems: [] }, connection())
+    const result = await xeroService.pushArInvoice({
+      id: 9, subtotal: 10, gst_rate_percent: 9, tax_amount: 0.9,
+      total_amount: 10.9, xero_tax_type: 'OUTPUT', InvoiceLineItems: [],
+    }, connection())
     expect(result).toEqual({ ok: false, error: 'Contact name is required' })
+  })
+
+  test('stops before calling Xero when the frozen GST snapshot is missing', async () => {
+    const fetchMock = stubXeroOk()
+    const result = await xeroService.pushArInvoice(
+      { id: 10, subtotal: 100, tax_amount: 0, total_amount: 100, InvoiceLineItems: [] },
+      connection()
+    )
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/GST configuration is missing/) })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('pushBill sends the approved AP accounting result', () => {
+  beforeEach(() => {
+    process.env.XERO_SIMULATION = 'false'
+    process.env.XERO_ENCRYPTION_KEY = 'a'.repeat(64)
+  })
+
+  function bill(overrides = {}) {
+    return {
+      id: 12,
+      vendor_name: 'Medical Supplier',
+      invoice_number: 'MS-100',
+      invoice_date: '2026-07-01',
+      due_date: '2026-07-31',
+      currency_code: 'SGD',
+      xero_account_code: '400',
+      xero_tax_type: 'INPUTY24',
+      gst_rate_percent: 9,
+      subtotal_excluding_gst: 100,
+      gst_amount: 9,
+      total_including_gst: 109,
+      rebate_percentage: 1,
+      rebate_amount: 1.09,
+      verified_total: 107.91,
+      VendorInvoiceItems: [{ description: 'Medical supplies', quantity: 2, unit_price: 50, amount: 100 }],
+      ...overrides,
+    }
+  }
+
+  function connection() {
+    return { xero_tenant_id: 'tenant-1', access_token: xeroService.encryptToken('access-token') }
+  }
+
+  test('sends exclusive GST lines, due date, account code and a negative rebate line', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoices: [{ InvoiceID: 'bill-uuid-1' }] }),
+    })
+    global.fetch = fetchMock
+
+    await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({ ok: true, xeroRecordId: 'bill-uuid-1' })
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body).Invoices[0]
+    expect(sent).toMatchObject({
+      Type: 'ACCPAY',
+      DueDate: '2026-07-31',
+      CurrencyCode: 'SGD',
+      LineAmountTypes: 'Exclusive',
+      Reference: 'EFAR AP #12',
+    })
+    expect(sent.LineItems[0]).toMatchObject({ AccountCode: '400', TaxType: 'INPUTY24', TaxAmount: 9 })
+    expect(sent.LineItems[1]).toMatchObject({ UnitAmount: -1.09, TaxType: 'NONE', TaxAmount: 0 })
+  })
+
+  test('rejects inconsistent AP totals before contacting Xero', async () => {
+    const fetchMock = jest.fn()
+    global.fetch = fetchMock
+    const result = await xeroService.pushBill(bill({ gst_amount: 8 }), connection())
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/inconsistent/i) })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('treats a Xero validation error inside an HTTP 200 response as a failed sync', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        Invoices: [{ ValidationErrors: [{ Message: 'Account code is not valid.' }] }],
+      }),
+    })
+
+    await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({
+      ok: false,
+      error: 'Account code is not valid.',
+    })
   })
 })

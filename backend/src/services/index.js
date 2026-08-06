@@ -5,5 +5,17 @@ const cloudinaryService = require('./cloudinaryService')
 const ocrService = require('./ocrService')
 const pricingService = require('./pricingService')
 const leakageService = require('./leakageService')
+const gstService = require('./gstService')
+const apInvoiceService = require('./apInvoiceService')
+const vendorInvoiceAuditService = require('./vendorInvoiceAuditService')
 
-module.exports = { xeroService, cloudinaryService, ocrService, pricingService, leakageService }
+module.exports = {
+  xeroService,
+  cloudinaryService,
+  ocrService,
+  pricingService,
+  leakageService,
+  gstService,
+  apInvoiceService,
+  vendorInvoiceAuditService,
+}

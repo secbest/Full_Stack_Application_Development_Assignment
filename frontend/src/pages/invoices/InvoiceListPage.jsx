@@ -112,16 +112,16 @@ export default function InvoiceListPage() {
                     <th className="px-3 py-3 w-10">
                       <input type="checkbox" onChange={toggleAll} checked={approvable.length > 0 && approvable.every((r) => selected.has(r.id))} />
                     </th>
-                    {['Booking Ref', 'Client', 'Subtotal', 'Total', 'Status', 'Xero ID', 'Action'].map((c) => (
+                    {['Booking Ref', 'Client', 'Subtotal', 'GST', 'Total', 'Status', 'Xero ID', 'Action'].map((c) => (
                       <th key={c} className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{c}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
                   ) : filtered.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">No invoices.</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">No invoices.</td></tr>
                   ) : filtered.map((inv, idx) => {
                     const canSelect = ['matched', 'adjusted'].includes(inv.status)
                     return (
@@ -132,6 +132,11 @@ export default function InvoiceListPage() {
                         <td className="px-4 py-2"><span className="text-xs font-semibold text-slate-900 font-mono">{inv.booking_reference || `INV#${inv.id}`}</span></td>
                         <td className="px-4 py-2"><span className="text-xs font-medium text-slate-800">{inv.client_name || '—'}</span></td>
                         <td className="px-4 py-2"><span className="text-xs text-slate-600">{money(inv.subtotal)}</span></td>
+                        <td className="px-4 py-2">
+                          <span className="text-xs text-slate-600 whitespace-nowrap">
+                            {money(inv.tax_amount)}{inv.gst_rate_percent !== null && inv.gst_rate_percent !== undefined ? ` (${Number(inv.gst_rate_percent)}%)` : ''}
+                          </span>
+                        </td>
                         <td className="px-4 py-2"><span className="text-xs font-semibold text-slate-900">{money(inv.total_amount)}</span></td>
                         <td className="px-4 py-2"><StatusBadge status={inv.status} /></td>
                         <td className="px-4 py-2"><span className="text-xs text-slate-500 font-mono">{inv.xero_invoice_id || '—'}</span></td>

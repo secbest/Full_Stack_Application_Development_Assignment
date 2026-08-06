@@ -1,6 +1,7 @@
 const sequelize = require('../config')
 const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, Booking, User, XeroSyncLog } = require('../models')
 const { xeroService } = require('../services')
+const vendorInvoiceAuditService = require('../services/vendorInvoiceAuditService')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
 
@@ -272,6 +273,12 @@ async function retrySync(req, res) {
       if (vendorInvoice.xero_bill_id) {
         await log.update({ status: 'success', xero_record_id: vendorInvoice.xero_bill_id, error_message: null, synced_at: log.synced_at || new Date() })
         await vendorInvoice.update({ status: 'synced_to_xero' })
+        await vendorInvoiceAuditService.record({
+          invoiceId: vendorInvoice.id,
+          userId: req.user?.sub || null,
+          action: 'sync_adopted',
+          note: `Existing Xero bill ${vendorInvoice.xero_bill_id} was adopted during retry.`,
+        })
         return success(res, {
           id: log.id,
           status: 'success',
@@ -308,7 +315,11 @@ async function retrySync(req, res) {
         {
           id: arInvoice.id,
           client_name: arInvoice.Client ? arInvoice.Client.name : null,
+          subtotal: arInvoice.subtotal,
+          gst_rate_percent: arInvoice.gst_rate_percent,
+          tax_amount: arInvoice.tax_amount,
           total_amount: arInvoice.total_amount,
+          xero_tax_type: arInvoice.xero_tax_type,
           InvoiceLineItems: arInvoice.InvoiceLineItems,
           booking_reference: arInvoice.Booking ? arInvoice.Booking.reference_number : null,
           service_date: arInvoice.Booking ? arInvoice.Booking.scheduled_date : null,
@@ -326,6 +337,15 @@ async function retrySync(req, res) {
       const syncedAt = new Date()
       await log.update({ status: 'success', attempt_count, xero_record_id: result.xeroRecordId, error_message: null, synced_at: syncedAt })
       if (vendorInvoice) await vendorInvoice.update({ status: 'synced_to_xero', xero_bill_id: result.xeroRecordId })
+      if (vendorInvoice) {
+        await vendorInvoiceAuditService.record({
+          invoiceId: vendorInvoice.id,
+          userId: req.user?.sub || null,
+          action: 'sync_retry_succeeded',
+          changes: { status: { from: 'failed', to: 'synced_to_xero' }, xero_bill_id: { from: null, to: result.xeroRecordId } },
+          note: `Xero retry attempt ${attempt_count} succeeded.`,
+        })
+      }
       if (arInvoice) await arInvoice.update({ status: 'synced_to_xero', xero_invoice_id: result.xeroRecordId })
       return success(res, {
         id: log.id,
@@ -340,6 +360,12 @@ async function retrySync(req, res) {
     await log.update({ status: 'failed', attempt_count, error_message: result.error })
     if (vendorInvoice) {
       await vendorInvoice.update({ status: 'failed' })
+      await vendorInvoiceAuditService.record({
+        invoiceId: vendorInvoice.id,
+        userId: req.user?.sub || null,
+        action: 'sync_retry_failed',
+        note: `Xero retry attempt ${attempt_count} failed: ${result.error}`,
+      })
       notificationService.create({
         user_id: vendorInvoice.uploaded_by,
         type: 'xero_sync_failed',
