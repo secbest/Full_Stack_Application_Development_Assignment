@@ -4,7 +4,7 @@
 const { Op } = require('sequelize')
 
 jest.mock('../../src/models', () => ({
-  User: { findOne: jest.fn(), findByPk: jest.fn() },
+  User: { findOne: jest.fn(), findByPk: jest.fn(), findAll: jest.fn() },
 }))
 jest.mock('../../src/utils/token', () => ({
   signToken: jest.fn(() => 'signed.jwt.token'),
@@ -17,7 +17,7 @@ jest.mock('bcryptjs', () => ({
 const bcrypt = require('bcryptjs')
 const { User } = require('../../src/models')
 const { signToken } = require('../../src/utils/token')
-const { updateProfile, updatePassword } = require('../../src/controllers/userController')
+const { updateProfile, updatePassword, listUsers, updateUser, forceLogout, unlockUser } = require('../../src/controllers/userController')
 
 function mockRes() {
   return { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() }
@@ -116,5 +116,127 @@ describe('updatePassword (PATCH /api/users/me/password)', () => {
     expect(userInstance.save).not.toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(401)
     expect(jsonBody(res)).toMatchObject({ success: false, code: 'INVALID_CREDENTIALS' })
+  })
+})
+
+describe('listUsers (GET /api/users)', () => {
+  test('returns the minimal shape for a non-managing_director caller', async () => {
+    User.findAll.mockResolvedValue([{ id: 3, name: 'Ravi Kumar', role: 'field_crew' }])
+
+    const req = { user: { sub: 1, role: 'quotations_specialist' }, query: {} }
+    const res = mockRes()
+    await listUsers(req, res)
+
+    expect(User.findAll).toHaveBeenCalledWith({
+      where: {},
+      attributes: ['id', 'name', 'role'],
+      order: [['name', 'ASC']],
+    })
+    expect(jsonBody(res)).toMatchObject({ success: true, data: [{ id: 3, name: 'Ravi Kumar', role: 'field_crew' }] })
+  })
+
+  test('returns session/security fields plus a computed is_online for a managing_director caller', async () => {
+    const fiveMinutesAgo = new Date(Date.now() - 4 * 60 * 1000)
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    User.findAll.mockResolvedValue([
+      { id: 3, name: 'Ravi Kumar', email: 'ravi@efar.com.sg', role: 'field_crew', last_login_at: fiveMinutesAgo, last_active_at: fiveMinutesAgo, is_locked: false },
+      { id: 4, name: 'Chloe Tan', email: 'chloe@efar.com.sg', role: 'ap_specialist', last_login_at: twoHoursAgo, last_active_at: twoHoursAgo, is_locked: true },
+    ])
+
+    const req = { user: { sub: 1, role: 'managing_director' }, query: {} }
+    const res = mockRes()
+    await listUsers(req, res)
+
+    expect(User.findAll).toHaveBeenCalledWith({
+      where: {},
+      attributes: ['id', 'name', 'email', 'role', 'last_login_at', 'last_active_at', 'is_locked'],
+      order: [['name', 'ASC']],
+    })
+    expect(jsonBody(res).data).toEqual([
+      { id: 3, name: 'Ravi Kumar', email: 'ravi@efar.com.sg', role: 'field_crew', last_login_at: fiveMinutesAgo, last_active_at: fiveMinutesAgo, is_online: true, is_locked: false },
+      { id: 4, name: 'Chloe Tan', email: 'chloe@efar.com.sg', role: 'ap_specialist', last_login_at: twoHoursAgo, last_active_at: twoHoursAgo, is_online: false, is_locked: true },
+    ])
+  })
+})
+
+describe('updateUser (PATCH /api/users/:id)', () => {
+  test('updates name/email/role and returns the updated user', async () => {
+    User.findOne.mockResolvedValue(null)
+    const userInstance = { id: 5, name: 'Old Name', email: 'old@efar.com.sg', role: 'quotations_specialist', save: jest.fn().mockResolvedValue() }
+    User.findByPk.mockResolvedValue(userInstance)
+
+    const req = { params: { id: 5 }, body: { name: 'New Name', email: 'new@efar.com.sg', role: 'ar_specialist' } }
+    const res = mockRes()
+    await updateUser(req, res)
+
+    expect(userInstance.name).toBe('New Name')
+    expect(userInstance.role).toBe('ar_specialist')
+    expect(userInstance.save).toHaveBeenCalled()
+    expect(jsonBody(res)).toMatchObject({ success: true, data: { id: 5, name: 'New Name', email: 'new@efar.com.sg', role: 'ar_specialist' } })
+  })
+
+  test('rejects with 409 when another user already has the requested email', async () => {
+    User.findByPk.mockResolvedValue({ id: 5 })
+    User.findOne.mockResolvedValue({ id: 9, email: 'taken@efar.com.sg' })
+
+    const req = { params: { id: 5 }, body: { name: 'New Name', email: 'taken@efar.com.sg', role: 'ar_specialist' } }
+    const res = mockRes()
+    await updateUser(req, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(jsonBody(res)).toMatchObject({ success: false, code: 'EMAIL_IN_USE' })
+  })
+
+  test('returns 404 for an unknown user id', async () => {
+    User.findByPk.mockResolvedValue(null)
+
+    const req = { params: { id: 999 }, body: { name: 'X', email: 'x@efar.com.sg', role: 'ar_specialist' } }
+    const res = mockRes()
+    await updateUser(req, res)
+
+    expect(res.status).toHaveBeenCalledWith(404)
+    expect(jsonBody(res)).toMatchObject({ success: false, code: 'USER_NOT_FOUND' })
+  })
+})
+
+describe('forceLogout (POST /api/users/:id/force-logout)', () => {
+  test('increments token_version', async () => {
+    const update = jest.fn().mockResolvedValue()
+    User.findByPk.mockResolvedValue({ id: 5, token_version: 2, update })
+
+    const req = { params: { id: 5 } }
+    const res = mockRes()
+    await forceLogout(req, res)
+
+    expect(update).toHaveBeenCalledWith({ token_version: 3 })
+    expect(jsonBody(res)).toMatchObject({ success: true })
+  })
+
+  test('returns 404 for an unknown user id', async () => {
+    User.findByPk.mockResolvedValue(null)
+    const res = mockRes()
+    await forceLogout({ params: { id: 999 } }, res)
+    expect(res.status).toHaveBeenCalledWith(404)
+  })
+})
+
+describe('unlockUser (POST /api/users/:id/unlock)', () => {
+  test('clears is_locked and resets failed_login_count', async () => {
+    const update = jest.fn().mockResolvedValue()
+    User.findByPk.mockResolvedValue({ id: 5, is_locked: true, failed_login_count: 5, update })
+
+    const req = { params: { id: 5 } }
+    const res = mockRes()
+    await unlockUser(req, res)
+
+    expect(update).toHaveBeenCalledWith({ is_locked: false, failed_login_count: 0 })
+    expect(jsonBody(res)).toMatchObject({ success: true })
+  })
+
+  test('returns 404 for an unknown user id', async () => {
+    User.findByPk.mockResolvedValue(null)
+    const res = mockRes()
+    await unlockUser({ params: { id: 999 } }, res)
+    expect(res.status).toHaveBeenCalledWith(404)
   })
 })
