@@ -53,3 +53,19 @@ export function getFleetOverview(params) {
 export function getVendorExpenses(params) {
   return api.get('/dashboard/vendor-expenses', { params })
 }
+
+export function getCycleTime(params) {
+  return api.get('/dashboard/cycle-time', { params })
+}
+
+export function getXeroHealth() {
+  return api.get('/dashboard/xero-health')
+}
+
+export function getRevenueTrend(params) {
+  return api.get('/dashboard/revenue-trend', { params })
+}
+
+export function getTopClients() {
+  return api.get('/dashboard/top-clients')
+}
