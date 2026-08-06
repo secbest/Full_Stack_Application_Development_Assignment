@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Download, AlertTriangle, XCircle, FileBarChart } from 'lucide-react';
+import { Calendar, Download, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { listInvoices as fetchInvoices } from '../../api/ar';
 
@@ -64,38 +64,7 @@ function getPeriodDateRange(period, customFrom, customTo) {
   return { startDate: null, endDate: null };
 }
 
-const LEAKAGE_ROWS = [
-  { bkg: "BKG-004", client: "TTSH",          completedAt: "14 Jun 2026", daysUntilMemo: 0.4, crew: "—",          resolution: "Memo Submitted" },
-  { bkg: "BKG-007", client: "CGH",           completedAt: "20 Jun 2026", daysUntilMemo: 2.1, crew: "Ahmad",      resolution: "Memo Submitted" },
-  { bkg: "BKG-009", client: "Mount Alvernia",completedAt: "20 Jun 2026", daysUntilMemo: 4.3, crew: "Jason Teo",  resolution: "Still Missing" },
-  { bkg: "BKG-011", client: "TTSH",          completedAt: "25 Jun 2026", daysUntilMemo: 1.2, crew: "Ravi Kumar", resolution: "Dismissed" },
-];
-
-// Billing status badge: derived from the leak's resolution/days, distinct from the
-// per-row "Resolution" column (what happened to the leak) below.
-const BILLING_STATUS_CONFIG = {
-  missing:  { label: "Missing", bg: "rgba(239,68,68,0.15)",  color: "#991B1B", Icon: XCircle },
-  late:     { label: "Late",    bg: "rgba(245,158,11,0.15)", color: "#92400E", Icon: AlertTriangle },
-  on_time:  { label: "On Time", bg: "rgba(34,197,94,0.15)",  color: "#166534", Icon: null },
-};
-
-function getBillingStatus(row) {
-  if (row.resolution === "Still Missing") return "missing";
-  if (row.daysUntilMemo >= 2) return "late";
-  return "on_time";
-}
-
-function BillingStatusBadge({ status }) {
-  const { label, bg, color, Icon } = BILLING_STATUS_CONFIG[status];
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: bg, color, fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>
-      {Icon && <Icon size={12} strokeWidth={2.5} />}
-      {label}
-    </span>
-  );
-}
-
-function getReportTableData(reportTab, invoices, cycleTimeData) {
+function getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) {
   if (reportTab === "revenue") {
     return {
       title: "Revenue Report",
@@ -119,10 +88,11 @@ function getReportTableData(reportTab, invoices, cycleTimeData) {
     };
   }
   if (reportTab === "leakage") {
+    const rows = (leakageHistoryData?.history || []).flatMap((m) => m.rows.map((r) => ({ ...r, month: m.month })));
     return {
       title: "Leakage History Report",
-      headers: ["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Billing Status", "Crew Member", "Resolution"],
-      rows: LEAKAGE_ROWS.map((r) => [r.bkg, r.client, r.completedAt, `${r.daysUntilMemo}d`, BILLING_STATUS_CONFIG[getBillingStatus(r)].label, r.crew, r.resolution]),
+      headers: ["Month", "Booking Ref", "Client", "Invoice Created", "Unpriced Items", "Estimated Amount"],
+      rows: rows.map((r) => [r.month, r.booking_reference || "—", r.client_name || "—", fmtDate(r.created_at), r.unpriced_count, `$${r.estimated_amount.toFixed(2)}`]),
     };
   }
   return null;
@@ -521,50 +491,58 @@ function ReportBillingCycle({ data, loading, error }) {
   );
 }
 
-function ReportLeakage() {
+function ReportLeakage({ data, loading, error }) {
   const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
-  const resStyle = (r) => r === "Memo Submitted" ? { bg: "rgba(34,197,94,0.10)", color: "#22C55E" } : r === "Dismissed" ? { bg: "rgba(100,116,139,0.10)", color: "#64748B" } : { bg: "rgba(239,68,68,0.10)", color: "#EF4444" };
+
+  if (loading) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Loading leakage history…</p></div>;
+  }
+  if (error) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif" }}>{error}</p></div>;
+  }
+
+  const history = data?.history || [];
+  const totalLeakage = history.reduce((s, m) => s + m.estimated_leakage, 0);
+  const totalAffected = history.reduce((s, m) => s + m.affected_invoice_count, 0);
+  const rows = history.flatMap((m) => m.rows.map((r) => ({ ...r, month: m.month })));
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ ...cardBase, padding: "18px 24px", display: "flex", alignItems: "center", gap: 20 }}>
         <AlertTriangle size={22} color="#EF4444" strokeWidth={2} />
         <p style={{ fontSize: 14, color: "#64748B", fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
-          <strong style={{ color: "#1E293B" }}>This quarter: 3 jobs billed late, 1 job never billed.</strong> See the Billing Status column for each booking's status.
+          {totalAffected > 0 ? (
+            <><strong style={{ color: "#1E293B" }}>This period: ${totalLeakage.toFixed(2)} in estimated leakage across {totalAffected} invoice{totalAffected === 1 ? "" : "s"}.</strong> Amounts are estimates - see the Revenue Leakage page for methodology.</>
+          ) : (
+            <strong style={{ color: "#1E293B" }}>No unpriced surcharges were recorded in this period.</strong>
+          )}
         </p>
       </div>
       <div style={{ ...cardBase, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-              {["Booking Ref", "Client", "Completion Date", "Days Until Memo", "Billing Status", "Crew Member", "Resolution"].map((col) => (
+              {["Month", "Booking Ref", "Client", "Invoice Created", "Unpriced Items", "Estimated Amount"].map((col) => (
                 <th key={col} style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", whiteSpace: "nowrap" }}>{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {LEAKAGE_ROWS.map((row, i) => {
-              const { bg: rBg, color: rColor } = resStyle(row.resolution);
-              return (
-                <tr key={row.bkg}
-                  style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: "transparent", transition: "background 0.12s" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#F1F5F9"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
-                  <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.bkg}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.client}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.completedAt}</td>
-                  <td style={{ padding: "0 16px" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: row.daysUntilMemo >= 3 ? "#EF4444" : row.daysUntilMemo >= 1.5 ? "#F59E0B" : "#22C55E", fontFamily: "'Inter', sans-serif" }}>{row.daysUntilMemo}d</span>
-                  </td>
-                  <td style={{ padding: "0 16px" }}>
-                    <BillingStatusBadge status={getBillingStatus(row)} />
-                  </td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.crew}</td>
-                  <td style={{ padding: "0 16px" }}>
-                    <span style={{ display: "inline-flex", padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: rBg, color: rColor, fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.resolution}</span>
-                  </td>
-                </tr>
-              );
-            })}
+            {rows.length === 0 ? (
+              <tr><td colSpan={6} style={{ padding: "40px 16px", textAlign: "center", fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>No unpriced surcharges in this period.</td></tr>
+            ) : rows.map((row) => (
+              <tr key={row.invoice_id}
+                style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: "transparent", transition: "background 0.12s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "#F1F5F9"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.month}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.booking_reference || "—"}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.client_name || "—"}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{fmtDate(row.created_at)}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{row.unpriced_count}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 600, color: "#EF4444", fontFamily: "'Inter', sans-serif" }}>${row.estimated_amount.toFixed(2)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
