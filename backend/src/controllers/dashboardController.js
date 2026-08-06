@@ -445,4 +445,48 @@ async function topClients(req, res) {
   }
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients }
+const SERVICE_TYPE_LABELS = {
+  eas: 'Emergency Ambulance Services (EAS)',
+  mts: 'Medical Transport Service (MTS)',
+  event_standby: 'Event Standby',
+  workplace_standby: 'Workplace Standby',
+}
+
+// GET /api/dashboard/revenue-by-service-type - backs the Reports "Revenue by Service
+// Type" donut, which previously rendered a hardcoded illustrative chart because
+// GET /api/invoices (owned by Kwan Hua) doesn't join in the booking's service_type.
+// Implemented here instead of extending that endpoint, to keep this change inside
+// Jasper-owned files.
+async function revenueByServiceType(req, res) {
+  try {
+    const { date_from, date_to } = req.query
+    const from = date_from || `${new Date().getFullYear()}-01-01`
+    const to = date_to || toDateOnly(new Date())
+
+    const invoices = await Invoice.findAll({
+      where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+      include: [{ model: Booking, attributes: ['service_type'] }],
+      attributes: ['total_amount'],
+    })
+
+    const byType = new Map()
+    for (const inv of invoices) {
+      const type = inv.Booking ? inv.Booking.service_type : 'unknown'
+      byType.set(type, (byType.get(type) || 0) + Number(inv.total_amount))
+    }
+
+    const breakdown = [...byType.entries()]
+      .map(([service_type, total]) => ({
+        service_type,
+        label: SERVICE_TYPE_LABELS[service_type] || service_type,
+        total_revenue: total.toFixed(2),
+      }))
+      .sort((a, b) => Number(b.total_revenue) - Number(a.total_revenue))
+
+    return success(res, { period: { from, to }, breakdown })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType }

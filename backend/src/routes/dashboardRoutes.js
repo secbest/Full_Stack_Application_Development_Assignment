@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
-const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema } = require('../validators')
-const { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients } = require('../controllers/dashboardController')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema, revenueByServiceTypeQuerySchema } = require('../validators')
+const { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType } = require('../controllers/dashboardController')
 
 router.get(
   '/fleet-overview',
@@ -49,5 +49,13 @@ router.get(
 )
 
 router.get('/top-clients', authenticate, authorise('managing_director'), topClients)
+
+router.get(
+  '/revenue-by-service-type',
+  authenticate,
+  authorise('managing_director'),
+  validate(revenueByServiceTypeQuerySchema, 'query'),
+  revenueByServiceType
+)
 
 module.exports = router
