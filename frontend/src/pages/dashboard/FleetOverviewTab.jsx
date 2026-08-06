@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Loader2, RefreshCcw } from 'lucide-react'
 import { PieChart } from '@mui/x-charts/PieChart'
+import { LineChart } from '@mui/x-charts/LineChart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/context/ToastContext'
-import { getFleetOverview } from '@/api/fieldOps'
+import { getFleetOverview, getCycleTime, getXeroHealth, getRevenueTrend, getTopClients } from '@/api/fieldOps'
 
 const PERIODS = [
   { value: 'today', label: 'Today' },
@@ -38,6 +39,10 @@ export default function FleetOverviewTab() {
   const [period, setPeriod] = useState('today')
   const [overview, setOverview] = useState(null)
   const [status, setStatus] = useState('loading')
+  const [cycleTime, setCycleTime] = useState(null)
+  const [xeroHealth, setXeroHealth] = useState(null)
+  const [revenueTrend, setRevenueTrend] = useState(null)
+  const [topClients, setTopClients] = useState(null)
   const toast = useToast()
 
   async function load() {
@@ -52,10 +57,31 @@ export default function FleetOverviewTab() {
     }
   }
 
+  // These four are independent of the period filter above (each covers its own trailing
+  // window or is a point-in-time snapshot), so they load once rather than re-fetching
+  // on every Today/This Week/This Month click.
+  async function loadAnalyticsWidgets() {
+    try {
+      const [cycleRes, xeroRes, trendRes, clientsRes] = await Promise.all([
+        getCycleTime(), getXeroHealth(), getRevenueTrend(), getTopClients(),
+      ])
+      setCycleTime(cycleRes.data.data)
+      setXeroHealth(xeroRes.data.data)
+      setRevenueTrend(trendRes.data.data)
+      setTopClients(clientsRes.data.data)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to load some dashboard analytics.')
+    }
+  }
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period])
+
+  useEffect(() => {
+    loadAnalyticsWidgets()
+  }, [])
 
   if (status === 'loading') {
     return <div className="flex items-center gap-2 text-muted-foreground text-sm py-12 justify-center"><Loader2 className="w-4 h-4 animate-spin" /> Loading fleet overview...</div>
@@ -85,7 +111,7 @@ export default function FleetOverviewTab() {
         <TabsList>{PERIODS.map((p) => <TabsTrigger key={p.value} value={p.value}>{p.label}</TabsTrigger>)}</TabsList>
       </Tabs>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <KpiCard label="Total Bookings" value={overview.totals.bookings_total} />
         <KpiCard label="Active Jobs" value={overview.totals.active_jobs} valueColor="#F59E0B" />
         <KpiCard
@@ -95,6 +121,10 @@ export default function FleetOverviewTab() {
           borderColor={overview.revenue_risk.warning ? '#EF4444' : undefined}
         />
         <KpiCard label="Invoices Synced" value={overview.totals.invoices_synced_to_xero} valueColor="#22C55E" />
+        <KpiCard
+          label="Average Billing Cycle"
+          value={cycleTime && cycleTime.overall_average_days !== null ? `${cycleTime.overall_average_days} days` : '—'}
+        />
       </div>
 
       <div className="grid grid-cols-[1.2fr_1fr] gap-4">
@@ -128,6 +158,84 @@ export default function FleetOverviewTab() {
               <p className="text-sm text-[#22C55E]">All completed jobs have memos.</p>
             )}
             <p className="text-xs text-muted-foreground mt-3">Source: booking data. Read-only view.</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {xeroHealth && (
+        <Card className={xeroHealth.counts.failed > 0 ? 'border-l-4' : undefined} style={xeroHealth.counts.failed > 0 ? { borderLeftColor: '#EF4444' } : undefined}>
+          <CardHeader><CardTitle>Xero Sync Health</CardTitle></CardHeader>
+          <CardContent className="flex items-center gap-8">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Synced</p>
+              <p className="text-2xl font-bold" style={{ color: '#22C55E' }}>{xeroHealth.counts.synced}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending</p>
+              <p className="text-2xl font-bold" style={{ color: '#F59E0B' }}>{xeroHealth.counts.pending}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Failed</p>
+              <p className="text-2xl font-bold" style={{ color: xeroHealth.counts.failed > 0 ? '#EF4444' : '#1E293B' }}>{xeroHealth.counts.failed}</p>
+            </div>
+            <div className="ml-auto text-right">
+              <span
+                className="text-xs font-semibold px-2 py-1 rounded"
+                style={xeroHealth.mode.simulated
+                  ? { background: 'rgba(245,158,11,0.15)', color: '#F59E0B' }
+                  : { background: 'rgba(34,197,94,0.15)', color: '#22C55E' }}
+              >
+                {xeroHealth.mode.label}
+              </span>
+              <p className="text-xs text-muted-foreground mt-1">
+                {xeroHealth.last_synced_at ? `Last sync: ${new Date(xeroHealth.last_synced_at).toLocaleString()}` : 'No successful sync yet.'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-[1.2fr_1fr] gap-4">
+        <Card>
+          <CardHeader><CardTitle>Revenue Trend</CardTitle></CardHeader>
+          <CardContent>
+            {!revenueTrend || revenueTrend.trend.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center">Not enough synced revenue yet to show a trend.</p>
+            ) : (
+              <LineChart
+                height={220}
+                xAxis={[{ scaleType: 'point', data: revenueTrend.trend.map((t) => t.bucket) }]}
+                series={[{ data: revenueTrend.trend.map((t) => Number(t.total_revenue)), label: 'Revenue ($)', color: '#3B82F6' }]}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Top Clients</CardTitle></CardHeader>
+          <CardContent>
+            {!topClients || topClients.top_clients.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center">No synced invoices yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs uppercase text-muted-foreground text-left">
+                    <th className="pb-2">Client</th>
+                    <th className="pb-2 text-right">Revenue</th>
+                    <th className="pb-2 text-right">Bookings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topClients.top_clients.map((c) => (
+                    <tr key={c.client_id} className="border-t">
+                      <td className="py-2">{c.client_name}</td>
+                      <td className="py-2 text-right font-semibold">${Number(c.total_revenue).toFixed(2)}</td>
+                      <td className="py-2 text-right text-muted-foreground">{c.booking_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </CardContent>
         </Card>
       </div>
