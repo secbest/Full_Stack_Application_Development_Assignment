@@ -54,6 +54,20 @@ describe('Accounts Management - Force Logout', () => {
   });
 });
 
+describe('Accounts Management - Force Logout for a locked-and-online account', () => {
+  test('a user who is both locked and online shows BOTH Force Logout and Unlock', async () => {
+    const LOCKED_AND_ONLINE_USER = { ...LOCKED_USER, is_online: true, last_active_at: new Date().toISOString() };
+    mock.onGet('/users').reply(200, { success: true, data: [LOCKED_AND_ONLINE_USER] });
+    renderPage();
+    await screen.findByText('chloe@efar.com.sg');
+
+    // Status still collapses to "Locked" for display, but isOnline is tracked
+    // separately, so the MD can terminate the live session without unlocking first.
+    expect(screen.getByRole('button', { name: 'Force Logout' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unlock' })).toBeInTheDocument();
+  });
+});
+
 describe('Accounts Management - Unlock', () => {
   test('is only shown for a Locked user, calls the unlock endpoint, refetches, and clears the risk row', async () => {
     mock.onGet('/users').reply(200, { success: true, data: [ONLINE_USER, LOCKED_USER] });

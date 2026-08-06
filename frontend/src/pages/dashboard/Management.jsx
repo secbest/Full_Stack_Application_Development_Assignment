@@ -24,6 +24,11 @@ function toDisplayRow(u) {
     email: u.email,
     role: ROLE_LABELS[u.role] || u.role,
     status: u.is_locked ? "Locked" : u.is_online ? "Online" : "Offline",
+    // Kept separate from `status` (which still drives the status-dot/label rendering)
+    // so a locked-AND-online user can still show a Force Logout action: `status`
+    // collapses to "Locked" for that user, which would otherwise hide the only way
+    // to terminate their live session without unlocking the account first.
+    isOnline: u.is_online,
     lastLogin: formatLastLogin(u.last_login_at),
   };
 }
@@ -401,7 +406,7 @@ function AccountsManagement() {
     return matchSearch && matchRole && matchStatus;
   });
 
-  const onlineCount = accounts.filter((r) => r.status === "Online").length;
+  const onlineCount = accounts.filter((r) => r.isOnline).length;
   const lockedCount = accounts.filter((r) => r.status === "Locked").length;
 
   const selSty = { height: 32, padding: "0 28px 0 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", appearance: "none", cursor: "pointer" };
@@ -534,7 +539,7 @@ function AccountsManagement() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 16, marginLeft: -12 }}>
                       <ActionButton variant="info" onClick={() => setUserToEdit(row)}>Edit</ActionButton>
                       <ActionButton variant="neutral" onClick={() => setUserToDelete(row)}>Remove</ActionButton>
-                      {row.status === "Online" && (
+                      {row.isOnline && (
                         <ActionButton variant="destructive" onClick={() => handleForceLogout(row)}>Force Logout</ActionButton>
                       )}
                       {row.status === "Locked" && (

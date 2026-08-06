@@ -39,10 +39,15 @@ async function authenticate(req, res, next) {
     }
 
     req.user = payload
-    next()
   } catch (err) {
-    res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong while authenticating this request.' })
+    return res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong while authenticating this request.' })
   }
+
+  // Called outside the try block on purpose: if a downstream handler throws
+  // synchronously, that throw must not be caught by THIS function's catch (which
+  // would send a spurious 500 INTERNAL_ERROR here, on top of whatever response the
+  // downstream handler's own error handling already sent).
+  next()
 }
 
 // Restricts a route to specific role slugs.

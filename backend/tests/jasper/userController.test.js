@@ -103,6 +103,22 @@ describe('updatePassword (PATCH /api/users/me/password)', () => {
     expect(jsonBody(res)).toMatchObject({ success: true })
   })
 
+  test('revokes other sessions (bumps token_version) and returns a fresh token for the caller', async () => {
+    const userInstance = { id: 7, password: 'hashed-old-password', token_version: 4, save: jest.fn().mockResolvedValue() }
+    User.findByPk.mockResolvedValue(userInstance)
+    bcrypt.compare.mockResolvedValue(true)
+    bcrypt.hash.mockResolvedValue('hashed-new-password')
+
+    const req = { user: { sub: 7 }, body: { currentPassword: 'oldpass1', newPassword: 'newpass1' } }
+    const res = mockRes()
+
+    await updatePassword(req, res)
+
+    expect(userInstance.token_version).toBe(5)
+    expect(signToken).toHaveBeenCalledWith(userInstance)
+    expect(jsonBody(res)).toMatchObject({ success: true, data: { token: 'signed.jwt.token' } })
+  })
+
   test('rejects with 401 when the current password is wrong', async () => {
     const userInstance = { id: 7, password: 'hashed-old-password', save: jest.fn() }
     User.findByPk.mockResolvedValue(userInstance)
@@ -197,6 +213,30 @@ describe('updateUser (PATCH /api/users/:id)', () => {
     expect(res.status).toHaveBeenCalledWith(404)
     expect(jsonBody(res)).toMatchObject({ success: false, code: 'USER_NOT_FOUND' })
   })
+
+  test('increments token_version by 1 when role changes, so the old JWT claim loses authority', async () => {
+    User.findOne.mockResolvedValue(null)
+    const userInstance = { id: 5, name: 'Old Name', email: 'old@efar.com.sg', role: 'ar_specialist', token_version: 3, save: jest.fn().mockResolvedValue() }
+    User.findByPk.mockResolvedValue(userInstance)
+
+    const req = { params: { id: 5 }, body: { name: 'Old Name', email: 'old@efar.com.sg', role: 'managing_director' } }
+    await updateUser(req, mockRes())
+
+    expect(userInstance.role).toBe('managing_director')
+    expect(userInstance.token_version).toBe(4)
+  })
+
+  test('does not increment token_version when the role is unchanged', async () => {
+    User.findOne.mockResolvedValue(null)
+    const userInstance = { id: 5, name: 'Old Name', email: 'old@efar.com.sg', role: 'ar_specialist', token_version: 3, save: jest.fn().mockResolvedValue() }
+    User.findByPk.mockResolvedValue(userInstance)
+
+    const req = { params: { id: 5 }, body: { name: 'New Name', email: 'new@efar.com.sg', role: 'ar_specialist' } }
+    await updateUser(req, mockRes())
+
+    expect(userInstance.name).toBe('New Name')
+    expect(userInstance.token_version).toBe(3)
+  })
 })
 
 describe('forceLogout (POST /api/users/:id/force-logout)', () => {
@@ -204,7 +244,7 @@ describe('forceLogout (POST /api/users/:id/force-logout)', () => {
     const update = jest.fn().mockResolvedValue()
     User.findByPk.mockResolvedValue({ id: 5, token_version: 2, update })
 
-    const req = { params: { id: 5 } }
+    const req = { user: { sub: 1 }, params: { id: 5 } }
     const res = mockRes()
     await forceLogout(req, res)
 
@@ -215,8 +255,18 @@ describe('forceLogout (POST /api/users/:id/force-logout)', () => {
   test('returns 404 for an unknown user id', async () => {
     User.findByPk.mockResolvedValue(null)
     const res = mockRes()
-    await forceLogout({ params: { id: 999 } }, res)
+    await forceLogout({ user: { sub: 1 }, params: { id: 999 } }, res)
     expect(res.status).toHaveBeenCalledWith(404)
+  })
+
+  test('rejects with 409 CANNOT_FORCE_LOGOUT_SELF when force-logging-out one\'s own account', async () => {
+    const req = { user: { sub: 5 }, params: { id: 5 } }
+    const res = mockRes()
+    await forceLogout(req, res)
+
+    expect(User.findByPk).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(jsonBody(res)).toMatchObject({ success: false, code: 'CANNOT_FORCE_LOGOUT_SELF' })
   })
 })
 

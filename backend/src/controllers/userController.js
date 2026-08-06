@@ -62,9 +62,15 @@ async function updatePassword(req, res) {
     if (!valid) return error(res, 'Current password is incorrect.', 'INVALID_CREDENTIALS', 401)
 
     user.password = await bcrypt.hash(newPassword, 12)
+    // Changing your own password revokes every other session (same mechanism as
+    // forceLogout). This also revokes the CALLER's current token, so a fresh one is
+    // re-signed and returned below - mirrors updateProfile's re-sign pattern - to
+    // avoid immediately logging the caller out of the session they're using right now.
+    user.token_version += 1
     await user.save()
 
-    return success(res, { message: 'Password updated successfully.' })
+    const token = signToken(user)
+    return success(res, { message: 'Password updated successfully.', token })
   } catch (err) {
     return internalError(res, err)
   }
@@ -124,6 +130,11 @@ async function updateUser(req, res) {
 
     user.name = name
     user.email = email
+    // authorise() reads the role from the JWT claim, not the DB, so a demoted user
+    // would otherwise keep their old role's authority on their existing token for up
+    // to the token's TTL. Bumping token_version (same mechanism forceLogout uses)
+    // forces them to re-authenticate and get a token with the new role.
+    if (role !== user.role) user.token_version += 1
     user.role = role
     await user.save()
 
@@ -139,6 +150,10 @@ async function updateUser(req, res) {
 // response interceptor (src/api/index.js) redirects them to /login.
 async function forceLogout(req, res) {
   try {
+    if (String(req.user.sub) === String(req.params.id)) {
+      return error(res, 'You cannot force-logout your own account while logged in.', 'CANNOT_FORCE_LOGOUT_SELF', 409)
+    }
+
     const user = await User.findByPk(req.params.id)
     if (!user) return notFound(res, 'No user with this id.', 'USER_NOT_FOUND')
 
