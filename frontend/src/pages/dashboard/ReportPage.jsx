@@ -65,6 +65,17 @@ function getPeriodDateRange(period, customFrom, customTo) {
   return { startDate: null, endDate: null };
 }
 
+// Converts a Date to YYYY-MM-DD using LOCAL calendar components (matching how
+// getPeriodDateRange above builds dateRange.startDate/endDate - via local Date
+// constructors, not UTC). Used by both the invoices effect and the analytics effect
+// so they always resolve to byte-identical date windows for the same selected period.
+function toYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) {
   if (reportTab === "revenue") {
     return {
@@ -165,13 +176,15 @@ function exportReportPDF(reportTab, period, invoices, cycleTimeData, leakageHist
   }
 }
 
-function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading, cycleTimeData, leakageHistoryData, analyticsLoading }) {
+function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading, cycleTimeData, leakageHistoryData, analyticsLoading, currentTabAnalyticsError }) {
   const [dfFocus, setDfFocus] = useState(false);
   const [dtFocus, setDtFocus] = useState(false);
   // Billing Cycle/Leakage History build a truthy { rows: [] } from getReportTableData even
   // before cycleTimeData/leakageHistoryData resolve (empty array, not null) - without gating
   // on analyticsLoading too, Export could fire mid-fetch and silently produce a zero-row file.
-  const exportDisabled = !getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) || (reportTab === "revenue" ? invoicesLoading : analyticsLoading);
+  // Also gate on the active tab's own fetch error, so a failed load can't export an empty
+  // file that contradicts the red error message already showing on screen.
+  const exportDisabled = !getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) || (reportTab === "revenue" ? invoicesLoading : (analyticsLoading || !!currentTabAnalyticsError));
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 16px", flexWrap: "wrap" }}>
@@ -220,7 +233,7 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
   );
 }
 
-function ReportRevenue({ invoices, loading, error, period, serviceBreakdown }) {
+function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, serviceBreakdownError }) {
   const [activeClientIdx, setActiveClientIdx] = useState(null);
   const [invPage, setInvPage] = useState(1);
   const PER_PAGE = 10;
@@ -338,7 +351,9 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown }) {
             <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Revenue by Service Type</h2>
           </div>
           <div style={{ padding: "16px 24px" }}>
-            {donutData.length === 0 ? (
+            {serviceBreakdownError ? (
+              <p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>{serviceBreakdownError}</p>
+            ) : donutData.length === 0 ? (
               <p style={{ fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>No invoices in this period.</p>
             ) : (
               <>
@@ -628,7 +643,10 @@ export default function ReportsScreen() {
   const [leakageHistoryData, setLeakageHistoryData] = useState(null);
   const [vendorExpenseData, setVendorExpenseData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const [analyticsError, setAnalyticsError] = useState("");
+  const [serviceBreakdownError, setServiceBreakdownError] = useState("");
+  const [cycleTimeError, setCycleTimeError] = useState("");
+  const [leakageHistoryError, setLeakageHistoryError] = useState("");
+  const [vendorExpenseError, setVendorExpenseError] = useState("");
 
   // Recompute the concrete start/end Date objects whenever the active period button
   // (or, for Custom, either date input) changes.
@@ -647,8 +665,8 @@ export default function ReportsScreen() {
     setInvoicesLoading(true);
     setInvoicesError("");
     fetchInvoices({
-      from_date: dateRange.startDate ? dateRange.startDate.toISOString() : undefined,
-      to_date: dateRange.endDate ? dateRange.endDate.toISOString() : undefined,
+      from_date: dateRange.startDate ? `${toYMD(dateRange.startDate)}T00:00:00.000Z` : undefined,
+      to_date: dateRange.endDate ? `${toYMD(dateRange.endDate)}T23:59:59.999Z` : undefined,
       limit: 100,
     })
       .then((res) => {
@@ -675,29 +693,51 @@ export default function ReportsScreen() {
 
     let cancelled = false;
     setAnalyticsLoading(true);
-    setAnalyticsError("");
 
-    const toYMD = (d) => d.toISOString().slice(0, 10);
     const params = {};
     if (dateRange.startDate) params.date_from = toYMD(dateRange.startDate);
     if (dateRange.endDate) params.date_to = toYMD(dateRange.endDate);
 
-    Promise.all([
+    Promise.allSettled([
       getRevenueByServiceType(params),
       getCycleTime(params),
       getLeakageHistory(params),
       getVendorExpenses(params),
     ])
-      .then(([serviceRes, cycleRes, leakageRes, vendorRes]) => {
+      .then(([serviceResult, cycleResult, leakageResult, vendorResult]) => {
         if (cancelled) return;
-        setServiceBreakdown(serviceRes.data.data.breakdown);
-        setCycleTimeData(cycleRes.data.data);
-        setLeakageHistoryData(leakageRes.data.data);
-        setVendorExpenseData(vendorRes.data.data);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setAnalyticsError(err.response?.data?.message || "Failed to load report analytics.");
+
+        if (serviceResult.status === "fulfilled") {
+          setServiceBreakdown(serviceResult.value.data.data.breakdown);
+          setServiceBreakdownError("");
+        } else {
+          setServiceBreakdown([]);
+          setServiceBreakdownError(serviceResult.reason?.response?.data?.message || "Failed to load revenue by service type.");
+        }
+
+        if (cycleResult.status === "fulfilled") {
+          setCycleTimeData(cycleResult.value.data.data);
+          setCycleTimeError("");
+        } else {
+          setCycleTimeData(null);
+          setCycleTimeError(cycleResult.reason?.response?.data?.message || "Failed to load billing cycle data.");
+        }
+
+        if (leakageResult.status === "fulfilled") {
+          setLeakageHistoryData(leakageResult.value.data.data);
+          setLeakageHistoryError("");
+        } else {
+          setLeakageHistoryData(null);
+          setLeakageHistoryError(leakageResult.reason?.response?.data?.message || "Failed to load leakage history.");
+        }
+
+        if (vendorResult.status === "fulfilled") {
+          setVendorExpenseData(vendorResult.value.data.data);
+          setVendorExpenseError("");
+        } else {
+          setVendorExpenseData(null);
+          setVendorExpenseError(vendorResult.reason?.response?.data?.message || "Failed to load vendor expenditure.");
+        }
       })
       .finally(() => {
         if (!cancelled) setAnalyticsLoading(false);
@@ -705,6 +745,8 @@ export default function ReportsScreen() {
 
     return () => { cancelled = true; };
   }, [dateRange, period]);
+
+  const currentTabAnalyticsError = reportTab === "billing" ? cycleTimeError : reportTab === "leakage" ? leakageHistoryError : reportTab === "vendor" ? vendorExpenseError : "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: 32, background: "#F8FAFC", minHeight: "100%" }}>
@@ -725,13 +767,13 @@ export default function ReportsScreen() {
       </div>
 
       {/* Period bar */}
-      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} cycleTimeData={cycleTimeData} leakageHistoryData={leakageHistoryData} analyticsLoading={analyticsLoading} />
+      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} cycleTimeData={cycleTimeData} leakageHistoryData={leakageHistoryData} analyticsLoading={analyticsLoading} currentTabAnalyticsError={currentTabAnalyticsError} />
 
       {/* Tab content */}
-      {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} serviceBreakdown={serviceBreakdown} />}
-      {reportTab === "billing" && <ReportBillingCycle data={cycleTimeData} loading={analyticsLoading} error={analyticsError} />}
-      {reportTab === "leakage" && <ReportLeakage data={leakageHistoryData} loading={analyticsLoading} error={analyticsError} />}
-      {reportTab === "vendor" && <ReportVendorExpenditure data={vendorExpenseData} loading={analyticsLoading} error={analyticsError} />}
+      {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} serviceBreakdown={serviceBreakdown} serviceBreakdownError={serviceBreakdownError} />}
+      {reportTab === "billing" && <ReportBillingCycle data={cycleTimeData} loading={analyticsLoading} error={cycleTimeError} />}
+      {reportTab === "leakage" && <ReportLeakage data={leakageHistoryData} loading={analyticsLoading} error={leakageHistoryError} />}
+      {reportTab === "vendor" && <ReportVendorExpenditure data={vendorExpenseData} loading={analyticsLoading} error={vendorExpenseError} />}
     </div>
   );
 }

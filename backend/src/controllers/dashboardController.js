@@ -89,75 +89,79 @@ async function fleetOverview(req, res) {
 // (the raw OCR figure) wherever a verified value exists, since verified_total is the
 // number that actually reflects what AP signed off on.
 async function vendorExpenses(req, res) {
-  const { date_from, date_to, vendor_name } = req.query
-  const from = date_from || `${new Date().getFullYear()}-01-01`
-  const to = date_to || toDateOnly(new Date())
+  try {
+    const { date_from, date_to, vendor_name } = req.query
+    const from = date_from || `${new Date().getFullYear()}-01-01`
+    const to = date_to || toDateOnly(new Date())
 
-  const where = {
-    status: { [Op.in]: ['approved', 'synced_to_xero'] },
-    invoice_date: { [Op.between]: [from, to] },
-  }
-  if (vendor_name) where.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
-
-  const invoices = await VendorInvoice.findAll({ where })
-  const amountOf = (inv) => Number(inv.verified_total ?? inv.extracted_total ?? 0)
-  const rebateOf = (inv) => Number(inv.rebate_amount ?? 0)
-  const money = (n) => n.toFixed(2)
-
-  const summary = invoices.reduce(
-    (acc, inv) => {
-      acc.total_expenditure += amountOf(inv)
-      acc.total_rebates_applied += rebateOf(inv)
-      acc.invoice_count += 1
-      return acc
-    },
-    { total_expenditure: 0, total_rebates_applied: 0, invoice_count: 0 }
-  )
-
-  const byVendorMap = new Map()
-  const monthlyMap = new Map()
-  for (const inv of invoices) {
-    const amount = amountOf(inv)
-    const rebate = rebateOf(inv)
-
-    const vendorEntry = byVendorMap.get(inv.vendor_name) || {
-      vendor_name: inv.vendor_name, total_expenditure: 0, total_rebates: 0, invoice_count: 0,
+    const where = {
+      status: { [Op.in]: ['approved', 'synced_to_xero'] },
+      invoice_date: { [Op.between]: [from, to] },
     }
-    vendorEntry.total_expenditure += amount
-    vendorEntry.total_rebates += rebate
-    vendorEntry.invoice_count += 1
-    byVendorMap.set(inv.vendor_name, vendorEntry)
+    if (vendor_name) where.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
 
-    const month = (inv.invoice_date || '').slice(0, 7)
-    if (month) {
-      const monthEntry = monthlyMap.get(month) || { month, total_expenditure: 0, net_payable: 0 }
-      monthEntry.total_expenditure += amount
-      monthEntry.net_payable += amount - rebate
-      monthlyMap.set(month, monthEntry)
+    const invoices = await VendorInvoice.findAll({ where })
+    const amountOf = (inv) => Number(inv.verified_total ?? inv.extracted_total ?? 0)
+    const rebateOf = (inv) => Number(inv.rebate_amount ?? 0)
+    const money = (n) => n.toFixed(2)
+
+    const summary = invoices.reduce(
+      (acc, inv) => {
+        acc.total_expenditure += amountOf(inv)
+        acc.total_rebates_applied += rebateOf(inv)
+        acc.invoice_count += 1
+        return acc
+      },
+      { total_expenditure: 0, total_rebates_applied: 0, invoice_count: 0 }
+    )
+
+    const byVendorMap = new Map()
+    const monthlyMap = new Map()
+    for (const inv of invoices) {
+      const amount = amountOf(inv)
+      const rebate = rebateOf(inv)
+
+      const vendorEntry = byVendorMap.get(inv.vendor_name) || {
+        vendor_name: inv.vendor_name, total_expenditure: 0, total_rebates: 0, invoice_count: 0,
+      }
+      vendorEntry.total_expenditure += amount
+      vendorEntry.total_rebates += rebate
+      vendorEntry.invoice_count += 1
+      byVendorMap.set(inv.vendor_name, vendorEntry)
+
+      const month = (inv.invoice_date || '').slice(0, 7)
+      if (month) {
+        const monthEntry = monthlyMap.get(month) || { month, total_expenditure: 0, net_payable: 0 }
+        monthEntry.total_expenditure += amount
+        monthEntry.net_payable += amount - rebate
+        monthlyMap.set(month, monthEntry)
+      }
     }
-  }
 
-  return success(res, {
-    period: { from, to },
-    summary: {
-      total_expenditure: money(summary.total_expenditure),
-      total_rebates_applied: money(summary.total_rebates_applied),
-      net_payable: money(summary.total_expenditure - summary.total_rebates_applied),
-      invoice_count: summary.invoice_count,
-    },
-    by_vendor: [...byVendorMap.values()]
-      .sort((a, b) => b.total_expenditure - a.total_expenditure) // largest cost contributor first, per the doc
-      .map((v) => ({
-        vendor_name: v.vendor_name,
-        total_expenditure: money(v.total_expenditure),
-        total_rebates: money(v.total_rebates),
-        net_payable: money(v.total_expenditure - v.total_rebates),
-        invoice_count: v.invoice_count,
-      })),
-    monthly_trend: [...monthlyMap.values()]
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .map((m) => ({ month: m.month, total_expenditure: money(m.total_expenditure), net_payable: money(m.net_payable) })),
-  })
+    return success(res, {
+      period: { from, to },
+      summary: {
+        total_expenditure: money(summary.total_expenditure),
+        total_rebates_applied: money(summary.total_rebates_applied),
+        net_payable: money(summary.total_expenditure - summary.total_rebates_applied),
+        invoice_count: summary.invoice_count,
+      },
+      by_vendor: [...byVendorMap.values()]
+        .sort((a, b) => b.total_expenditure - a.total_expenditure) // largest cost contributor first, per the doc
+        .map((v) => ({
+          vendor_name: v.vendor_name,
+          total_expenditure: money(v.total_expenditure),
+          total_rebates: money(v.total_rebates),
+          net_payable: money(v.total_expenditure - v.total_rebates),
+          invoice_count: v.invoice_count,
+        })),
+      monthly_trend: [...monthlyMap.values()]
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .map((m) => ({ month: m.month, total_expenditure: money(m.total_expenditure), net_payable: money(m.net_payable) })),
+    })
+  } catch (err) {
+    return internalError(res, err)
+  }
 }
 
 // GET /api/dashboard/revenue-leakage - the revenue leakage report.

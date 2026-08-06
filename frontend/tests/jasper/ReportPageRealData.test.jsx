@@ -7,7 +7,7 @@ jest.mock('../../src/api/fieldOps', () => ({
 }))
 
 const React = require('react')
-const { render, screen, waitFor } = require('@testing-library/react')
+const { render, screen, waitFor, within } = require('@testing-library/react')
 const userEvent = require('@testing-library/user-event').default
 const { listInvoices } = require('../../src/api/ar')
 const { getRevenueByServiceType, getCycleTime, getLeakageHistory, getVendorExpenses } = require('../../src/api/fieldOps')
@@ -58,4 +58,35 @@ test('Revenue tab shows no illustrative-data note and renders real service-type 
   await waitFor(() => expect(getRevenueByServiceType).toHaveBeenCalled())
   expect(screen.queryByText(/Illustrative/)).not.toBeInTheDocument()
   expect(await screen.findByText('Emergency Ambulance Services (EAS)')).toBeInTheDocument()
+})
+
+// Plan 3 final-review fix 2: Promise.all -> Promise.allSettled with per-dataset error
+// state. Before this fix, a single rejected analytics call (getVendorExpenses here)
+// discarded every dataset's result via a shared .catch, blanking the three tabs whose
+// own endpoints actually succeeded.
+test('a rejected getVendorExpenses call does not blank the Billing Cycle tab\'s real data', async () => {
+  getVendorExpenses.mockRejectedValue(Object.assign(new Error('network error'), { response: undefined }))
+
+  render(React.createElement(ReportsScreen))
+  await userEvent.click(screen.getByRole('button', { name: 'Billing Cycle' }))
+
+  expect(await screen.findByText('3.5 days')).toBeInTheDocument()
+  expect(screen.getByText('BKG-42')).toBeInTheDocument()
+})
+
+// Sub-fix: the Revenue tab's donut card must show the actual fetch error, not the
+// generic "No invoices in this period." empty state, when serviceBreakdown fetch fails.
+test('a rejected getRevenueByServiceType call shows the error on the Revenue tab\'s donut card, not a false empty state', async () => {
+  getRevenueByServiceType.mockRejectedValue({ response: { data: { message: 'Failed to load revenue by service type.' } } })
+
+  render(React.createElement(ReportsScreen))
+
+  // Scope to the "Revenue by Service Type" card specifically - with no invoices in the
+  // default mock, other cards on this tab (Largest Client KPI, Revenue by Client, Invoice
+  // Breakdown) legitimately render their own "No invoices in this period." empty states,
+  // so an unscoped assertion would be ambiguous.
+  const heading = await screen.findByText('Revenue by Service Type')
+  const donutCard = heading.parentElement.parentElement
+  expect(within(donutCard).getByText('Failed to load revenue by service type.')).toBeInTheDocument()
+  expect(within(donutCard).queryByText('No invoices in this period.')).not.toBeInTheDocument()
 })
