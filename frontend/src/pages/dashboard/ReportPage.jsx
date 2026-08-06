@@ -693,6 +693,14 @@ export default function ReportsScreen() {
 
     let cancelled = false;
     setAnalyticsLoading(true);
+    // Clear stale errors from a previous period/tab up front, not just on a fresh failure -
+    // ReportRevenue's donut card gates on invoicesLoading (a different effect), not
+    // analyticsLoading, so without this a period switch could briefly show the PREVIOUS
+    // period's serviceBreakdownError while this batch is still in flight.
+    setServiceBreakdownError("");
+    setCycleTimeError("");
+    setLeakageHistoryError("");
+    setVendorExpenseError("");
 
     const params = {};
     if (dateRange.startDate) params.date_from = toYMD(dateRange.startDate);
@@ -709,7 +717,6 @@ export default function ReportsScreen() {
 
         if (serviceResult.status === "fulfilled") {
           setServiceBreakdown(serviceResult.value.data.data.breakdown);
-          setServiceBreakdownError("");
         } else {
           setServiceBreakdown([]);
           setServiceBreakdownError(serviceResult.reason?.response?.data?.message || "Failed to load revenue by service type.");
@@ -717,7 +724,6 @@ export default function ReportsScreen() {
 
         if (cycleResult.status === "fulfilled") {
           setCycleTimeData(cycleResult.value.data.data);
-          setCycleTimeError("");
         } else {
           setCycleTimeData(null);
           setCycleTimeError(cycleResult.reason?.response?.data?.message || "Failed to load billing cycle data.");
@@ -725,7 +731,6 @@ export default function ReportsScreen() {
 
         if (leakageResult.status === "fulfilled") {
           setLeakageHistoryData(leakageResult.value.data.data);
-          setLeakageHistoryError("");
         } else {
           setLeakageHistoryData(null);
           setLeakageHistoryError(leakageResult.reason?.response?.data?.message || "Failed to load leakage history.");
@@ -733,11 +738,21 @@ export default function ReportsScreen() {
 
         if (vendorResult.status === "fulfilled") {
           setVendorExpenseData(vendorResult.value.data.data);
-          setVendorExpenseError("");
         } else {
           setVendorExpenseData(null);
           setVendorExpenseError(vendorResult.reason?.response?.data?.message || "Failed to load vendor expenditure.");
         }
+      })
+      .catch((err) => {
+        // allSettled itself never rejects, but a throw inside .then (e.g. an unexpected
+        // response shape) would otherwise silently skip every setter below it - fail loud
+        // instead of leaving all four tabs stuck on stale/empty data with no error shown.
+        if (cancelled) return;
+        const message = err?.message || "Failed to load report analytics.";
+        setServiceBreakdownError(message);
+        setCycleTimeError(message);
+        setLeakageHistoryError(message);
+        setVendorExpenseError(message);
       })
       .finally(() => {
         if (!cancelled) setAnalyticsLoading(false);
