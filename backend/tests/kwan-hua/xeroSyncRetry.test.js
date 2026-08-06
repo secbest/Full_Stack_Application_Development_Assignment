@@ -12,6 +12,7 @@ jest.mock('../../src/models', () => ({
   InvoiceLineItem: {},
   Client: {},
   Booking: {},
+  User: { findOne: jest.fn() },
   XeroSyncLog: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
 }))
 
@@ -35,7 +36,7 @@ jest.mock('../../src/config', () => ({
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
 
-const { XeroConnection, VendorInvoice, Invoice, XeroSyncLog } = require('../../src/models')
+const { XeroConnection, VendorInvoice, Invoice, User, XeroSyncLog } = require('../../src/models')
 const { xeroService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
 const { retrySync, listSyncLogs } = require('../../src/controllers/xeroController')
@@ -140,6 +141,23 @@ describe('retrySync (UC-08) - entity_type "ar_invoice"', () => {
     expect(notificationService.create).toHaveBeenCalledWith(expect.objectContaining({ user_id: 1, type: 'xero_sync_failed' }))
     expect(payload(res).data.status).toBe('failed')
     expect(payload(res).data.error_message).toMatch(/ContactNotFound/)
+  })
+
+  test('falls back to an AR Specialist when a legacy failed invoice has no approved_by', async () => {
+    const log = makeLog({ id: 18, entity_type: 'ar_invoice', entity_id: 11, attempt_count: 1 })
+    XeroSyncLog.findByPk.mockResolvedValue(log)
+    const invoice = { id: 11, total_amount: 500, approved_by: null, Client: { name: 'Legacy Client' }, InvoiceLineItems: [] }
+    invoice.update = jest.fn(async (fields) => { Object.assign(invoice, fields); return invoice })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    User.findOne.mockResolvedValue({ id: 7, role: 'ar_specialist' })
+    xeroService.pushArInvoice.mockResolvedValue({ ok: false, error: 'Xero rejected the invoice' })
+
+    const res = mockRes()
+    await retrySync({ params: { id: 18 } }, res)
+
+    expect(User.findOne).toHaveBeenCalledWith({ where: { role: 'ar_specialist' } })
+    expect(notificationService.create).toHaveBeenCalledWith(expect.objectContaining({ user_id: 7 }))
+    expect(payload(res).data.status).toBe('failed')
   })
 
   test('404s when the linked Invoice no longer exists', async () => {

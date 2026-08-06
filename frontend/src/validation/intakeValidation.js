@@ -5,17 +5,10 @@ import * as Yup from 'yup'
 // is a UX pre-check, not a security boundary, same convention as contractValidation.js).
 export const SERVICE_TYPES = ['eas', 'mts', 'event_standby', 'workplace_standby']
 export const SERVICE_TYPE_LABELS = {
-  eas: 'EAS',
-  mts: 'MTS',
+  eas: 'Emergency Ambulance Services (EAS)',
+  mts: 'Medical Transport Services (MTS)',
   event_standby: 'Event Standby',
   workplace_standby: 'Workplace Standby',
-}
-
-export const SERVICE_TIERS = ['basic', 'advanced', 'critical']
-export const SERVICE_TIER_LABELS = {
-  basic: 'Basic',
-  advanced: 'Advanced',
-  critical: 'Critical',
 }
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -26,7 +19,6 @@ export const intakeCreateSchema = Yup.object({
   contact_email: Yup.string().email('Enter a valid email address').required('Contact email is required'),
   contact_phone: Yup.string().matches(/^\d{8}$/, 'Enter an 8-digit Singapore phone number').required('Contact phone is required'),
   service_type: Yup.string().oneOf(SERVICE_TYPES, 'Select a valid service type').required('Service type is required'),
-  service_tier: Yup.string().oneOf(SERVICE_TIERS, 'Select a valid service tier').required('Service tier is required'),
   preferred_date: Yup.string()
     .matches(/^\d{4}-\d{2}-\d{2}$/, 'Preferred date must be a valid date')
     .required('Preferred date is required')

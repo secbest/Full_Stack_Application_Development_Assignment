@@ -17,7 +17,8 @@ const IntakeSubmission = sequelize.define('IntakeSubmission', {
   },
   service_tier: {
     type: DataTypes.ENUM('basic', 'advanced', 'critical'),
-    allowNull: false,
+    // Customers no longer choose this. Quotations assigns the tier when confirming.
+    allowNull: true,
   },
   preferred_date:   { type: DataTypes.DATEONLY, allowNull: false },
   preferred_time:   { type: DataTypes.STRING(10), allowNull: false },   // stored as "HH:MM"

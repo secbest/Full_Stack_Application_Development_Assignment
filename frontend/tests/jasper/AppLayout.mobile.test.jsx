@@ -7,15 +7,18 @@
 // These assertions deliberately test *state and gating*, not layout. jsdom does not
 // evaluate CSS, so a test claiming `md:hidden` "hides" something would be asserting on a
 // class string, not on behaviour. The layouts themselves are verified in a real browser.
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import MockAdapter from 'axios-mock-adapter'
+import api from '@/api/index'
 import { AuthProvider } from '@/context/AuthContext'
 import { ToastProvider } from '@/context/ToastContext'
 import AppLayout from '@/layouts/AppLayout'
 
 const DESKTOP = 1280
 const PHONE = 375
+let mock
 
 /** An unsigned JWT whose payload AuthProvider can decode - it never leaves the client. */
 function fieldCrewToken() {
@@ -51,10 +54,13 @@ function renderShell() {
 const hamburger = () => screen.queryByRole('button', { name: /open navigation menu/i })
 
 beforeEach(() => {
+  mock = new MockAdapter(api)
+  mock.onGet('/notifications/unread-count').reply(200, { success: true, data: { count: 0 } })
   localStorage.setItem('efar_token', fieldCrewToken())
 })
 
 afterEach(() => {
+  mock.restore()
   localStorage.clear()
   setTestViewportWidth(DESKTOP)
 })
@@ -166,9 +172,36 @@ describe('AppLayout - crossing the breakpoint', () => {
     await user.click(hamburger())
     expect(hamburger()).toHaveAttribute('aria-expanded', 'true')
 
-    setTestViewportWidth(DESKTOP)
+    act(() => setTestViewportWidth(DESKTOP))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(document.body.style.overflow).not.toBe('hidden')
+  })
+})
+
+describe('AppLayout - notification bell', () => {
+  test('renders in the mobile top bar', async () => {
+    setTestViewportWidth(PHONE)
+    renderShell()
+
+    expect(await screen.findByRole('button', { name: /notifications/i })).toBeInTheDocument()
+  })
+
+  test('renders in the expanded desktop sidebar header', async () => {
+    act(() => setTestViewportWidth(DESKTOP))
+    renderShell()
+
+    expect(await screen.findByRole('button', { name: /notifications/i })).toBeInTheDocument()
+  })
+
+  test('remains available in the collapsed desktop rail', async () => {
+    const user = userEvent.setup()
+    act(() => setTestViewportWidth(DESKTOP))
+    renderShell()
+
+    await user.click(screen.getByRole('button', { name: /collapse sidebar/i }))
+
+    expect(screen.getByRole('button', { name: /notifications/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /expand sidebar/i })).toBeInTheDocument()
   })
 })

@@ -94,9 +94,6 @@ const intakeCreateSchema = Yup.object({
   service_type: Yup.string()
     .oneOf(['eas', 'mts', 'event_standby', 'workplace_standby'], 'Service type is invalid')
     .required('Service type is required'),
-  service_tier: Yup.string()
-    .oneOf(['basic', 'advanced', 'critical'], 'Service tier is invalid')
-    .required('Service tier is required'),
   preferred_date: Yup.string()
     .matches(/^\d{4}-\d{2}-\d{2}$/, 'Preferred date must be in YYYY-MM-DD format')
     .required('Preferred date is required'),
@@ -109,7 +106,9 @@ const intakeCreateSchema = Yup.object({
 })
 
 const intakeConfirmSchema = Yup.object({
-  service_tier: Yup.string().oneOf(['basic', 'advanced', 'critical']).nullable(),
+  service_tier: Yup.string()
+    .oneOf(['basic', 'advanced', 'critical'], 'Service tier is invalid')
+    .required('Service tier is required'),
   scheduled_date: Yup.string().matches(/^\d{4}-\d{2}-\d{2}$/, 'Scheduled date must be in YYYY-MM-DD format').nullable(),
   scheduled_time: Yup.string().matches(/^\d{2}:\d{2}$/, 'Scheduled time must be in HH:MM format').nullable(),
   pickup_location: Yup.string().trim().nullable(),

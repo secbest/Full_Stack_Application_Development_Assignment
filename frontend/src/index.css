@@ -2,6 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Google Places' current autocomplete widget exposes its input as a CSS part.
+   Keep it visually aligned with the application's regular Input component. */
+.location-autocomplete {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid hsl(var(--input));
+  border-radius: 0.5rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  color-scheme: light;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.location-autocomplete::part(input) {
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(2.75rem - 2px);
+  min-height: calc(2.75rem - 2px);
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: hsl(var(--foreground));
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.location-autocomplete::part(input):focus {
+  outline: none;
+}
+
+.location-autocomplete::part(focus-ring) {
+  border-radius: 0.5rem;
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.location-autocomplete::part(prediction-list) {
+  background: #fff;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+
+.location-autocomplete::part(prediction-item) {
+  background: #fff;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+
+.location-autocomplete::part(prediction-item-main-text),
+.location-autocomplete::part(prediction-item-match) {
+  color: #0f172a;
+}
+
+.location-autocomplete::part(prediction-item-secondary-text),
+.location-autocomplete::part(prediction-item-nonmatch) {
+  color: #64748b;
+}
+
+.location-autocomplete::part(prediction-item-selected) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
 @layer base {
   :root {
     --background:   210 40% 98%;

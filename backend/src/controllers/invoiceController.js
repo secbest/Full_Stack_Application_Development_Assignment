@@ -19,6 +19,20 @@ const LOCKED_STATUSES = ['approved', 'synced_to_xero']
 const MAX_LINE_ITEM_UNIT_PRICE = 50000
 const MAX_LINE_ITEM_QUANTITY = 999
 
+// Falls back to the AR Specialist when an invoice has no approved_by (e.g. retried
+// after a status reset). Wrapped in its own try/catch, matching notificationService's
+// own "never throw" contract - a failure resolving the fallback recipient must never
+// turn a routine Xero-push failure into an unrelated 500 for whoever is retrying it.
+async function resolveArSpecialistId() {
+  try {
+    const arSpecialist = await User.findOne({ where: { role: 'ar_specialist' } })
+    return arSpecialist ? arSpecialist.id : null
+  } catch (err) {
+    console.error('[invoiceController] Failed to resolve the AR Specialist fallback for a Xero sync-failure notification:', err.message)
+    return null
+  }
+}
+
 // Upper bound on ?limit. Without one, `?limit=100000` makes the caller able to ask for the
 // whole table in a single unpaginated query.
 const MAX_PAGE_SIZE = 100
@@ -363,13 +377,16 @@ async function syncInvoiceToXero(invoice, connection) {
 
   await invoice.update({ status: 'failed' })
   await log.update({ status: 'failed', attempt_count, error_message: result.error })
-  notificationService.create({
-    user_id: invoice.approved_by || null,
-    type: 'xero_sync_failed',
-    title: `Xero sync failed for invoice #${invoice.id}`,
-    body: result.error,
-    link: '/xero/sync-status',
-  })
+  const recipientId = invoice.approved_by || (await resolveArSpecialistId())
+  if (recipientId) {
+    notificationService.create({
+      user_id: recipientId,
+      type: 'xero_sync_failed',
+      title: `Xero sync failed for invoice #${invoice.id}`,
+      body: result.error,
+      link: '/xero/sync-status',
+    })
+  }
   return { ok: false, error: result.error, attempt_count }
 }
 

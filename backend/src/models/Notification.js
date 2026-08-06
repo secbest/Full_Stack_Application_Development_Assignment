@@ -11,6 +11,8 @@ const Notification = sequelize.define('Notification', {
     type: DataTypes.ENUM(
       'new_intake_submission',
       'memo_submitted',
+      'memo_returned',
+      'job_assigned',
       'xero_sync_failed',
       'ocr_low_confidence'
     ),

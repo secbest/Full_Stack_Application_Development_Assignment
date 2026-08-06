@@ -7,6 +7,12 @@ router.use('/auth', authRoutes)
 const userRoutes = require('./userRoutes')               // GET /users?role= (crew list); PATCH /users/me, PATCH /users/me/password (self-service); DELETE /users/:id (managing_director only)
 router.use('/users', userRoutes)
 
+// ─── Shared: Notifications ─────────────────────────────────────────────────────
+// Every role reads and marks only its own notifications. Writes happen from inside
+// other controllers via notificationService.create() - this route file only reads.
+const notificationRoutes = require('./notificationRoutes')
+router.use('/notifications', notificationRoutes)
+
 // ─── Zheng Bao: Customer Intake & Booking Management ──────────────────────────
 const intakeRoutes = require('./intakeRoutes')
 router.use('/intake', intakeRoutes)

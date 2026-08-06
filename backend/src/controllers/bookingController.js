@@ -1,8 +1,10 @@
 const { Op } = require('sequelize')
-const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice, JobMilestone } = require('../models')
+const sequelize = require('../config')
+const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice, InvoiceLineItem, JobMilestone } = require('../models')
 const { success, error, notFound, forbidden, internalError } = require('../utils')
 const { bookingCrewSchema } = require('../validators')
 const { serializeMilestones } = require('./jobMilestoneController')
+const notificationService = require('../services/notificationService')
 
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -177,6 +179,8 @@ async function updateBookingCrew(req, res) {
       return error(res, 'Crew reassignment is not allowed for completed or invoiced bookings.', 'BOOKING_COMPLETED', 409)
     }
 
+    const previousCrewId = booking.assigned_crew_id
+
     let assignedCrewId = null
     if (body.assigned_crew_id !== null) {
       const crew = await User.findOne({ where: { id: body.assigned_crew_id, role: 'field_crew' } })
@@ -184,15 +188,24 @@ async function updateBookingCrew(req, res) {
       assignedCrewId = crew.id
     }
 
-    const updates = { assigned_crew_id: assignedCrewId }
-    // Assigning crew to a still-'confirmed' booking is what kicks off the job - there's
-    // no separate "Start Job" action for the field crew yet, so this is the one real
-    // trigger for the confirmed -> in_progress transition (see Booking.js status comment).
-    if (assignedCrewId && booking.status === 'confirmed') {
-      updates.status = 'in_progress'
-    }
-    await booking.update(updates)
+    // Status is deliberately untouched here. jobMilestoneController's 'activated' tap
+    // is the sole confirmed -> in_progress trigger (see Booking.js's status comment) -
+    // assigning crew no longer starts the job on its own, so a job never reads as
+    // "in progress" before the crew has actually started it.
+    await booking.update({ assigned_crew_id: assignedCrewId })
     await booking.reload({ include: [{ model: User, as: 'assignedCrew', attributes: ['id', 'name'] }] })
+
+    // Notify only on a real change - re-saving the same crew member, or unassigning,
+    // is not a new assignment worth interrupting anyone for.
+    if (assignedCrewId && assignedCrewId !== previousCrewId) {
+      await notificationService.create({
+        user_id: assignedCrewId,
+        type: 'job_assigned',
+        title: 'New job assigned',
+        body: `You have been assigned to booking ${booking.reference_number}.`,
+        link: '/jobs',
+      })
+    }
 
     return success(res, {
       id: booking.id,
@@ -207,4 +220,34 @@ async function updateBookingCrew(req, res) {
   }
 }
 
-module.exports = { listMyJobs, listBookings, getBookingById, updateBookingCrew }
+// Only invoiced bookings can be deleted - by that stage Xero holds the master copy of
+// the invoice, so removing the local operational record just clears completed clutter
+// from the Bookings table. XeroSyncLog rows are deliberately left untouched: they're
+// the last local breadcrumb that a sync happened, even after the booking/invoice/memo
+// detail behind it is gone, and deleting them here has no effect on Xero itself anyway.
+async function deleteBooking(req, res) {
+  try {
+    const booking = await Booking.findByPk(req.params.id)
+    if (!booking) return notFound(res, 'Booking not found.')
+    if (booking.status !== 'invoiced') {
+      return error(res, 'Only invoiced bookings can be deleted.', 'BOOKING_NOT_INVOICED', 409)
+    }
+
+    await sequelize.transaction(async (t) => {
+      const invoice = await Invoice.findOne({ where: { booking_id: booking.id }, transaction: t })
+      if (invoice) {
+        await InvoiceLineItem.destroy({ where: { invoice_id: invoice.id }, transaction: t })
+        await invoice.destroy({ transaction: t })
+      }
+      await ServiceMemo.destroy({ where: { booking_id: booking.id }, transaction: t })
+      await JobMilestone.destroy({ where: { booking_id: booking.id }, transaction: t })
+      await booking.destroy({ transaction: t })
+    })
+
+    return success(res, { id: booking.id, reference_number: booking.reference_number })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { listMyJobs, listBookings, getBookingById, updateBookingCrew, deleteBooking }

@@ -2,6 +2,7 @@ const { Op } = require('sequelize')
 const { IntakeSubmission, Booking, Client, User } = require('../models')
 const { success, created, error, notFound } = require('../utils')
 const { intakeCreateSchema, intakeConfirmSchema, intakeRejectSchema } = require('../validators')
+const notificationService = require('../services/notificationService')
 
 function buildReference(prefix, nextNumber) {
   return `${prefix}-${String(nextNumber).padStart(5, '0')}`
@@ -46,13 +47,33 @@ async function createIntake(req, res) {
       contact_email: body.contact_email,
       contact_phone: body.contact_phone,
       service_type: body.service_type,
-      service_tier: body.service_tier,
+      service_tier: null,
       preferred_date: body.preferred_date,
       preferred_time: body.preferred_time,
       pickup_location: body.pickup_location,
       destination: body.destination,
       additional_notes: body.additional_notes || null,
     })
+
+    // Non-fatal and isolated from the outer catch on purpose: the intake above is
+    // already committed, and this is a public, unauthenticated form - a failure here
+    // (e.g. the specialist lookup itself throwing) must never turn a successful
+    // submission into a 500 for the customer. The Intake Queue is the reliable fallback.
+    try {
+      const quotationsSpecialists = await User.findAll({ where: { role: 'quotations_specialist' } })
+      await Promise.all(quotationsSpecialists.map((specialist) =>
+        notificationService.create({
+          user_id: specialist.id,
+          type: 'new_intake_submission',
+          title: 'New service request received',
+          body: `${intake.customer_name} submitted a new request (${intake.reference_number}).`,
+          link: '/intake-queue',
+        })
+      ))
+    } catch (notifyErr) {
+      console.error('[createIntake] Failed to notify Quotations Specialists:', notifyErr.message)
+    }
+
     return created(res, {
       id: intake.id,
       reference_number: intake.reference_number,
@@ -169,8 +190,8 @@ async function confirmIntake(req, res) {
       client_id: client.id,
       created_by: req.user.sub,
       service_type: intake.service_type,
-      service_tier: body.service_tier || intake.service_tier,
-      original_service_tier: body.service_tier && body.service_tier !== intake.service_tier ? intake.service_tier : null,
+      service_tier: body.service_tier,
+      original_service_tier: intake.service_tier && body.service_tier !== intake.service_tier ? intake.service_tier : null,
       scheduled_date: body.scheduled_date || intake.preferred_date,
       scheduled_time: body.scheduled_time || intake.preferred_time,
       pickup_location: body.pickup_location || intake.pickup_location,
@@ -211,4 +232,23 @@ async function rejectIntake(req, res) {
   }
 }
 
-module.exports = { createIntake, listIntakes, getIntakeById, confirmIntake, rejectIntake }
+// Only rejected submissions are deletable. Pending ones are still awaiting a decision,
+// and a confirmed one already produced a Booking (intake_submission_id references this
+// row) - deleting either of those out from under the Intake Queue would either destroy
+// work in progress or leave a booking pointing at nothing.
+async function deleteIntake(req, res) {
+  try {
+    const intake = await IntakeSubmission.findByPk(req.params.id)
+    if (!intake) return notFound(res, 'Intake submission not found.')
+    if (intake.status !== 'rejected') {
+      return error(res, 'Only rejected intake submissions can be deleted.', 'INTAKE_NOT_REJECTED', 409)
+    }
+
+    await intake.destroy()
+    return success(res, { id: intake.id, reference_number: intake.reference_number })
+  } catch (err) {
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+module.exports = { createIntake, listIntakes, getIntakeById, confirmIntake, rejectIntake, deleteIntake }

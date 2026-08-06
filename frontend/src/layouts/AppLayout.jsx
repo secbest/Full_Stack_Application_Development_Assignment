@@ -4,6 +4,7 @@ import { Activity, LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide
 import { useAuth, useIsMobile } from '@/hooks'
 import { NAV_ROUTES } from '@/router/routes'
 import { Button } from '@/components/ui/button'
+import { NotificationBell } from '@/components/NotificationBell'
 
 const SIDEBAR_KEY = 'efar.sidebarCollapsed'
 
@@ -100,6 +101,9 @@ export default function AppLayout() {
           </button>
           <Activity className="w-4 h-4 text-teal-400 flex-shrink-0" />
           <span className="text-sm font-semibold tracking-wide text-white">EFAR Platform</span>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </header>
       )}
 
@@ -158,23 +162,28 @@ export default function AppLayout() {
                   <X className="w-5 h-5" />
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setCollapsed(true)}
-                  aria-label="Collapse sidebar"
-                  title="Collapse sidebar"
-                  className="ml-auto p-1 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
-                >
-                  <PanelLeftClose className="w-4 h-4" />
-                </button>
+                <>
+                  <NotificationBell />
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed(true)}
+                    aria-label="Collapse sidebar"
+                    title="Collapse sidebar"
+                    className="ml-auto p-1 rounded-md text-slate-400 hover:bg-[#0F172A] hover:text-white transition-colors"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </button>
+                </>
               )}
             </>
           )}
         </div>
 
-        {/* Expand control - only shown while the desktop rail is collapsed. */}
+        {/* Desktop rail controls. The bell remains reachable while the sidebar is
+            collapsed; this branch never overlaps with the mobile top-bar bell. */}
         {showRail && (
-          <div className="flex justify-center pt-2">
+          <div className="flex flex-col items-center gap-1 pt-2">
+            <NotificationBell />
             <button
               type="button"
               onClick={() => setCollapsed(false)}
