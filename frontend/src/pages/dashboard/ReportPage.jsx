@@ -64,14 +64,6 @@ function getPeriodDateRange(period, customFrom, customTo) {
   return { startDate: null, endDate: null };
 }
 
-const BILLING_ROWS = [
-  { bkg: "BKG-008", jobDate: "5 Jul 2026",  memoAt: "5 Jul 2026",  invAt: "6 Jul 2026",  syncAt: "6 Jul 2026",  days: 1 },
-  { bkg: "BKG-007", jobDate: "3 Jul 2026",  memoAt: "3 Jul 2026",  invAt: "4 Jul 2026",  syncAt: "4 Jul 2026",  days: 1 },
-  { bkg: "BKG-006", jobDate: "2 Jul 2026",  memoAt: "3 Jul 2026",  invAt: "4 Jul 2026",  syncAt: "5 Jul 2026",  days: 3 },
-  { bkg: "BKG-005", jobDate: "1 Jul 2026",  memoAt: "4 Jul 2026",  invAt: "5 Jul 2026",  syncAt: "6 Jul 2026",  days: 5 },
-  { bkg: "BKG-004", jobDate: "14 Jun 2026", memoAt: "14 Jun 2026", invAt: "15 Jun 2026", syncAt: "15 Jun 2026", days: 1 },
-];
-
 const LEAKAGE_ROWS = [
   { bkg: "BKG-004", client: "TTSH",          completedAt: "14 Jun 2026", daysUntilMemo: 0.4, crew: "—",          resolution: "Memo Submitted" },
   { bkg: "BKG-007", client: "CGH",           completedAt: "20 Jun 2026", daysUntilMemo: 2.1, crew: "Ahmad",      resolution: "Memo Submitted" },
@@ -103,7 +95,7 @@ function BillingStatusBadge({ status }) {
   );
 }
 
-function getReportTableData(reportTab, invoices) {
+function getReportTableData(reportTab, invoices, cycleTimeData) {
   if (reportTab === "revenue") {
     return {
       title: "Revenue Report",
@@ -119,10 +111,11 @@ function getReportTableData(reportTab, invoices) {
     };
   }
   if (reportTab === "billing") {
+    const rows = (cycleTimeData?.rows) || [];
     return {
       title: "Billing Cycle Report",
-      headers: ["Booking Ref", "Job Date", "Memo Submitted", "Invoice Approved", "Synced At", "Total Days"],
-      rows: BILLING_ROWS.map((r) => [r.bkg, r.jobDate, r.memoAt, r.invAt, r.syncAt, `${r.days}d`]),
+      headers: ["Booking ID", "Job Completed", "Memo Submitted", "Invoice Approved", "Synced At", "Total Days"],
+      rows: rows.map((r) => [`BKG-${r.booking_id}`, fmtDate(r.job_completed_at), fmtDate(r.memo_submitted_at), fmtDate(r.invoice_approved_at), fmtDate(r.synced_at), r.total_days != null ? `${r.total_days}d` : "—"]),
     };
   }
   if (reportTab === "leakage") {
@@ -468,39 +461,55 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown }) {
   );
 }
 
-function ReportBillingCycle() {
+function fmtDate(iso) {
+  return iso ? new Date(iso).toLocaleDateString() : "—";
+}
+
+function ReportBillingCycle({ data, loading, error }) {
   const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
+
+  if (loading) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Loading billing cycle data…</p></div>;
+  }
+  if (error) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif" }}>{error}</p></div>;
+  }
+
+  const rows = data?.rows || [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ ...cardBase, padding: "20px 24px", display: "flex", alignItems: "center", gap: 20 }}>
         <div>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Average Billing Cycle</p>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>1.8 days</span>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{data?.overall_average_days != null ? `${data.overall_average_days} days` : "—"}</span>
         </div>
-        <p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>Average days from job completion to Xero sync this quarter. Rows marked in amber exceeded 3 days.</p>
+        <p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>Average days from job completion to Xero sync in this period. Rows marked in amber exceeded 3 days; bookings not yet synced show "—" for Total Days.</p>
       </div>
       <div style={{ ...cardBase, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
-              {["Booking Ref", "Job Date", "Memo Submitted", "Invoice Approved", "Synced At", "Total Days"].map((col) => (
+              {["Booking ID", "Job Completed", "Memo Submitted", "Invoice Approved", "Synced At", "Total Days"].map((col) => (
                 <th key={col} style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'Inter', sans-serif", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", whiteSpace: "nowrap" }}>{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {BILLING_ROWS.map((row, i) => {
-              const isLate = row.days > 3;
+            {rows.length === 0 ? (
+              <tr><td colSpan={6} style={{ padding: "40px 16px", textAlign: "center", fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>No completed jobs in this period.</td></tr>
+            ) : rows.map((row, i) => {
+              const isLate = row.total_days != null && row.total_days > 3;
               const bg = isLate ? "rgba(245,158,11,0.07)" : i % 2 === 1 ? "#F8FAFC" : "#FFFFFF";
               return (
-                <tr key={row.bkg} style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: bg }}>
-                  <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.bkg}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.jobDate}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.memoAt}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.invAt}</td>
-                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{row.syncAt}</td>
+                <tr key={row.booking_id} style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: bg }}>
+                  <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>BKG-{row.booking_id}</td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{fmtDate(row.job_completed_at)}</td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{fmtDate(row.memo_submitted_at)}</td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{fmtDate(row.invoice_approved_at)}</td>
+                  <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}>{fmtDate(row.synced_at)}</td>
                   <td style={{ padding: "0 16px" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: isLate ? "#F59E0B" : "#22C55E", fontFamily: "'Inter', sans-serif" }}>{row.days}d</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: row.total_days == null ? "#94A3B8" : isLate ? "#F59E0B" : "#22C55E", fontFamily: "'Inter', sans-serif" }}>{row.total_days != null ? `${row.total_days}d` : "—"}</span>
                   </td>
                 </tr>
               );
