@@ -392,7 +392,8 @@ async function revenueTrend(req, res) {
 }
 
 // GET /api/dashboard/top-clients - top 5 clients by invoiced (synced_to_xero)
-// revenue, with each client's total booking volume shown alongside.
+// revenue, with each client's invoiced booking count shown alongside (not total
+// booking volume - a cancelled/never-invoiced booking would skew revenue-per-booking).
 async function topClients(req, res) {
   try {
     const invoices = await Invoice.findAll({

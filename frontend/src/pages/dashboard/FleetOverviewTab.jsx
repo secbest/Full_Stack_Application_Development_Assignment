@@ -231,7 +231,7 @@ export default function FleetOverviewTab() {
                   <tr className="text-xs uppercase text-muted-foreground text-left">
                     <th className="pb-2">Client</th>
                     <th className="pb-2 text-right">Revenue</th>
-                    <th className="pb-2 text-right">Bookings</th>
+                    <th className="pb-2 text-right">Invoiced Jobs</th>
                   </tr>
                 </thead>
                 <tbody>
