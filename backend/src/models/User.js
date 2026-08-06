@@ -29,6 +29,16 @@ const User = sequelize.define('User', {
   email:    { type: DataTypes.STRING(255), allowNull: false, unique: true },
   password: { type: DataTypes.STRING(255), allowNull: false },
   role:     { type: DataTypes.ENUM(...ROLES), allowNull: false },
+  // Bumped by POST /users/:id/force-logout. Embedded in every JWT (see utils/token.js);
+  // authenticate() rejects a token whose token_version doesn't match the current value,
+  // so bumping this invalidates every session already issued for this user.
+  token_version:      { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  last_login_at:      { type: DataTypes.DATE, allowNull: true },
+  // Stamped by authenticate() (throttled - see middleware/index.js). "Currently Online"
+  // on the Accounts Management screen means this is within the last 5 minutes.
+  last_active_at:     { type: DataTypes.DATE, allowNull: true },
+  failed_login_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  is_locked:           { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
 }, {
   tableName: 'users',
   underscored: true,
