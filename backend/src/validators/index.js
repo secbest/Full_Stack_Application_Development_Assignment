@@ -130,7 +130,7 @@ const {
   memoIdParamSchema,
   listServiceMemosQuerySchema,
 } = require('./serviceMemoValidators')
-const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema } = require('./dashboardValidators')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema } = require('./dashboardValidators')
 
 // Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
 const { MILESTONE_TYPES, milestoneBodySchema, bookingIdParamSchema } = require('./milestoneValidators')
@@ -168,6 +168,8 @@ module.exports = {
   fleetOverviewQuerySchema,
   vendorExpensesQuerySchema,
   revenueLeakageQuerySchema,
+  cycleTimeQuerySchema,
+  revenueTrendQuerySchema,
   userIdParamSchema,
   MILESTONE_TYPES,
   milestoneBodySchema,
