@@ -9,7 +9,7 @@ export async function updateProfile({ name, email }) {
 
 export async function updatePassword({ currentPassword, newPassword }) {
   const res = await api.patch('/users/me/password', { currentPassword, newPassword })
-  return res.data.data // { message }
+  return res.data.data // { message, token } - token is re-signed since the backend bumps token_version on a password change
 }
 
 // Accounts Management (managing_director only).

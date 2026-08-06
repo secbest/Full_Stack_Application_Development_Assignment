@@ -83,9 +83,10 @@ describe('SettingsPage - Profile Information card', () => {
 })
 
 describe('SettingsPage - Change Password card', () => {
-  test('successful change clears the fields and shows a success toast', async () => {
+  test('successful change clears the fields, shows a success toast, and stores the re-signed token', async () => {
     const user = userEvent.setup()
-    mock.onPatch('/users/me/password').reply(200, { success: true, data: { message: 'Password updated successfully.' } })
+    const newToken = makeToken({ ...CURRENT_USER })
+    mock.onPatch('/users/me/password').reply(200, { success: true, data: { message: 'Password updated successfully.', token: newToken } })
     renderSettingsPage()
 
     await user.type(screen.getByLabelText(/Current Password/i), 'oldpass1')
@@ -95,6 +96,9 @@ describe('SettingsPage - Change Password card', () => {
 
     await screen.findByText('Password updated successfully.')
     expect(screen.getByLabelText(/Current Password/i)).toHaveValue('')
+    // Backend bumps token_version on a password change (revokes other sessions) - this
+    // tab must store the freshly re-signed token or its NEXT request 401s TOKEN_REVOKED.
+    expect(localStorage.getItem('efar_token')).toBe(newToken)
   })
 
   test('mismatched confirmation shows a client-side validation error', async () => {

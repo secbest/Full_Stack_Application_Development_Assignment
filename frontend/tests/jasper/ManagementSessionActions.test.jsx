@@ -95,4 +95,15 @@ describe('Accounts Management - KPI cards', () => {
 
     expect(screen.getByText('Security Alerts').closest('div').textContent).toContain('1');
   });
+
+  test('Currently Online counts a locked-and-online user too, not just status === "Online" rows', async () => {
+    const LOCKED_AND_ONLINE_USER = { ...LOCKED_USER, is_online: true, last_active_at: new Date().toISOString() };
+    mock.onGet('/users').reply(200, { success: true, data: [ONLINE_USER, LOCKED_AND_ONLINE_USER] });
+    renderPage();
+    await screen.findByText('chloe@efar.com.sg');
+
+    // Both users are online (one Online, one Locked-and-online) - the KPI counts isOnline
+    // directly rather than the collapsed display status, so it must read 2, not 1.
+    expect(screen.getByText('Currently Online').closest('div').textContent).toContain('2');
+  });
 });
