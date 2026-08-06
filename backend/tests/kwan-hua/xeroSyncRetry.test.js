@@ -35,6 +35,7 @@ jest.mock('../../src/config', () => ({
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
+jest.mock('../../src/services/vendorInvoiceAuditService', () => ({ record: jest.fn(async () => ({})) }))
 
 const { XeroConnection, VendorInvoice, Invoice, User, XeroSyncLog } = require('../../src/models')
 const { xeroService } = require('../../src/services')

@@ -30,8 +30,10 @@ export async function updateVendorInvoice(id, payload) {
   return res.data.data
 }
 
-export async function approveVendorInvoice(id) {
-  const res = await api.post(`/vendor-invoices/${id}/approve`)
+export async function approveVendorInvoice(id, confirmLowConfidence = false) {
+  const res = await api.post(`/vendor-invoices/${id}/approve`, {
+    confirm_low_confidence: confirmLowConfidence,
+  })
   return res.data.data // { id, status, xero_bill_id, approved_at, sync_log }
 }
 

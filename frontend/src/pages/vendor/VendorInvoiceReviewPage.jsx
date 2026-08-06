@@ -3,7 +3,7 @@
 // editable fields right. Rebate auto-calculation, low-confidence flag, approve/reject/reextract.
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon } from 'lucide-react'
+import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon, History } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
@@ -31,6 +31,8 @@ export default function VendorInvoiceReviewPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [editingItemId, setEditingItemId] = useState(null)
   const [itemForm, setItemForm] = useState({})
+  const [isDirty, setIsDirty] = useState(false)
+  const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -41,9 +43,18 @@ export default function VendorInvoiceReviewPage() {
         vendor_name: data.vendor_name || '',
         invoice_number: data.invoice_number || '',
         invoice_date: data.invoice_date || '',
-        extracted_total: data.extracted_total ?? '',
+        due_date: data.due_date || '',
+        currency_code: data.currency_code || 'SGD',
+        supplier_gst_registration_no: data.supplier_gst_registration_no || '',
+        gst_treatment: data.gst_treatment || 'non_gst',
+        xero_account_code: data.xero_account_code || '',
+        subtotal_excluding_gst: data.subtotal_excluding_gst ?? '',
+        gst_amount: data.gst_amount ?? '',
+        total_including_gst: data.total_including_gst ?? data.extracted_total ?? '',
         rebate_percentage: data.rebate_percentage ?? '1.00',
       })
+      setIsDirty(false)
+      setConfirmedLowConfidence(false)
     } catch {
       toast.error('Failed to load vendor invoice.')
     } finally {
@@ -54,6 +65,12 @@ export default function VendorInvoiceReviewPage() {
   useEffect(() => { load() }, [id])
 
   const editable = invoice && EDITABLE_STATUSES.includes(invoice.status)
+  const approvalValidation = invoice?.approval_validation || { can_approve: false, issues: [] }
+
+  function changeField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+    setIsDirty(true)
+  }
 
   async function handleSaveHeader() {
     setBusy(true)
@@ -71,7 +88,7 @@ export default function VendorInvoiceReviewPage() {
   async function handleApprove() {
     setBusy(true)
     try {
-      const result = await approveVendorInvoice(invoice.id)
+      const result = await approveVendorInvoice(invoice.id, confirmedLowConfidence)
       if (result.status === 'synced_to_xero') toast.success('Approved and synced to Xero.')
       else toast.error(`Approved, but the Xero sync failed: ${result.sync_log?.error_message || 'unknown error'}. Retry from Xero Sync Status.`)
       await load()
@@ -146,7 +163,12 @@ export default function VendorInvoiceReviewPage() {
         <div className="flex items-center gap-3">
           <StatusBadge status={invoice.status} />
           {invoice.status === 'pending_review' && (
-            <button onClick={handleApprove} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
+            <button
+              onClick={handleApprove}
+              disabled={busy || isDirty || !approvalValidation.can_approve || (approvalValidation.requires_low_confidence_confirmation && !confirmedLowConfidence)}
+              title={isDirty ? 'Save your changes before approving.' : !approvalValidation.can_approve ? 'Resolve the validation issues first.' : undefined}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40"
+            >
               <UploadCloud size={16} /> Approve &amp; Sync
             </button>
           )}
@@ -159,8 +181,27 @@ export default function VendorInvoiceReviewPage() {
       </div>
 
       {invoice.is_low_confidence && (
-        <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-          <AlertTriangle size={14} /> Low-confidence extraction ({Math.round((invoice.extraction_confidence || 0) * 100)}%) - please verify every field before approving.
+        <div className="space-y-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={14} /> Low-confidence extraction ({Math.round((invoice.extraction_confidence || 0) * 100)}%) - verify every field against the source PDF.
+          </div>
+          {invoice.status === 'pending_review' && (
+            <label className="flex items-center gap-2 font-medium">
+              <input type="checkbox" checked={confirmedLowConfidence} onChange={(e) => setConfirmedLowConfidence(e.target.checked)} />
+              I checked this invoice against the source document.
+            </label>
+          )}
+        </div>
+      )}
+      {invoice.status === 'pending_review' && (!approvalValidation.can_approve || isDirty) && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div className="font-semibold">Approval is blocked</div>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {isDirty && <li>Save the current changes before approving.</li>}
+            {(approvalValidation.issues || []).map((validationIssue) => (
+              <li key={validationIssue.code}>{validationIssue.message}</li>
+            ))}
+          </ul>
         </div>
       )}
       {invoice.status === 'extraction_failed' && (
@@ -201,11 +242,34 @@ export default function VendorInvoiceReviewPage() {
           <Card>
             <CardHeader><CardTitle>Extracted Fields</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <Field label="Vendor Name" value={form.vendor_name} editable={editable} onChange={(v) => setForm({ ...form, vendor_name: v })} />
-              <Field label="Invoice Number" value={form.invoice_number} editable={editable} onChange={(v) => setForm({ ...form, invoice_number: v })} />
-              <Field label="Invoice Date" type="date" value={form.invoice_date} editable={editable} onChange={(v) => setForm({ ...form, invoice_date: v })} />
-              <Field label="Extracted Total" type="number" value={form.extracted_total} editable={editable} onChange={(v) => setForm({ ...form, extracted_total: v })} />
-              <Field label="Rebate %" type="number" value={form.rebate_percentage} editable={editable} onChange={(v) => setForm({ ...form, rebate_percentage: v })} />
+              <Field label="Vendor Name" value={form.vendor_name} editable={editable} onChange={(v) => changeField('vendor_name', v)} />
+              <Field label="Invoice Number" value={form.invoice_number} editable={editable} onChange={(v) => changeField('invoice_number', v)} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Invoice Date" type="date" value={form.invoice_date} editable={editable} onChange={(v) => changeField('invoice_date', v)} />
+                <Field label="Due Date" type="date" value={form.due_date} editable={editable} onChange={(v) => changeField('due_date', v)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Currency" value={form.currency_code} editable={editable} onChange={(v) => changeField('currency_code', v.toUpperCase())} />
+                <Field label="Xero Expense Account" value={form.xero_account_code} editable={editable} onChange={(v) => changeField('xero_account_code', v)} />
+              </div>
+              <SelectField
+                label="GST Treatment"
+                value={form.gst_treatment}
+                editable={editable}
+                onChange={(v) => changeField('gst_treatment', v)}
+                options={[
+                  ['standard_rated', 'Standard-rated purchase'],
+                  ['zero_rated', 'Zero-rated purchase'],
+                  ['exempt', 'Exempt purchase'],
+                  ['non_gst', 'Non-GST registered supplier'],
+                  ['disallowed', 'GST disallowed expense'],
+                ]}
+              />
+              <Field label="Supplier GST Registration No." value={form.supplier_gst_registration_no} editable={editable} onChange={(v) => changeField('supplier_gst_registration_no', v)} />
+              <Field label="Subtotal Excluding GST" type="number" value={form.subtotal_excluding_gst} editable={editable} onChange={(v) => changeField('subtotal_excluding_gst', v)} />
+              <Field label="GST Amount" type="number" value={form.gst_amount} editable={editable} onChange={(v) => changeField('gst_amount', v)} />
+              <Field label="Total Including GST" type="number" value={form.total_including_gst} editable={editable} onChange={(v) => changeField('total_including_gst', v)} />
+              <Field label="Rebate %" type="number" value={form.rebate_percentage} editable={editable} onChange={(v) => changeField('rebate_percentage', v)} />
 
               {editable && (
                 <button onClick={handleSaveHeader} disabled={busy} className="w-full h-9 rounded-md bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
@@ -215,8 +279,10 @@ export default function VendorInvoiceReviewPage() {
 
               <div className="border-t border-slate-100 pt-3 space-y-2">
                 <Row label="Confidence" value={invoice.extraction_confidence !== null ? `${Math.round(invoice.extraction_confidence * 100)}%` : '—'} />
+                <Row label="Effective GST Rate" value={`${Number(invoice.gst_rate_percent || 0).toFixed(2)}%`} />
+                <Row label="Xero Tax Type" value={invoice.xero_tax_type || '—'} />
                 <Row label="Rebate Amount" value={money(invoice.rebate_amount)} />
-                <Row label="Verified Total" value={money(invoice.verified_total)} bold />
+                <Row label="Net Payable" value={money(invoice.verified_total)} bold />
               </div>
             </CardContent>
           </Card>
@@ -243,7 +309,7 @@ export default function VendorInvoiceReviewPage() {
                             <td className="px-3 py-2"><input value={itemForm.description} onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })} className="w-full h-8 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-blue-500" /></td>
                             <td className="px-3 py-2"><input type="number" step="0.01" value={itemForm.quantity} onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })} className="w-16 h-8 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-blue-500" /></td>
                             <td className="px-3 py-2"><input type="number" step="0.01" value={itemForm.unit_price} onChange={(e) => setItemForm({ ...itemForm, unit_price: e.target.value })} className="w-20 h-8 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-blue-500" /></td>
-                            <td className="px-3 py-2"><input type="number" step="0.01" value={itemForm.amount} onChange={(e) => setItemForm({ ...itemForm, amount: e.target.value })} className="w-20 h-8 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-blue-500" /></td>
+                            <td className="px-3 py-2"><input type="number" value={Number(itemForm.quantity || 0) * Number(itemForm.unit_price || 0)} disabled title="Calculated from quantity × unit price" className="w-20 h-8 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs text-slate-500" /></td>
                             <td className="px-3 py-2 text-right whitespace-nowrap">
                               <button onClick={saveItem} disabled={busy} className="text-emerald-600 hover:text-emerald-700 mr-2"><Check size={14} /></button>
                               <button onClick={() => setEditingItemId(null)} className="text-slate-400 hover:text-slate-600"><XIcon size={14} /></button>
@@ -272,6 +338,44 @@ export default function VendorInvoiceReviewPage() {
         </div>
       </div>
 
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <History size={16} className="text-slate-500" />
+          <CardTitle>Audit Timeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(invoice.audit_trail || []).length === 0 ? (
+            <p className="text-sm text-slate-400">No audit events recorded yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {invoice.audit_trail.map((event) => (
+                <div key={event.id} className="relative border-l-2 border-slate-200 pl-4">
+                  <span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-slate-600" />
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold capitalize text-slate-900">{event.action.replace(/_/g, ' ')}</div>
+                    <div className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString()}</div>
+                  </div>
+                  <div className="text-xs text-slate-500">{event.actor?.name || 'System'}</div>
+                  {event.note && <div className="mt-1 text-sm text-slate-700">{event.note}</div>}
+                  {Object.keys(event.changes || {}).length > 0 && (
+                    <div className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      {Object.entries(event.changes).map(([field, change]) => (
+                        <div key={field}>
+                          <span className="font-medium">{field.replace(/_/g, ' ')}:</span>{' '}
+                          {change && typeof change === 'object' && 'from' in change
+                            ? `${change.from ?? '—'} → ${change.to ?? '—'}`
+                            : String(change)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {rejecting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -294,6 +398,22 @@ export default function VendorInvoiceReviewPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function SelectField({ label, value, onChange, editable, options }) {
+  return (
+    <label className="block">
+      <span className="text-xs uppercase text-slate-500">{label}</span>
+      <select
+        value={value}
+        disabled={!editable}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full h-9 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
+      >
+        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
+      </select>
+    </label>
   )
 }
 

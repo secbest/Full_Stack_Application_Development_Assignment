@@ -2,6 +2,7 @@ jest.mock('../../src/models', () => ({
   VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn() },
   VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn() },
   User: {},
+  VendorInvoiceAudit: {},
   XeroSyncLog: { create: jest.fn() },
 }))
 
@@ -9,6 +10,18 @@ jest.mock('../../src/services', () => ({
   cloudinaryService: { uploadPdf: jest.fn() },
   ocrService: { extractVendorInvoice: jest.fn() },
   xeroService: { pushBill: jest.fn() },
+  apInvoiceService: {
+    resolveTaxSnapshot: jest.fn(async () => ({ gst_rate_id: null, gst_rate_percent: 0, gst_effective_date: null, xero_tax_type: 'NRINPUT' })),
+    calculateTax: jest.fn(() => 0),
+    validateForApproval: jest.fn(async (invoice) => ({ can_approve: true, issues: [], requires_low_confidence_confirmation: Boolean(invoice.is_low_confidence) })),
+  },
+  vendorInvoiceAuditService: {
+    record: jest.fn(async () => ({})),
+    diff: jest.fn((before, after, fields) => fields.reduce((out, field) => {
+      if (String(before[field] ?? '') !== String(after[field] ?? '')) out[field] = { from: before[field] ?? null, to: after[field] ?? null }
+      return out
+    }, {})),
+  },
 }))
 
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
@@ -24,7 +37,7 @@ jest.mock('../../src/config', () => ({
 }))
 
 const { VendorInvoice, XeroSyncLog } = require('../../src/models')
-const { xeroService } = require('../../src/services')
+const { xeroService, apInvoiceService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
 const {
   calculateRebate, uploadVendorInvoice, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
@@ -42,7 +55,12 @@ function payload(res) {
 function makeVendorInvoice(overrides = {}) {
   const obj = {
     id: 1, vendor_name: 'Esso', invoice_number: 'INV-1', status: 'pending_review',
-    extracted_total: 1840, rebate_percentage: 1.0, uploaded_by: 3, VendorInvoiceItems: [],
+    invoice_date: '2026-06-18', due_date: '2026-07-18', currency_code: 'SGD',
+    gst_treatment: 'non_gst', gst_rate_percent: 0, xero_tax_type: 'NRINPUT', xero_account_code: '400',
+    subtotal_excluding_gst: 1840, gst_amount: 0, total_including_gst: 1840,
+    extracted_total: 1840, rebate_percentage: 1.0, rebate_amount: 18.4, verified_total: 1821.6,
+    uploaded_by: 3,
+    VendorInvoiceItems: [{ id: 11, description: 'Fuel', quantity: 1, unit_price: 1840, amount: 1840 }],
     updatedAt: null,
     ...overrides,
   }
@@ -128,6 +146,40 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, res)
     expect(res.status).toHaveBeenCalledWith(409)
     expect(payload(res).code).toBe('MISSING_TOTAL')
+  })
+
+  test('blocks approval validation failures before contacting Xero', async () => {
+    const invoice = makeVendorInvoice()
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    apInvoiceService.validateForApproval.mockResolvedValueOnce({
+      can_approve: false,
+      issues: [{ code: 'MISSING_ACCOUNT', message: 'Expense account is required.' }],
+      requires_low_confidence_confirmation: false,
+    })
+
+    const res = mockRes()
+    await approveVendorInvoice({ params: { id: 1 }, body: {}, user: { sub: 1 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res)).toMatchObject({
+      code: 'APPROVAL_VALIDATION_FAILED',
+      data: { issues: [{ code: 'MISSING_ACCOUNT' }] },
+    })
+    expect(xeroService.pushBill).not.toHaveBeenCalled()
+    expect(invoice.status).toBe('pending_review')
+  })
+
+  test('requires explicit source-PDF confirmation for low-confidence OCR', async () => {
+    const invoice = makeVendorInvoice({ is_low_confidence: true })
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+
+    const res = mockRes()
+    await approveVendorInvoice({ params: { id: 1 }, body: {}, user: { sub: 1 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('LOW_CONFIDENCE_CONFIRMATION_REQUIRED')
+    expect(xeroService.pushBill).not.toHaveBeenCalled()
+    expect(invoice.status).toBe('pending_review')
   })
 
   test('409s when a duplicate approved/synced invoice already exists', async () => {

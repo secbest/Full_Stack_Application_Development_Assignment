@@ -1,7 +1,13 @@
 const { Op } = require('sequelize')
 const sequelize = require('../config')
-const { VendorInvoice, VendorInvoiceItem, User, XeroSyncLog } = require('../models')
-const { cloudinaryService, ocrService, xeroService } = require('../services')
+const { VendorInvoice, VendorInvoiceItem, VendorInvoiceAudit, User, XeroSyncLog } = require('../models')
+const {
+  cloudinaryService,
+  ocrService,
+  xeroService,
+  apInvoiceService,
+  vendorInvoiceAuditService,
+} = require('../services')
 const notificationService = require('../services/notificationService')
 const { getFreshConnection } = require('./xeroController')
 const { vendorInvoiceUploadSchema } = require('../validators')
@@ -18,6 +24,40 @@ function calculateRebate(extractedTotal, rebatePercentage) {
   const rebateAmount = round2(extractedTotal * (rebatePercentage / 100))
   const verifiedTotal = round2(extractedTotal - rebateAmount)
   return { rebateAmount, verifiedTotal }
+}
+
+async function taxFieldsFromExtraction(extraction, rebatePercentage, { transaction } = {}) {
+  const items = extraction.items || []
+  const printedGst = Number(extraction.gst_amount)
+  const treatment = Number.isFinite(printedGst) && printedGst > 0 ? 'standard_rated' : 'non_gst'
+  let snapshot = {
+    gst_rate_id: null,
+    gst_rate_percent: 0,
+    gst_effective_date: extraction.invoice_date || null,
+    xero_tax_type: 'NRINPUT',
+  }
+  if (extraction.invoice_date) {
+    snapshot = await apInvoiceService.resolveTaxSnapshot(extraction.invoice_date, treatment, { transaction })
+  }
+  const itemSubtotal = round2(items.reduce((sum, item) => sum + Number(item.amount || 0), 0))
+  const subtotal = extraction.subtotal_excluding_gst ?? (treatment === 'standard_rated' ? itemSubtotal : extraction.extracted_total)
+  const gstAmount = extraction.gst_amount ?? 0
+  const totalIncludingGst = extraction.total_including_gst ?? extraction.extracted_total ?? round2(Number(subtotal || 0) + Number(gstAmount || 0))
+  const { rebateAmount, verifiedTotal } = calculateRebate(totalIncludingGst, rebatePercentage)
+  return {
+    ...snapshot,
+    gst_treatment: treatment,
+    currency_code: String(extraction.currency_code || 'SGD').toUpperCase().slice(0, 3),
+    supplier_gst_registration_no: extraction.supplier_gst_registration_no || null,
+    due_date: extraction.due_date || null,
+    xero_account_code: process.env.XERO_PURCHASE_ACCOUNT_CODE || null,
+    subtotal_excluding_gst: subtotal,
+    gst_amount: gstAmount,
+    total_including_gst: totalIncludingGst,
+    extracted_total: totalIncludingGst,
+    rebate_amount: rebateAmount,
+    verified_total: verifiedTotal,
+  }
 }
 
 // Turns the reconciliation result into one line an AP Specialist can act on. Prefers the
@@ -39,7 +79,19 @@ function serializeInvoice(invoice) {
     vendor_name: json.vendor_name,
     invoice_number: json.invoice_number,
     invoice_date: json.invoice_date,
+    due_date: json.due_date,
     pdf_url: json.pdf_url,
+    currency_code: json.currency_code,
+    supplier_gst_registration_no: json.supplier_gst_registration_no,
+    gst_treatment: json.gst_treatment,
+    gst_rate_id: json.gst_rate_id,
+    gst_rate_percent: json.gst_rate_percent,
+    gst_effective_date: json.gst_effective_date,
+    xero_tax_type: json.xero_tax_type,
+    xero_account_code: json.xero_account_code,
+    subtotal_excluding_gst: json.subtotal_excluding_gst,
+    gst_amount: json.gst_amount,
+    total_including_gst: json.total_including_gst,
     extracted_total: json.extracted_total,
     rebate_percentage: json.rebate_percentage,
     rebate_amount: json.rebate_amount,
@@ -62,8 +114,16 @@ function serializeInvoice(invoice) {
       unit_price: i.unit_price,
       amount: i.amount,
     })),
-    created_at: json.created_at,
-    updated_at: json.updated_at,
+    audit_trail: (json.auditTrail || []).map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      changes: entry.changes || {},
+      note: entry.note,
+      actor: entry.actor ? { id: entry.actor.id, name: entry.actor.name } : null,
+      created_at: entry.created_at || entry.createdAt,
+    })),
+    created_at: json.created_at || json.createdAt,
+    updated_at: json.updated_at || json.updatedAt,
   }
 }
 
@@ -95,13 +155,20 @@ async function uploadVendorInvoice(req, res) {
       // The placeholder invoice_number must stay inside the column's 100 chars and must
       // not embed the raw upload filename (it is user-controlled and can be arbitrarily
       // long). A timestamped marker is enough to keep the unique index happy.
-      const failed = await VendorInvoice.create({
-        uploaded_by: req.user.sub,
-        vendor_name: 'Unknown Vendor',
-        invoice_number: `PENDING-${Date.now()}`,
-        pdf_url: pdfUrl,
-        rebate_percentage: rebatePercentage,
-        status: 'extraction_failed',
+      const failed = await sequelize.transaction(async (t) => {
+        const row = await VendorInvoice.create({
+          uploaded_by: req.user.sub,
+          vendor_name: 'Unknown Vendor',
+          invoice_number: `PENDING-${Date.now()}`,
+          pdf_url: pdfUrl,
+          rebate_percentage: rebatePercentage,
+          status: 'extraction_failed',
+        }, { transaction: t })
+        await vendorInvoiceAuditService.record({
+          invoiceId: row.id, userId: req.user.sub, action: 'upload_failed_extraction',
+          note: 'PDF saved, but OCR extraction failed.', transaction: t,
+        })
+        return row
       })
       // The id is returned in the payload: the message tells the caller to retry via
       // /vendor-invoices/:id/reextract, and previously never said what :id was.
@@ -114,50 +181,52 @@ async function uploadVendorInvoice(req, res) {
       )
     }
 
-    const extractedTotal = extraction.extracted_total ?? null
-    const { rebateAmount, verifiedTotal } = calculateRebate(extractedTotal, rebatePercentage)
+    const taxFields = await taxFieldsFromExtraction(extraction, rebatePercentage)
     const rec = extraction.reconciliation
 
     let invoice
+    let items
     try {
-      invoice = await VendorInvoice.create({
-        uploaded_by: req.user.sub,
-        vendor_name: extraction.vendor_name,
-        invoice_number: extraction.invoice_number,
-        invoice_date: extraction.invoice_date,
-        pdf_url: pdfUrl,
-        extracted_total: extractedTotal,
-        rebate_percentage: rebatePercentage,
-        rebate_amount: rebateAmount,
-        verified_total: verifiedTotal,
-        // Confidence and the low-confidence flag now come from ocrService.reconcile(),
-        // which cross-checks the extraction's own arithmetic. A model cannot vouch for an
-        // invoice whose line items do not add up to its stated total.
-        extraction_confidence: rec.confidence,
-        is_low_confidence: rec.isLowConfidence,
-        extraction_checks: rec.checks,
-        extracted_items_sum: rec.itemsSum,
-        reconciliation_delta: rec.discrepancy,
-        status: 'pending_review',
-      })
+      ({ invoice, items } = await sequelize.transaction(async (t) => {
+        const row = await VendorInvoice.create({
+          uploaded_by: req.user.sub,
+          vendor_name: extraction.vendor_name,
+          invoice_number: extraction.invoice_number,
+          invoice_date: extraction.invoice_date,
+          pdf_url: pdfUrl,
+          ...taxFields,
+          rebate_percentage: rebatePercentage,
+          // Confidence and the low-confidence flag now come from ocrService.reconcile(),
+          // which cross-checks the extraction's own arithmetic. A model cannot vouch for an
+          // invoice whose line items do not add up to its stated total.
+          extraction_confidence: rec.confidence,
+          is_low_confidence: rec.isLowConfidence,
+          extraction_checks: rec.checks,
+          extracted_items_sum: rec.itemsSum,
+          reconciliation_delta: rec.discrepancy,
+          status: 'pending_review',
+        }, { transaction: t })
+        const createdItems = await Promise.all(
+          (extraction.items || []).map((item) => VendorInvoiceItem.create({
+            vendor_invoice_id: row.id,
+            description: item.description,
+            quantity: item.quantity ?? 1,
+            unit_price: item.unit_price,
+            amount: item.amount,
+          }, { transaction: t }))
+        )
+        await vendorInvoiceAuditService.record({
+          invoiceId: row.id, userId: req.user.sub, action: 'uploaded',
+          note: 'PDF uploaded and OCR extraction completed.', transaction: t,
+        })
+        return { invoice: row, items: createdItems }
+      }))
     } catch (err) {
       if (err.name === 'SequelizeUniqueConstraintError') {
         return error(res, 'An invoice with this number from this vendor already exists.', 'DUPLICATE_INVOICE', 409)
       }
       throw err
     }
-
-    const items = await Promise.all(
-      (extraction.items || []).map((item) =>
-        VendorInvoiceItem.create({
-          vendor_invoice_id: invoice.id,
-          description: item.description,
-          quantity: item.quantity ?? 1,
-          unit_price: item.unit_price,
-          amount: item.amount,
-        })
-      )
-    )
 
     // UC-04 edge case: flag low-confidence extractions for closer manual review. The body
     // names the specific check that failed rather than just a percentage, so the AP
@@ -210,6 +279,11 @@ async function listVendorInvoices(req, res) {
         vendor_name: v.vendor_name,
         invoice_number: v.invoice_number,
         invoice_date: v.invoice_date,
+        due_date: v.due_date,
+        currency_code: v.currency_code,
+        gst_treatment: v.gst_treatment,
+        gst_amount: v.gst_amount,
+        total_including_gst: v.total_including_gst,
         extracted_total: v.extracted_total,
         verified_total: v.verified_total,
         // The list's colour-coded confidence column reads this. Sending only the boolean
@@ -235,10 +309,18 @@ async function getVendorInvoiceById(req, res) {
         { model: VendorInvoiceItem },
         { model: User, as: 'uploadedBy', attributes: ['id', 'name'] },
         { model: User, as: 'approvedBy', attributes: ['id', 'name'] },
+        {
+          model: VendorInvoiceAudit,
+          as: 'auditTrail',
+          include: [{ model: User, as: 'actor', attributes: ['id', 'name'] }],
+          order: [['created_at', 'DESC']],
+          separate: true,
+        },
       ],
     })
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    return success(res, serializeInvoice(invoice))
+    const approvalValidation = await apInvoiceService.validateForApproval(invoice)
+    return success(res, { ...serializeInvoice(invoice), approval_validation: approvalValidation })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }
@@ -248,41 +330,109 @@ async function getVendorInvoiceById(req, res) {
 // Recalculates the rebate when extracted_total or rebate_percentage change.
 async function updateVendorInvoice(req, res) {
   try {
-    const invoice = await VendorInvoice.findByPk(req.params.id)
+    const invoice = await VendorInvoice.findByPk(req.params.id, { include: [{ model: VendorInvoiceItem }] })
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
     if (!EDITABLE_STATUSES.includes(invoice.status)) {
       return error(res, 'Invoice cannot be edited in its current status. Only `pending_review` and `extraction_failed` invoices are editable.', 'INVALID_STATUS', 409)
     }
 
-    const { vendor_name, invoice_number, invoice_date, extracted_total, rebate_percentage } = req.body
+    const {
+      vendor_name,
+      invoice_number,
+      invoice_date,
+      due_date,
+      currency_code,
+      supplier_gst_registration_no,
+      gst_treatment,
+      xero_account_code,
+      subtotal_excluding_gst,
+      gst_amount,
+      total_including_gst,
+      extracted_total,
+      rebate_percentage,
+    } = req.body
     const updates = {}
     if (vendor_name !== undefined) updates.vendor_name = vendor_name
     if (invoice_number !== undefined) updates.invoice_number = invoice_number
     if (invoice_date !== undefined) updates.invoice_date = invoice_date
+    if (due_date !== undefined) updates.due_date = due_date
+    if (currency_code !== undefined) updates.currency_code = currency_code.toUpperCase()
+    if (supplier_gst_registration_no !== undefined) updates.supplier_gst_registration_no = supplier_gst_registration_no || null
+    if (xero_account_code !== undefined) updates.xero_account_code = xero_account_code
 
     if (extracted_total !== undefined && !(Number(extracted_total) > 0)) {
       return error(res, '`extracted_total` must be a positive number', 'INVALID_TOTAL', 400)
     }
 
-    const totalChanged = extracted_total !== undefined
+    const totalChanged = extracted_total !== undefined || total_including_gst !== undefined
     const pctChanged = rebate_percentage !== undefined
-    if (totalChanged || pctChanged) {
-      const newTotal = totalChanged
-        ? Number(extracted_total)
-        : (invoice.extracted_total !== null ? Number(invoice.extracted_total) : null)
+    const taxChanged = [invoice_date, gst_treatment, subtotal_excluding_gst, gst_amount, total_including_gst, extracted_total]
+      .some((value) => value !== undefined)
+    if (taxChanged) {
+      const nextDate = invoice_date !== undefined ? invoice_date : invoice.invoice_date
+      const nextTreatment = gst_treatment !== undefined ? gst_treatment : invoice.gst_treatment
+      let snapshot
+      try {
+        snapshot = await apInvoiceService.resolveTaxSnapshot(nextDate, nextTreatment)
+      } catch (err) {
+        return error(res, err.message, err.code || 'INVALID_GST_CONFIGURATION', 400)
+      }
+      Object.assign(updates, snapshot, { gst_treatment: nextTreatment })
+
+      const items = invoice.VendorInvoiceItems || []
+      const nextSubtotal = subtotal_excluding_gst !== undefined
+        ? Number(subtotal_excluding_gst)
+        : Number(invoice.subtotal_excluding_gst ?? invoice.extracted_total)
+      const nextGst = gst_amount !== undefined
+        ? Number(gst_amount)
+        : apInvoiceService.calculateTax(items, snapshot.gst_rate_percent)
+      const explicitTotal = total_including_gst !== undefined ? total_including_gst : extracted_total
+      const nextTotal = explicitTotal !== undefined
+        ? Number(explicitTotal)
+        : round2(nextSubtotal + nextGst)
+      updates.subtotal_excluding_gst = nextSubtotal
+      updates.gst_amount = nextGst
+      updates.total_including_gst = nextTotal
+      updates.extracted_total = nextTotal
+    }
+
+    if (totalChanged || pctChanged || taxChanged) {
+      const newTotal = taxChanged
+        ? updates.total_including_gst
+        : (invoice.total_including_gst !== null && invoice.total_including_gst !== undefined
+            ? Number(invoice.total_including_gst)
+            : Number(invoice.extracted_total))
       const newPct = pctChanged ? Number(rebate_percentage) : Number(invoice.rebate_percentage)
       const { rebateAmount, verifiedTotal } = calculateRebate(newTotal, newPct)
       if (verifiedTotal !== null && verifiedTotal < 0) {
         return error(res, 'Rebate calculation results in a negative verified total. Please check the extracted total.', 'NEGATIVE_VERIFIED_TOTAL', 400)
       }
-      if (totalChanged) updates.extracted_total = newTotal
       if (pctChanged) updates.rebate_percentage = newPct
       updates.rebate_amount = rebateAmount
       updates.verified_total = verifiedTotal
     }
 
     try {
-      await invoice.update(updates)
+      const auditedFields = [
+        'vendor_name', 'invoice_number', 'invoice_date', 'due_date', 'currency_code',
+        'supplier_gst_registration_no', 'gst_treatment', 'gst_rate_percent', 'xero_tax_type',
+        'xero_account_code', 'subtotal_excluding_gst', 'gst_amount', 'total_including_gst',
+        'extracted_total', 'rebate_percentage', 'rebate_amount', 'verified_total',
+      ]
+      const before = auditedFields.reduce((copy, field) => ({ ...copy, [field]: invoice[field] }), {})
+      await sequelize.transaction(async (t) => {
+        await invoice.update(updates, { transaction: t })
+        const changes = vendorInvoiceAuditService.diff(before, invoice, auditedFields)
+        if (Object.keys(changes).length) {
+          await vendorInvoiceAuditService.record({
+            invoiceId: invoice.id,
+            userId: req.user?.sub || null,
+            action: 'header_updated',
+            changes,
+            transaction: t,
+          })
+        }
+      })
     } catch (err) {
       if (err.name === 'SequelizeUniqueConstraintError') {
         return error(res, 'An invoice with this number from this vendor already exists.', 'DUPLICATE_INVOICE', 409)
@@ -295,6 +445,16 @@ async function updateVendorInvoice(req, res) {
       vendor_name: invoice.vendor_name,
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
+      due_date: invoice.due_date,
+      currency_code: invoice.currency_code,
+      supplier_gst_registration_no: invoice.supplier_gst_registration_no,
+      gst_treatment: invoice.gst_treatment,
+      gst_rate_percent: invoice.gst_rate_percent,
+      xero_tax_type: invoice.xero_tax_type,
+      xero_account_code: invoice.xero_account_code,
+      subtotal_excluding_gst: invoice.subtotal_excluding_gst,
+      gst_amount: invoice.gst_amount,
+      total_including_gst: invoice.total_including_gst,
       extracted_total: invoice.extracted_total,
       rebate_percentage: invoice.rebate_percentage,
       rebate_amount: invoice.rebate_amount,
@@ -339,6 +499,20 @@ async function approveVendorInvoice(req, res) {
           )
         }
 
+        const approvalValidation = await apInvoiceService.validateForApproval(inv, { transaction: t })
+        if (!approvalValidation.can_approve) {
+          throw Object.assign(
+            new Error('Resolve the invoice validation issues before approving.'),
+            { httpCode: 409, code: 'APPROVAL_VALIDATION_FAILED', details: approvalValidation }
+          )
+        }
+        if (approvalValidation.requires_low_confidence_confirmation && req.body?.confirm_low_confidence !== true) {
+          throw Object.assign(
+            new Error('Confirm that the low-confidence invoice was checked against the source PDF before approving.'),
+            { httpCode: 409, code: 'LOW_CONFIDENCE_CONFIRMATION_REQUIRED', details: approvalValidation }
+          )
+        }
+
         // Duplicate guard: another already-approved/synced invoice with the same identity.
         const dup = await VendorInvoice.findOne({
           where: {
@@ -358,10 +532,22 @@ async function approveVendorInvoice(req, res) {
 
         const at = new Date()
         await inv.update({ status: 'approved', approved_by: req.user.sub, approved_at: at }, { transaction: t })
+        await vendorInvoiceAuditService.record({
+          invoiceId: inv.id,
+          userId: req.user.sub,
+          action: 'approved',
+          changes: { status: { from: 'pending_review', to: 'approved' } },
+          note: approvalValidation.requires_low_confidence_confirmation
+            ? 'Approved after the AP Specialist confirmed manual verification against the source PDF.'
+            : null,
+          transaction: t,
+        })
         return { invoice: inv, approvedAt: at }
       }))
     } catch (err) {
-      if (err.httpCode) return error(res, err.message, err.code || 'NOT_FOUND', err.httpCode)
+      if (err.httpCode) {
+        return error(res, err.message, err.code || 'NOT_FOUND', err.httpCode, err.details ? { data: err.details } : {})
+      }
       throw err
     }
 
@@ -378,6 +564,13 @@ async function approveVendorInvoice(req, res) {
         error_message: 'Xero is not connected.',
       })
       await invoice.update({ status: 'failed' })
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user.sub,
+        action: 'sync_failed',
+        changes: { status: { from: 'approved', to: 'failed' } },
+        note: 'Xero is not connected.',
+      })
       return error(res, 'Xero is not connected. Ask the Managing Director to reconnect, then retry the sync from the Xero Sync Status screen.', 'XERO_NOT_CONNECTED', 503, {
         data: { id: invoice.id, status: 'failed', sync_log: { id: log.id, status: 'failed', attempt_count: 1 } },
       })
@@ -390,6 +583,13 @@ async function approveVendorInvoice(req, res) {
       const syncedAt = new Date()
       await invoice.update({ status: 'synced_to_xero', xero_bill_id: result.xeroRecordId })
       await log.update({ status: 'success', xero_record_id: result.xeroRecordId, synced_at: syncedAt })
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user.sub,
+        action: 'sync_succeeded',
+        changes: { status: { from: 'approved', to: 'synced_to_xero' }, xero_bill_id: { from: null, to: result.xeroRecordId } },
+        note: 'Draft bill created in Xero.',
+      })
       return success(res, {
         id: invoice.id,
         status: 'synced_to_xero',
@@ -401,6 +601,13 @@ async function approveVendorInvoice(req, res) {
 
     await invoice.update({ status: 'failed' })
     await log.update({ status: 'failed', error_message: result.error })
+    await vendorInvoiceAuditService.record({
+      invoiceId: invoice.id,
+      userId: req.user.sub,
+      action: 'sync_failed',
+      changes: { status: { from: 'approved', to: 'failed' } },
+      note: result.error,
+    })
     notificationService.create({
       user_id: invoice.uploaded_by,
       type: 'xero_sync_failed',
@@ -433,7 +640,21 @@ async function rejectVendorInvoice(req, res) {
       return error(res, 'Only invoices with status `pending_review` or `extraction_failed` can be rejected', 'INVALID_STATUS', 409)
     }
 
-    await invoice.update({ status: 'rejected', rejection_reason: reason })
+    const previousStatus = invoice.status
+    await sequelize.transaction(async (t) => {
+      await invoice.update({ status: 'rejected', rejection_reason: reason }, { transaction: t })
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'rejected',
+        changes: {
+          status: { from: previousStatus, to: 'rejected' },
+          rejection_reason: { from: null, to: reason },
+        },
+        note: reason,
+        transaction: t,
+      })
+    })
     return success(res, {
       id: invoice.id,
       status: 'rejected',
@@ -473,37 +694,40 @@ async function reextractVendorInvoice(req, res) {
       return error(res, 'Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually.', 'OCR_EXTRACTION_FAILED', 502)
     }
 
-    await VendorInvoiceItem.destroy({ where: { vendor_invoice_id: invoice.id } })
-
-    const extractedTotal = extraction.extracted_total ?? null
-    const { rebateAmount, verifiedTotal } = calculateRebate(extractedTotal, Number(invoice.rebate_percentage))
     const rec = extraction.reconciliation
-    await invoice.update({
-      vendor_name: extraction.vendor_name,
-      invoice_number: extraction.invoice_number,
-      invoice_date: extraction.invoice_date,
-      extracted_total: extractedTotal,
-      rebate_amount: rebateAmount,
-      verified_total: verifiedTotal,
-      extraction_confidence: rec.confidence,
-      is_low_confidence: rec.isLowConfidence,
-      extraction_checks: rec.checks,
-      extracted_items_sum: rec.itemsSum,
-      reconciliation_delta: rec.discrepancy,
-      status: 'pending_review',
-    })
+    const taxFields = await taxFieldsFromExtraction(extraction, Number(invoice.rebate_percentage))
+    await sequelize.transaction(async (t) => {
+      await VendorInvoiceItem.destroy({ where: { vendor_invoice_id: invoice.id }, transaction: t })
+      await invoice.update({
+        vendor_name: extraction.vendor_name,
+        invoice_number: extraction.invoice_number,
+        invoice_date: extraction.invoice_date,
+        ...taxFields,
+        extraction_confidence: rec.confidence,
+        is_low_confidence: rec.isLowConfidence,
+        extraction_checks: rec.checks,
+        extracted_items_sum: rec.itemsSum,
+        reconciliation_delta: rec.discrepancy,
+        status: 'pending_review',
+      }, { transaction: t })
 
-    await Promise.all(
-      (extraction.items || []).map((item) =>
-        VendorInvoiceItem.create({
+      await Promise.all(
+        (extraction.items || []).map((item) => VendorInvoiceItem.create({
           vendor_invoice_id: invoice.id,
           description: item.description,
           quantity: item.quantity ?? 1,
           unit_price: item.unit_price,
           amount: item.amount,
-        })
+        }, { transaction: t }))
       )
-    )
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'reextracted',
+        note: 'OCR data and line items were replaced from the source PDF.',
+        transaction: t,
+      })
+    })
 
     if (invoice.is_low_confidence) {
       notificationService.create({
@@ -515,7 +739,12 @@ async function reextractVendorInvoice(req, res) {
       })
     }
 
-    const reloaded = await VendorInvoice.findByPk(invoice.id, { include: [{ model: VendorInvoiceItem }] })
+    const reloaded = await VendorInvoice.findByPk(invoice.id, {
+      include: [
+        { model: VendorInvoiceItem },
+        { model: VendorInvoiceAudit, as: 'auditTrail', include: [{ model: User, as: 'actor', attributes: ['id', 'name'] }] },
+      ],
+    })
     return success(res, serializeInvoice(reloaded))
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)

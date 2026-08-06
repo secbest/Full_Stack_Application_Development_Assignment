@@ -14,11 +14,13 @@ const Invoice = sequelize.define('Invoice', {
   contract_id: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'pricing_contracts', key: 'id' } },
   approved_by: { type: DataTypes.INTEGER, allowNull: true,               references: { model: 'users',             key: 'id' } },
   subtotal:      { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
-  // Deliberately always 0 in this platform, and the column exists only so the invoice
-  // shape mirrors Xero's. EFAR's pricing contracts are quoted GST-exclusive and Xero is
-  // the master ledger: GST is applied there, by the tax rate configured against the Xero
-  // account code, at the point the draft invoice is approved. Computing GST here as well
-  // would mean two systems owning the same number and disagreeing when a rate changes.
+  // GST-exclusive pricing: the effective-dated rate is selected when the invoice is
+  // generated and copied onto the invoice. The snapshot makes historical invoices
+  // immutable when a later GST period is added to gst_rates.
+  gst_rate_id:       { type: DataTypes.INTEGER, allowNull: true, references: { model: 'gst_rates', key: 'id' } },
+  gst_rate_percent:  { type: DataTypes.DECIMAL(5, 2), allowNull: true },
+  gst_effective_date:{ type: DataTypes.DATEONLY, allowNull: true },
+  xero_tax_type:     { type: DataTypes.STRING(50), allowNull: true },
   tax_amount:    { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
   total_amount:  { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0.00 },
   status: {

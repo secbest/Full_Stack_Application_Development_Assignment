@@ -185,7 +185,23 @@ describe('xeroService.pushBill (UC-07 simulation)', () => {
   test('simulated push succeeds and returns a generated Xero record id', async () => {
     delete process.env.XERO_SIMULATION // default = simulate
     const result = await xeroService.pushBill(
-      { vendor_name: 'Esso', invoice_number: 'INV-1', VendorInvoiceItems: [] },
+      {
+        id: 1,
+        vendor_name: 'Esso',
+        invoice_number: 'INV-1',
+        due_date: '2026-07-31',
+        currency_code: 'SGD',
+        xero_account_code: '400',
+        xero_tax_type: 'NRINPUT',
+        gst_rate_percent: 0,
+        subtotal_excluding_gst: 100,
+        gst_amount: 0,
+        total_including_gst: 100,
+        rebate_percentage: 1,
+        rebate_amount: 1,
+        verified_total: 99,
+        VendorInvoiceItems: [{ description: 'Fuel', quantity: 1, unit_price: 100, amount: 100 }],
+      },
       { xero_tenant_id: 'demo', access_token: 'demo' }
     )
     expect(result.ok).toBe(true)
@@ -196,7 +212,10 @@ describe('xeroService.pushBill (UC-07 simulation)', () => {
   test('simulated AR invoice push returns a Xero-style invoice id', async () => {
     delete process.env.XERO_SIMULATION
     const result = await xeroService.pushArInvoice(
-      { id: 42, client_name: 'TTSH', total_amount: 850, InvoiceLineItems: [] },
+      {
+        id: 42, client_name: 'TTSH', subtotal: 850, gst_rate_percent: 9,
+        tax_amount: 76.5, total_amount: 926.5, xero_tax_type: 'OUTPUT', InvoiceLineItems: [],
+      },
       { xero_tenant_id: 'demo', access_token: 'demo' }
     )
     expect(result.ok).toBe(true)

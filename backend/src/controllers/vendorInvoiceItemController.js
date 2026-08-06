@@ -1,5 +1,7 @@
 const { VendorInvoice, VendorInvoiceItem } = require('../models')
+const sequelize = require('../config')
 const { calculateRebate } = require('./vendorInvoiceController')
+const { apInvoiceService, vendorInvoiceAuditService } = require('../services')
 const { success, error, notFound, round2 } = require('../utils')
 
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
@@ -35,15 +37,51 @@ async function updateVendorInvoiceItem(req, res) {
     const newUnitPrice = unit_price !== undefined ? Number(unit_price) : Number(item.unit_price)
     updates.amount = round2(newQuantity * newUnitPrice)
 
-    await item.update(updates)
+    let parentSummary
+    await sequelize.transaction(async (t) => {
+      const before = {
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        amount: item.amount,
+      }
+      await item.update(updates, { transaction: t })
 
-    // The parent's extracted_total is the sum of its line items, so it is recomputed on
-    // every line edit - not just the ones that happened to send an amount.
-    const items = await VendorInvoiceItem.findAll({ where: { vendor_invoice_id: parent.id } })
-    const total = round2(items.reduce((sum, i) => sum + Number(i.amount), 0))
-    const { rebateAmount, verifiedTotal } = calculateRebate(total, Number(parent.rebate_percentage))
-    await parent.update({ extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal })
-    const parentSummary = { id: parent.id, extracted_total: total, rebate_amount: rebateAmount, verified_total: verifiedTotal }
+      // AP line amounts are GST-exclusive. Recompute the full invoice so the amount
+      // approved in EFAR is exactly the amount the exclusive Xero payload will create.
+      const items = await VendorInvoiceItem.findAll({ where: { vendor_invoice_id: parent.id }, transaction: t })
+      const subtotal = round2(items.reduce((sum, i) => sum + Number(i.amount), 0))
+      const tax = apInvoiceService.calculateTax(items, Number(parent.gst_rate_percent || 0))
+      const total = round2(subtotal + tax)
+      const { rebateAmount, verifiedTotal } = calculateRebate(total, Number(parent.rebate_percentage))
+      await parent.update({
+        subtotal_excluding_gst: subtotal,
+        gst_amount: tax,
+        total_including_gst: total,
+        extracted_total: total,
+        rebate_amount: rebateAmount,
+        verified_total: verifiedTotal,
+      }, { transaction: t })
+      await vendorInvoiceAuditService.record({
+        invoiceId: parent.id,
+        userId: req.user?.sub || null,
+        action: 'line_item_updated',
+        changes: {
+          item_id: item.id,
+          ...vendorInvoiceAuditService.diff(before, item, ['description', 'quantity', 'unit_price', 'amount']),
+        },
+        transaction: t,
+      })
+      parentSummary = {
+        id: parent.id,
+        extracted_total: total,
+        subtotal_excluding_gst: subtotal,
+        gst_amount: tax,
+        total_including_gst: total,
+        rebate_amount: rebateAmount,
+        verified_total: verifiedTotal,
+      }
+    })
 
     return success(res, {
       id: item.id,

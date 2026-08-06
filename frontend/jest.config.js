@@ -1,6 +1,5 @@
-// No jest config existed before this - `npm test` had nothing to resolve the "@/" alias
-// (defined only in vite.config.js, which Jest never reads) or a jsdom environment for
-// react-dom, so any test importing a page component would fail before assertions ran.
+// Jest does not read Vite's alias configuration, so mirror the "@/" alias here and
+// use jsdom for page/component tests that import React DOM.
 module.exports = {
   testEnvironment: 'jsdom',
   moduleNameMapper: {

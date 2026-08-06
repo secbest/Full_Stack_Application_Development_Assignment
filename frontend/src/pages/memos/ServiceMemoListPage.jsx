@@ -90,16 +90,17 @@ export default function ServiceMemoListPage() {
     setBusy(true)
     try {
       const result = await approveMemo(selected.id)
-      toast.success(`Memo approved - invoice #${result.invoice.id} generated ($${Number(result.invoice.total_amount).toFixed(2)}).`)
+      if (result.warning) {
+        toast.warning(`Memo approved, but automatic matching needs attention. ${result.warning.message}`)
+      } else {
+        toast.success(`Memo approved - invoice #${result.invoice.id} generated ($${Number(result.invoice.total_amount).toFixed(2)}).`)
+      }
       setSelected(null)
       await fetchQueue()
       navigate(`/invoices/${result.invoice.id}`)
     } catch (err) {
-      // 422 = approved but no contract / no matching rate -> unmatched invoice created.
       const msg = err.response?.data?.message || 'Failed to approve memo.'
       toast.error(msg)
-      setSelected(null)
-      await fetchQueue()
     } finally {
       setBusy(false)
     }

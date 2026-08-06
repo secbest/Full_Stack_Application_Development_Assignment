@@ -4,6 +4,7 @@ const { authenticate, authorise } = require('../middleware')
 const {
   listInvoices,
   getInvoiceById,
+  rematchInvoice,
   addLineItem,
   updateLineItem,
   deleteLineItem,
@@ -16,6 +17,7 @@ router.post('/batch-approve', authenticate, authorise('ar_specialist'), batchApp
 
 router.get('/', authenticate, authorise('ar_specialist', 'managing_director'), listInvoices)
 router.get('/:id', authenticate, authorise('ar_specialist', 'managing_director'), getInvoiceById)
+router.post('/:id/rematch', authenticate, authorise('ar_specialist'), rematchInvoice)
 router.post('/:id/retry-xero', authenticate, authorise('ar_specialist'), retryXero)
 
 // Invoice line items (manual adjustments)

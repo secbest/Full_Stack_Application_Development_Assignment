@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
-import { CheckCircle2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 
 const ToastContext = createContext(null)
 
@@ -23,6 +23,7 @@ export function ToastProvider({ children }) {
 
   const toast = {
     success: (message) => notify('success', message),
+    warning: (message) => notify('warning', message),
     error: (message) => notify('error', message),
   }
 
@@ -35,12 +36,18 @@ export function ToastProvider({ children }) {
             key={t.id}
             role="alert"
             className={`flex items-start gap-2 rounded-lg border-l-4 bg-[#1E293B] px-4 py-3 text-sm text-white shadow-lg ${
-              t.type === 'success' ? 'border-[#22C55E]' : 'border-[#EF4444]'
+              t.type === 'success'
+                ? 'border-[#22C55E]'
+                : t.type === 'warning'
+                  ? 'border-amber-400'
+                  : 'border-[#EF4444]'
             }`}
           >
             {t.type === 'success'
               ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-[#22C55E]" />
-              : <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#EF4444]" />}
+              : t.type === 'warning'
+                ? <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                : <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#EF4444]" />}
             <span className="flex-1">{t.message}</span>
           </div>
         ))}

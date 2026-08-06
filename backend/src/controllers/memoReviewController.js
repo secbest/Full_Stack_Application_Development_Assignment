@@ -1,29 +1,37 @@
 // Owner: Kwan Hua (Wave 3 takeover of the AR stream). AR design authored by Jasper (design/jasper/).
 const sequelize = require('../config')
-const { Op } = require('sequelize')
 const {
   ServiceMemo, MemoSignature, Booking, Client, User,
-  PricingContract, PricingRate, SurchargeSchedule,
+  PricingRate, SurchargeSchedule,
   Invoice, InvoiceLineItem,
 } = require('../models')
-const { pricingService } = require('../services')
+const { pricingService, gstService } = require('../services')
+const { findActiveContract } = require('../services/activeContractService')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
 
 const HOURS = 1000 * 60 * 60
 
-// Finds the client's contract that is active for a given date (defaults to today).
-async function findActiveContract(clientId, onDate = new Date()) {
-  const day = onDate.toISOString().slice(0, 10)
-  return PricingContract.findOne({
-    where: {
-      client_id: clientId,
-      is_active: true,
-      effective_from: { [Op.lte]: day },
-      effective_to: { [Op.gte]: day },
-    },
-    order: [['effective_from', 'DESC']],
-  })
+function approvalInvoicePayload(invoice, lineItems = []) {
+  return {
+    id: invoice.id,
+    status: invoice.status,
+    subtotal: invoice.subtotal,
+    gst_rate_percent: invoice.gst_rate_percent,
+    gst_effective_date: invoice.gst_effective_date,
+    tax_amount: invoice.tax_amount,
+    total_amount: invoice.total_amount,
+    unpriced_surcharges: invoice.unpriced_surcharges || [],
+    line_items: lineItems.map((li) => ({
+      id: li.id,
+      description: li.description,
+      quantity: li.quantity,
+      unit_price: li.unit_price,
+      amount: li.amount,
+      is_manual_adjustment: li.is_manual_adjustment,
+      was_manually_edited: li.was_manually_edited,
+    })),
+  }
 }
 
 // GET /api/service-memos/pending-review - UC-03: memos submitted and awaiting AR review
@@ -95,9 +103,27 @@ async function approveMemo(req, res) {
 
     const booking = memo.Booking
     const clientId = booking ? booking.client_id : null
+    if (!booking || !booking.scheduled_date) {
+      return error(res, 'The memo has no scheduled service date, so the applicable GST rate cannot be determined.', 'INVOICE_SOURCE_MISSING', 409)
+    }
+
+    let gstSnapshot
+    try {
+      // The service date is EFAR's default tax-date rule. The exact chosen date and rate
+      // are frozen on the invoice so a future law change cannot rewrite this document.
+      gstSnapshot = await gstService.buildSnapshot(booking.scheduled_date)
+    } catch (gstErr) {
+      if (['GST_RATE_NOT_CONFIGURED', 'INVALID_GST_DATE'].includes(gstErr.code)) {
+        return error(res, gstErr.message, gstErr.code, 422)
+      }
+      throw gstErr
+    }
     const contract = clientId ? await findActiveContract(clientId, booking ? new Date(booking.scheduled_date) : new Date()) : null
 
-    // No active contract -> create an unmatched invoice (needs manual pricing) and 422.
+    // No active contract -> approval still succeeds, but the created invoice needs
+    // attention. This used to return 422 after committing both writes, which made the
+    // frontend report a successful approval as a failure and discarded the new invoice
+    // id that the AR Specialist needed in order to recover.
     if (!contract) {
       // No contract means nothing could be priced, so everything chargeable on the memo is
       // recorded as unpriced - that list is what Sarah works through to price it by hand.
@@ -109,17 +135,21 @@ async function approveMemo(req, res) {
           booking_id: memo.booking_id,
           client_id: clientId,
           contract_id: null,
+          ...gstSnapshot,
           subtotal: 0, tax_amount: 0, total_amount: 0,
           status: 'unmatched',
           unpriced_surcharges: unpriced,
         }, { transaction: t })
       })
-      return error(
-        res,
-        `No active pricing contract found for this client - invoice #${invoice.id} created as \`unmatched\`. To resolve: create/activate a pricing contract for this client, or open the invoice and add a manual line item to price it yourself.`,
-        'NO_ACTIVE_CONTRACT',
-        422
-      )
+      return success(res, {
+        memo_id: memo.id,
+        memo_status: 'reviewed',
+        invoice: approvalInvoicePayload(invoice),
+        warning: {
+          code: 'NO_ACTIVE_CONTRACT',
+          message: `Invoice #${invoice.id} needs pricing because no active contract covers this client's service date. Create or activate the contract, then retry matching from the invoice; alternatively, price every charge manually.`,
+        },
+      })
     }
 
     const rates = await PricingRate.findAll({
@@ -129,7 +159,9 @@ async function approveMemo(req, res) {
 
     const result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
 
-    // Active contract but no matching rate row -> unmatched invoice + 422.
+    // Active contract but no matching rate row -> the approval succeeded and an
+    // actionable unmatched invoice was created, so return it as a warning-bearing
+    // success for the same reason as the no-contract branch above.
     if (!result.matched) {
       const invoice = await sequelize.transaction(async (t) => {
         await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
@@ -138,19 +170,24 @@ async function approveMemo(req, res) {
           booking_id: memo.booking_id,
           client_id: clientId,
           contract_id: contract.id,
+          ...gstSnapshot,
           subtotal: 0, tax_amount: 0, total_amount: 0,
           status: 'unmatched',
           unpriced_surcharges: result.unpriced,
         }, { transaction: t })
       })
-      return error(
-        res,
-        `Active contract found but no rate row matches this memo's service/transfer/time combination - invoice #${invoice.id} created as \`unmatched\`. To resolve: add a matching rate to the contract, or open the invoice and add a manual line item to price it yourself.`,
-        'NO_MATCHING_RATE',
-        422
-      )
+      return success(res, {
+        memo_id: memo.id,
+        memo_status: 'reviewed',
+        invoice: approvalInvoicePayload(invoice),
+        warning: {
+          code: 'NO_MATCHING_RATE',
+          message: `Invoice #${invoice.id} needs pricing because the active contract has no rate for this service, transfer and time combination. Add the rate, then retry matching from the invoice; alternatively, price every charge manually.`,
+        },
+      })
     }
 
+    const totals = gstService.calculateTotals(result.lineItems, gstSnapshot.gst_rate_percent)
     const invoice = await sequelize.transaction(async (t) => {
       await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
       const inv = await Invoice.create({
@@ -158,9 +195,8 @@ async function approveMemo(req, res) {
         booking_id: memo.booking_id,
         client_id: clientId,
         contract_id: contract.id,
-        subtotal: result.subtotal,
-        tax_amount: 0,
-        total_amount: result.subtotal,
+        ...gstSnapshot,
+        ...totals,
         status: 'matched',
         unpriced_surcharges: result.unpriced,
       }, { transaction: t })
@@ -176,23 +212,7 @@ async function approveMemo(req, res) {
     return success(res, {
       memo_id: memo.id,
       memo_status: 'reviewed',
-      invoice: {
-        id: invoice.id,
-        status: invoice.status,
-        subtotal: invoice.subtotal,
-        tax_amount: invoice.tax_amount,
-        total_amount: invoice.total_amount,
-        unpriced_surcharges: invoice.unpriced_surcharges || [],
-        line_items: lineItems.map((li) => ({
-          id: li.id,
-          description: li.description,
-          quantity: li.quantity,
-          unit_price: li.unit_price,
-          amount: li.amount,
-          is_manual_adjustment: li.is_manual_adjustment,
-          was_manually_edited: li.was_manually_edited,
-        })),
-      },
+      invoice: approvalInvoicePayload(invoice, lineItems),
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)

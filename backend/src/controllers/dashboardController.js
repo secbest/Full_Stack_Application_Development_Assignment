@@ -86,7 +86,8 @@ async function fleetOverview(req, res) {
 // 'approved' and 'synced_to_xero' so rejected/pending invoices never inflate the totals
 // Doris sees. `verified_total` (the AP-reviewed figure) is preferred over `extracted_total`
 // (the raw OCR figure) wherever a verified value exists, since verified_total is the
-// number that actually reflects what AP signed off on.
+// number that actually reflects what AP signed off on. Gross expenditure and net payable
+// are accumulated separately so the rebate is never deducted from verified_total twice.
 async function vendorExpenses(req, res) {
   const { date_from, date_to, vendor_name } = req.query
   const from = date_from || `${new Date().getFullYear()}-01-01`
@@ -99,31 +100,35 @@ async function vendorExpenses(req, res) {
   if (vendor_name) where.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
 
   const invoices = await VendorInvoice.findAll({ where })
-  const amountOf = (inv) => Number(inv.verified_total ?? inv.extracted_total ?? 0)
+  const grossAmountOf = (inv) => Number(inv.total_including_gst ?? inv.extracted_total ?? 0)
+  const netAmountOf = (inv) => Number(inv.verified_total ?? (grossAmountOf(inv) - Number(inv.rebate_amount ?? 0)))
   const rebateOf = (inv) => Number(inv.rebate_amount ?? 0)
   const money = (n) => n.toFixed(2)
 
   const summary = invoices.reduce(
     (acc, inv) => {
-      acc.total_expenditure += amountOf(inv)
+      acc.total_expenditure += grossAmountOf(inv)
+      acc.net_payable += netAmountOf(inv)
       acc.total_rebates_applied += rebateOf(inv)
       acc.invoice_count += 1
       return acc
     },
-    { total_expenditure: 0, total_rebates_applied: 0, invoice_count: 0 }
+    { total_expenditure: 0, total_rebates_applied: 0, net_payable: 0, invoice_count: 0 }
   )
 
   const byVendorMap = new Map()
   const monthlyMap = new Map()
   for (const inv of invoices) {
-    const amount = amountOf(inv)
+    const amount = grossAmountOf(inv)
+    const netAmount = netAmountOf(inv)
     const rebate = rebateOf(inv)
 
     const vendorEntry = byVendorMap.get(inv.vendor_name) || {
-      vendor_name: inv.vendor_name, total_expenditure: 0, total_rebates: 0, invoice_count: 0,
+      vendor_name: inv.vendor_name, total_expenditure: 0, total_rebates: 0, net_payable: 0, invoice_count: 0,
     }
     vendorEntry.total_expenditure += amount
     vendorEntry.total_rebates += rebate
+    vendorEntry.net_payable += netAmount
     vendorEntry.invoice_count += 1
     byVendorMap.set(inv.vendor_name, vendorEntry)
 
@@ -131,7 +136,7 @@ async function vendorExpenses(req, res) {
     if (month) {
       const monthEntry = monthlyMap.get(month) || { month, total_expenditure: 0, net_payable: 0 }
       monthEntry.total_expenditure += amount
-      monthEntry.net_payable += amount - rebate
+      monthEntry.net_payable += netAmount
       monthlyMap.set(month, monthEntry)
     }
   }
@@ -141,7 +146,7 @@ async function vendorExpenses(req, res) {
     summary: {
       total_expenditure: money(summary.total_expenditure),
       total_rebates_applied: money(summary.total_rebates_applied),
-      net_payable: money(summary.total_expenditure - summary.total_rebates_applied),
+      net_payable: money(summary.net_payable),
       invoice_count: summary.invoice_count,
     },
     by_vendor: [...byVendorMap.values()]
@@ -150,7 +155,7 @@ async function vendorExpenses(req, res) {
         vendor_name: v.vendor_name,
         total_expenditure: money(v.total_expenditure),
         total_rebates: money(v.total_rebates),
-        net_payable: money(v.total_expenditure - v.total_rebates),
+        net_payable: money(v.net_payable),
         invoice_count: v.invoice_count,
       })),
     monthly_trend: [...monthlyMap.values()]
