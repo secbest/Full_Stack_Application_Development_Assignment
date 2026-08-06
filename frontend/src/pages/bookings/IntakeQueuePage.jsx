@@ -32,16 +32,12 @@ function formatDate(dateString) {
   return date.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-// Row tint follows the CLAUDE.md status pattern: Pending/Warning = amber,
+// Status badge colors follow the CLAUDE.md status pattern: Pending/Warning = amber,
 // Confirmed/Info = blue, Rejected/Error = red.
-const STATUS_ROW_CLASSES = {
-  Pending: 'bg-amber-100/70',
-  Confirmed: 'bg-blue-100/70',
-  Rejected: 'bg-red-100/70',
-}
-
-function getRowBackground(intake) {
-  return STATUS_ROW_CLASSES[intake.status] || 'bg-white'
+const STATUS_BADGE_CLASSES = {
+  Pending: 'bg-amber-100 text-amber-700',
+  Confirmed: 'bg-blue-100 text-blue-700',
+  Rejected: 'bg-red-100 text-red-700',
 }
 
 // Status filter pills. The active fill follows the CLAUDE.md status reference colors so
@@ -49,10 +45,10 @@ function getRowBackground(intake) {
 // Confirmed = blue (#3B82F6 / Info), Rejected = red (#EF4444 / Error). "All" stays
 // neutral slate since it isn't a status.
 const STATUS_FILTER_PILLS = [
-  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white' },
-  { value: 'Pending', label: 'Pending', activeClass: 'bg-amber-500 text-white' },
-  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white' },
-  { value: 'Rejected', label: 'Rejected', activeClass: 'bg-red-500 text-white' },
+  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white border-slate-900', inactiveClass: 'bg-slate-100 text-slate-700 border-slate-900 hover:bg-slate-200' },
+  { value: 'Pending', label: 'Pending', activeClass: 'bg-amber-500 text-white border-amber-500', inactiveClass: 'bg-amber-50 text-amber-700 border-amber-500 hover:bg-amber-100' },
+  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white border-blue-500', inactiveClass: 'bg-blue-50 text-blue-700 border-blue-500 hover:bg-blue-100' },
+  { value: 'Rejected', label: 'Rejected', activeClass: 'bg-red-500 text-white border-red-500', inactiveClass: 'bg-red-50 text-red-700 border-red-500 hover:bg-red-100' },
 ]
 
 export default function IntakeQueuePage() {
@@ -248,7 +244,7 @@ export default function IntakeQueuePage() {
                     <button
                       key={pill.value || 'all'}
                       onClick={() => setStatusFilter(pill.value)}
-                      className={`h-8 px-3 rounded-full text-xs transition-colors ${statusFilter === pill.value ? pill.activeClass : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                      className={`h-8 px-3 rounded-full border text-xs transition-colors ${statusFilter === pill.value ? pill.activeClass : pill.inactiveClass}`}
                     >
                       {pill.label}
                     </button>
@@ -282,7 +278,7 @@ export default function IntakeQueuePage() {
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50/70">
-                        {['Reference', 'Customer', 'Organisation', 'Service Type', 'Service Tier', 'Preferred Date', 'Time in Queue', 'Action'].map((col) => (
+                        {['Reference', 'Customer', 'Organisation', 'Service Type', 'Service Tier', 'Status', 'Preferred Date', 'Time in Queue', 'Action'].map((col) => (
                           <th key={col} className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{col}</th>
                         ))}
                       </tr>
@@ -290,20 +286,25 @@ export default function IntakeQueuePage() {
                     <tbody>
                       {filteredIntakes.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="px-4 py-16 text-center text-slate-400 text-sm">No intake submissions found.</td>
+                          <td colSpan={9} className="px-4 py-16 text-center text-slate-400 text-sm">No intake submissions found.</td>
                         </tr>
                       ) : (
                         filteredIntakes.map((it) => (
                           <tr
                             key={it.ref}
                             onClick={() => { setSelectedIntake(it); setShowDetails(true); }}
-                            className={`h-12 cursor-pointer ${getRowBackground(it)}`}
+                            className="h-12 cursor-pointer odd:bg-white even:bg-slate-50 hover:bg-slate-100"
                           >
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{it.ref}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{it.name}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{it.org}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{it.serviceType}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-800">{it.tier}</span></td>
+                            <td className="px-4 py-2 align-middle">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${STATUS_BADGE_CLASSES[it.status] || 'bg-slate-100 text-slate-600'}`}>
+                                {it.status}
+                              </span>
+                            </td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">{it.preferredDate}</span></td>
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">1h 12m</span></td>
                             <td className="px-4 py-2 align-middle">
