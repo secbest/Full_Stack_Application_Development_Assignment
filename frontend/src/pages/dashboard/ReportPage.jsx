@@ -10,16 +10,10 @@ const REPORT_TABS = [
   { id: "vendor",  label: "Vendor Expenditure" },
 ];
 
-// Revenue by Service Type has no backing field yet - GET /api/invoices doesn't join
-// in the service memo's service_type, so this chart stays illustrative until that's
-// added. Everything else on the Revenue tab (KPIs, Revenue by Client, Invoice
-// Breakdown) is now computed from real fetched invoices - see ReportRevenue below.
-const SERVICE_DONUT = [
-  { label: "Emergency Ambulance Services (EAS)", value: 38940, color: "#1E293B" },
-  { label: "Medical Transport Service (MTS)",    value: 10820, color: "#3B82F6" },
-  { label: "Event Standby",                      value: 3100,  color: "#F59E0B" },
-  { label: "Workplace Standby",                  value: 1350,  color: "#22C55E" },
-];
+// Assigns a color to each service-type slice in the order the backend returns them
+// (sorted by revenue descending), since GET /dashboard/revenue-by-service-type
+// returns amounts, not colors. Repeats if there are ever more than 4 service types.
+const DONUT_COLORS = ["#1E293B", "#3B82F6", "#F59E0B", "#22C55E"];
 
 // Real AR invoice statuses (backend VALID_STATUSES in invoiceController.js), mapped to
 // the app's standard status-badge colors (see CLAUDE.md's status badge pattern).
@@ -259,7 +253,7 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
   );
 }
 
-function ReportRevenue({ invoices, loading, error, period }) {
+function ReportRevenue({ invoices, loading, error, period, serviceBreakdown }) {
   const [activeClientIdx, setActiveClientIdx] = useState(null);
   const [invPage, setInvPage] = useState(1);
   const PER_PAGE = 10;
@@ -306,7 +300,8 @@ function ReportRevenue({ invoices, loading, error, period }) {
     ? invoices.filter((inv) => (inv.client_name || "Unknown Client") === clientBars[activeClientIdx].client)
     : invoices;
 
-  const totalRevenueDonut = SERVICE_DONUT.reduce((s, d) => s + d.value, 0);
+  const donutData = (serviceBreakdown || []).map((d, i) => ({ label: d.label, value: Number(d.total_revenue), color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  const totalRevenueDonut = donutData.reduce((s, d) => s + d.value, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -374,33 +369,38 @@ function ReportRevenue({ invoices, loading, error, period }) {
         <div style={{ ...cardBase, padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Revenue by Service Type</h2>
-            <span style={{ fontSize: 11, color: "#94A3B8", fontStyle: "italic", fontFamily: "'Inter', sans-serif" }}>Illustrative - per-invoice service type isn't in the API response yet</span>
           </div>
           <div style={{ padding: "16px 24px" }}>
-            <div style={{ height: 180 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={SERVICE_DONUT} cx="50%" cy="50%" innerRadius={55} outerRadius={84} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false}>
-                    {SERVICE_DONUT.map((entry, i) => <Cell key={`donut-cell-${i}`} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v, name) => [`$${v.toLocaleString()}`, name]} contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 13, fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} itemStyle={{ color: "#1E293B" }} labelStyle={{ color: "#64748B" }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-              {SERVICE_DONUT.map((d) => (
-                <div key={d.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: d.color, flexShrink: 0, display: "inline-block" }} />
-                    <span style={{ fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{d.label}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${d.value.toLocaleString()}</span>
-                    <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{Math.round((d.value / totalRevenueDonut) * 100)}%</span>
-                  </div>
+            {donutData.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>No invoices in this period.</p>
+            ) : (
+              <>
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={84} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false}>
+                        {donutData.map((entry, i) => <Cell key={`donut-cell-${i}`} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v, name) => [`$${v.toLocaleString()}`, name]} contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 13, fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} itemStyle={{ color: "#1E293B" }} labelStyle={{ color: "#64748B" }} />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                  {donutData.map((d) => (
+                    <div key={d.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: "50%", background: d.color, flexShrink: 0, display: "inline-block" }} />
+                        <span style={{ fontSize: 13, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{d.label}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${d.value.toLocaleString()}</span>
+                        <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{Math.round((d.value / totalRevenueDonut) * 100)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
