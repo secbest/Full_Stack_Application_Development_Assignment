@@ -550,10 +550,61 @@ function ReportLeakage({ data, loading, error }) {
   );
 }
 
-function ExpenseSummary() {
+function ReportVendorExpenditure({ data, loading, error }) {
+  const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
+  const thS = { padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", fontFamily: "'Inter', sans-serif" };
+
+  if (loading) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Loading vendor expenditure…</p></div>;
+  }
+  if (error) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center" }}><p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif" }}>{error}</p></div>;
+  }
+
+  const byVendor = data?.by_vendor || [];
+
   return (
-    <div style={{ padding: 20, textAlign: 'center', color: '#64748B', fontFamily: "'Inter', sans-serif" }}>
-      Vendor Expenditure functionality not yet implemented.
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Vendor Expenditure</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${data?.summary?.total_expenditure ?? "0.00"}</span>
+        </div>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Rebates Applied</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#22C55E", fontFamily: "'Inter', sans-serif" }}>${data?.summary?.total_rebates_applied ?? "0.00"}</span>
+        </div>
+        <div style={{ ...cardBase, padding: "20px 24px" }}>
+          <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Net Payable After Rebates</p>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${data?.summary?.net_payable ?? "0.00"}</span>
+        </div>
+      </div>
+
+      <div style={{ ...cardBase, overflow: "hidden" }}>
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>By Vendor</h2>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
+              {["Vendor", "Expenditure", "Rebates", "Net Payable", "Invoice Count"].map((col) => <th key={col} style={thS}>{col}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {byVendor.length === 0 ? (
+              <tr><td colSpan={5} style={{ padding: "40px 16px", textAlign: "center", fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>No approved vendor invoices in this period.</td></tr>
+            ) : byVendor.map((v, i) => (
+              <tr key={v.vendor_name} style={{ borderBottom: "1px solid #F1F5F9", height: 48, background: i % 2 === 1 ? "#F8FAFC" : "#FFFFFF" }}>
+                <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{v.vendor_name}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>${v.total_expenditure}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#22C55E", fontFamily: "'Inter', sans-serif" }}>${v.total_rebates}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>${v.net_payable}</td>
+                <td style={{ padding: "0 16px", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{v.invoice_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -630,7 +681,7 @@ export default function ReportsScreen() {
       {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} />}
       {reportTab === "billing" && <ReportBillingCycle />}
       {reportTab === "leakage" && <ReportLeakage />}
-      {reportTab === "vendor" && <ExpenseSummary />}
+      {reportTab === "vendor" && <ReportVendorExpenditure />}
     </div>
   );
 }
