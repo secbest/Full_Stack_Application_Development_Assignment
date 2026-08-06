@@ -1,7 +1,8 @@
 const { Op } = require('sequelize')
-const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, SurchargeSchedule, Client } = require('../models')
+const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, SurchargeSchedule, Client, JobMilestone, XeroSyncLog } = require('../models')
 const { leakageService } = require('../services')
-const { success } = require('../utils')
+const xeroService = require('../services/xeroService')
+const { success, internalError, round2 } = require('../utils')
 
 const BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'invoiced']
 
@@ -211,4 +212,114 @@ async function revenueLeakage(req, res) {
   })
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage }
+// GET /api/dashboard/cycle-time - average duration, per stage, from job completion
+// through Xero sync. Reused by this Fleet Overview KPI and by the Reports "Billing
+// Cycle" tab, which renders the same `rows` as a table instead of just the averages.
+//
+// Stage durations are computed in JS from four already-related record sets, the same
+// "aggregate in JS, not SQL" approach fleetOverview and revenueLeakage above use - at
+// EFAR's data volume this stays simpler to read and test than a multi-table join.
+async function cycleTime(req, res) {
+  try {
+    const { date_from, date_to } = req.query
+    const from = date_from || `${new Date().getFullYear()}-01-01`
+    const to = date_to || toDateOnly(new Date())
+
+    const completedMilestones = await JobMilestone.findAll({
+      where: {
+        milestone_type: 'job_completed',
+        recorded_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] },
+      },
+      attributes: ['booking_id', 'recorded_at'],
+    })
+
+    if (completedMilestones.length === 0) {
+      return success(res, {
+        period: { from, to },
+        booking_count: 0,
+        stage_averages_days: { job_to_memo: null, memo_to_invoice: null, invoice_to_sync: null },
+        overall_average_days: null,
+        rows: [],
+      })
+    }
+
+    const bookingIds = completedMilestones.map((m) => m.booking_id)
+
+    const [memos, invoices] = await Promise.all([
+      ServiceMemo.findAll({ where: { booking_id: { [Op.in]: bookingIds } }, attributes: ['booking_id', 'createdAt'] }),
+      Invoice.findAll({ where: { booking_id: { [Op.in]: bookingIds } }, attributes: ['id', 'booking_id', 'approved_at'] }),
+    ])
+    const memoByBooking = new Map(memos.map((m) => [m.booking_id, m]))
+    const invoiceByBooking = new Map(invoices.map((i) => [i.booking_id, i]))
+
+    const invoiceIds = invoices.map((i) => i.id)
+    const syncLogs = invoiceIds.length
+      ? await XeroSyncLog.findAll({
+          where: { entity_type: 'ar_invoice', entity_id: { [Op.in]: invoiceIds }, status: 'success' },
+          attributes: ['entity_id', 'synced_at'],
+          order: [['synced_at', 'ASC']],
+        })
+      : []
+    // First successful sync per invoice - a retried invoice can have more than one log row.
+    const firstSyncByInvoice = new Map()
+    for (const log of syncLogs) {
+      if (!firstSyncByInvoice.has(log.entity_id)) firstSyncByInvoice.set(log.entity_id, log.synced_at)
+    }
+
+    const msPerDay = 1000 * 60 * 60 * 24
+    const rows = completedMilestones.map((milestone) => {
+      const memo = memoByBooking.get(milestone.booking_id)
+      const invoice = invoiceByBooking.get(milestone.booking_id)
+      const syncedAt = invoice ? firstSyncByInvoice.get(invoice.id) : null
+
+      const jobToMemo = memo ? (new Date(memo.createdAt) - new Date(milestone.recorded_at)) / msPerDay : null
+      const memoToInvoice = memo && invoice && invoice.approved_at
+        ? (new Date(invoice.approved_at) - new Date(memo.createdAt)) / msPerDay
+        : null
+      const invoiceToSync = invoice && invoice.approved_at && syncedAt
+        ? (new Date(syncedAt) - new Date(invoice.approved_at)) / msPerDay
+        : null
+      const totalDays = syncedAt ? (new Date(syncedAt) - new Date(milestone.recorded_at)) / msPerDay : null
+
+      return {
+        booking_id: milestone.booking_id,
+        job_completed_at: milestone.recorded_at,
+        memo_submitted_at: memo ? memo.createdAt : null,
+        invoice_approved_at: invoice ? invoice.approved_at : null,
+        synced_at: syncedAt || null,
+        job_to_memo_days: jobToMemo,
+        memo_to_invoice_days: memoToInvoice,
+        invoice_to_sync_days: invoiceToSync,
+        total_days: totalDays,
+      }
+    })
+
+    const avg = (values) => {
+      const known = values.filter((v) => v !== null && Number.isFinite(v))
+      return known.length ? round2(known.reduce((s, v) => s + v, 0) / known.length) : null
+    }
+
+    return success(res, {
+      period: { from, to },
+      booking_count: rows.length,
+      stage_averages_days: {
+        job_to_memo: avg(rows.map((r) => r.job_to_memo_days)),
+        memo_to_invoice: avg(rows.map((r) => r.memo_to_invoice_days)),
+        invoice_to_sync: avg(rows.map((r) => r.invoice_to_sync_days)),
+      },
+      overall_average_days: avg(rows.map((r) => r.total_days)),
+      rows: rows.map((r) => ({
+        booking_id: r.booking_id,
+        job_completed_at: r.job_completed_at,
+        memo_submitted_at: r.memo_submitted_at,
+        invoice_approved_at: r.invoice_approved_at,
+        synced_at: r.synced_at,
+        total_days: r.total_days !== null ? round2(r.total_days) : null,
+      })),
+    })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime }
