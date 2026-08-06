@@ -1,20 +1,53 @@
 const jwt = require('jsonwebtoken')
+const { User } = require('../models')
 
-// Verifies the JWT in the Authorization header.
+// How stale last_active_at must be before authenticate() bothers writing a fresh
+// value. Without this, every authenticated request (there are many per page load)
+// would issue an UPDATE - this keeps it to at most one write per user per minute.
+const LAST_ACTIVE_STALE_MS = 60 * 1000
+
+// Verifies the JWT in the Authorization header, then checks it against the user's
+// current token_version - a mismatch means a Managing Director has force-logged-out
+// this account since the token was issued (see userController.forceLogout). Also
+// stamps last_active_at (throttled) so Accounts Management's "Currently Online"
+// status has real data to read.
 // Attaches decoded payload to req.user on success.
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const header = req.headers.authorization
   if (!header || !header.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: 'Missing or invalid token.' })
   }
   const token = header.slice(7)
+
+  let payload
   try {
     const secret = process.env.NODE_ENV === 'production' ? process.env.JWT_SECRET : process.env.DEV_JWT_SECRET
-    req.user = jwt.verify(token, secret)
-    next()
+    payload = jwt.verify(token, secret)
   } catch {
-    res.status(401).json({ success: false, code: 'TOKEN_EXPIRED', message: 'Token is invalid or expired.' })
+    return res.status(401).json({ success: false, code: 'TOKEN_EXPIRED', message: 'Token is invalid or expired.' })
   }
+
+  try {
+    const user = await User.findByPk(payload.sub, { attributes: ['id', 'token_version', 'last_active_at'] })
+    if (!user || user.token_version !== payload.token_version) {
+      return res.status(401).json({ success: false, code: 'TOKEN_REVOKED', message: 'This session has been logged out. Please sign in again.' })
+    }
+
+    const lastActive = user.last_active_at ? new Date(user.last_active_at).getTime() : 0
+    if (Date.now() - lastActive > LAST_ACTIVE_STALE_MS) {
+      await user.update({ last_active_at: new Date() })
+    }
+
+    req.user = payload
+  } catch (err) {
+    return res.status(500).json({ success: false, code: 'INTERNAL_ERROR', message: 'Something went wrong while authenticating this request.' })
+  }
+
+  // Called outside the try block on purpose: if a downstream handler throws
+  // synchronously, that throw must not be caught by THIS function's catch (which
+  // would send a spurious 500 INTERNAL_ERROR here, on top of whatever response the
+  // downstream handler's own error handling already sent).
+  next()
 }
 
 // Restricts a route to specific role slugs.

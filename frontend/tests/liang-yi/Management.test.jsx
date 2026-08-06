@@ -24,8 +24,13 @@ const ManagementPage = require('../../src/pages/dashboard/Management').default;
 
 let mock;
 
+const DEFAULT_USERS = [
+  { id: 1, name: 'Camilla Cruz', email: 'camilla@efar.com.sg', role: 'quotations_specialist', last_login_at: new Date().toISOString(), last_active_at: new Date().toISOString(), is_online: true, is_locked: false },
+];
+
 beforeEach(() => {
   mock = new MockAdapter(api);
+  mock.onGet('/users').reply(200, { success: true, data: DEFAULT_USERS });
 });
 
 afterEach(() => {
@@ -36,6 +41,11 @@ function renderPage() {
   return render(
     React.createElement(ToastProvider, null, React.createElement(ManagementPage))
   );
+}
+
+// Waits for the initial GET /users fetch to resolve and the directory to render.
+async function waitForDirectory() {
+  await screen.findByText('camilla@efar.com.sg');
 }
 
 async function openAddUserModal() {
@@ -59,7 +69,7 @@ async function submit() {
 }
 
 describe('Accounts Management - Add New User form', () => {
-  test('successful account creation shows a success message and adds the row', async () => {
+  test('successful account creation shows a success message and refetches the directory', async () => {
     mock.onPost('/auth/register').reply(201, {
       success: true,
       data: {
@@ -69,6 +79,11 @@ describe('Accounts Management - Add New User form', () => {
     });
 
     renderPage();
+    await waitForDirectory();
+
+    // The post-creation refetch returns the new user alongside the existing one.
+    mock.onGet('/users').reply(200, { success: true, data: [...DEFAULT_USERS, { id: 99, name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist', last_login_at: null, last_active_at: null, is_online: false, is_locked: false }] });
+
     await openAddUserModal();
     await fillForm({ name: 'Jane Doe', email: 'jane@efar.com.sg', password: 'Efar@2026' });
     await submit();
@@ -80,12 +95,13 @@ describe('Accounts Management - Add New User form', () => {
     // Modal closes on success.
     expect(screen.queryByRole('heading', { name: 'Add New User' })).not.toBeInTheDocument();
 
-    // New row appears in the User Directory table.
-    expect(screen.getByText('jane@efar.com.sg')).toBeInTheDocument();
+    // New row appears in the User Directory table, from the refetch.
+    expect(await screen.findByText('jane@efar.com.sg')).toBeInTheDocument();
 
     // Sanity-check the actual request payload axios-mock-adapter captured.
-    expect(mock.history.post).toHaveLength(1);
-    const body = JSON.parse(mock.history.post[0].data);
+    const registerCalls = mock.history.post.filter((c) => c.url === '/auth/register');
+    expect(registerCalls).toHaveLength(1);
+    const body = JSON.parse(registerCalls[0].data);
     expect(body).toMatchObject({ name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist' });
   });
 
@@ -97,6 +113,7 @@ describe('Accounts Management - Add New User form', () => {
     });
 
     renderPage();
+    await waitForDirectory();
     await openAddUserModal();
     await fillForm({ name: 'John Smith', email: 'john@efar.com.sg', password: 'Efar@2026' });
     await submit();
@@ -121,6 +138,7 @@ describe('Accounts Management - Add New User form', () => {
     });
 
     renderPage();
+    await waitForDirectory();
     await openAddUserModal();
     await fillForm({ name: 'Existing User', email: 'sarah@efar.com.sg', password: 'Efar@2026' });
     await submit();
@@ -133,6 +151,7 @@ describe('Accounts Management - Add New User form', () => {
 
   test('rejects a non-@efar.com.sg email before calling the backend', async () => {
     renderPage();
+    await waitForDirectory();
     await openAddUserModal();
     await fillForm({ name: 'Outsider', email: 'outsider@gmail.com', password: 'Efar@2026' });
     await submit();
@@ -150,6 +169,7 @@ describe('Accounts Management - Add New User form', () => {
 
   test('rejects a password missing a digit or special character before calling the backend', async () => {
     renderPage();
+    await waitForDirectory();
     await openAddUserModal();
     await fillForm({ name: 'Weak Password', email: 'weak@efar.com.sg', password: 'nodigitsorspecials' });
     await submit();
@@ -167,6 +187,7 @@ describe('Accounts Management - Add New User form', () => {
 
   test('password visibility toggle switches the input between hidden and visible', async () => {
     renderPage();
+    await waitForDirectory();
     await openAddUserModal();
     await fillForm({ password: 'Efar@2026' });
 
@@ -185,6 +206,7 @@ describe('Accounts Management - Add New User form', () => {
 // rows are static mock data with no DB-backed id), so these tests add one first via
 // the same mocked /auth/register flow as the tests above.
 async function addRealUser() {
+  await waitForDirectory();
   mock.onPost('/auth/register').reply(201, {
     success: true,
     data: {
@@ -192,6 +214,7 @@ async function addRealUser() {
       user: { id: 99, name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist' },
     },
   });
+  mock.onGet('/users').reply(200, { success: true, data: [...DEFAULT_USERS, { id: 99, name: 'Jane Doe', email: 'jane@efar.com.sg', role: 'quotations_specialist', last_login_at: null, last_active_at: null, is_online: false, is_locked: false }] });
   await openAddUserModal();
   await fillForm({ name: 'Jane Doe', email: 'jane@efar.com.sg', password: 'Efar@2026' });
   await submit();
@@ -204,7 +227,9 @@ describe('Accounts Management - Remove user confirmation', () => {
     renderPage();
     await addRealUser();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    // Jane Doe is the real, backend-created row - Camilla Cruz (the seeded DEFAULT_USERS
+    // row) is first in the directory, so Jane's Remove button is the second one.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]);
 
     expect(screen.getByRole('heading', { name: 'Remove User?' })).toBeInTheDocument();
     expect(screen.getByText(/Are you sure you want to remove/)).toHaveTextContent(
@@ -220,7 +245,7 @@ describe('Accounts Management - Remove user confirmation', () => {
     renderPage();
     await addRealUser();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]);
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('heading', { name: 'Remove User?' })).not.toBeInTheDocument();
@@ -234,7 +259,11 @@ describe('Accounts Management - Remove user confirmation', () => {
     renderPage();
     await addRealUser();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]);
+
+    // The post-delete refetch returns to just the original seeded user.
+    mock.onGet('/users').reply(200, { success: true, data: DEFAULT_USERS });
+
     await userEvent.click(screen.getByRole('button', { name: 'Remove User' }));
 
     expect(await screen.findByText("Jane Doe's account was removed.")).toBeInTheDocument();
@@ -253,7 +282,7 @@ describe('Accounts Management - Remove user confirmation', () => {
     renderPage();
     await addRealUser();
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]);
     await userEvent.click(screen.getByRole('button', { name: 'Remove User' }));
 
     expect(await screen.findByText('This user has associated records and cannot be removed.')).toBeInTheDocument();
@@ -267,6 +296,7 @@ describe('Accounts Management - Remove user confirmation', () => {
 describe('Accounts Management - Edit user', () => {
   test('clicking Edit opens a pre-filled modal with no password field', async () => {
     renderPage();
+    await waitForDirectory();
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
 
@@ -278,8 +308,12 @@ describe('Accounts Management - Edit user', () => {
     expect(screen.queryByPlaceholderText('Min. 8 chars, 1 number, 1 special character')).not.toBeInTheDocument();
   });
 
-  test('Save Changes updates the row in the table and closes the modal', async () => {
+  test('Save Changes calls PATCH /api/users/:id, refetches, and closes the modal', async () => {
     renderPage();
+    await waitForDirectory();
+
+    mock.onPatch('/users/1').reply(200, { success: true, data: { id: 1, name: 'Camilla Wong', email: 'camilla@efar.com.sg', role: 'quotations_specialist' } });
+    mock.onGet('/users').reply(200, { success: true, data: [{ ...DEFAULT_USERS[0], name: 'Camilla Wong' }] });
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     const nameInput = screen.getByDisplayValue('Camilla Cruz');
@@ -289,16 +323,16 @@ describe('Accounts Management - Edit user', () => {
 
     expect(await screen.findByText("Camilla Wong's account was updated.")).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Edit User' })).not.toBeInTheDocument();
-    expect(screen.getByText('Camilla Wong')).toBeInTheDocument();
+    expect(await screen.findByText('Camilla Wong')).toBeInTheDocument();
     expect(screen.queryByText('Camilla Cruz')).not.toBeInTheDocument();
 
-    // This is a placeholder implementation - no backend call is made yet.
-    expect(mock.history.patch).toHaveLength(0);
-    expect(mock.history.put).toHaveLength(0);
+    expect(mock.history.patch).toHaveLength(1);
+    expect(JSON.parse(mock.history.patch[0].data)).toMatchObject({ name: 'Camilla Wong', email: 'camilla@efar.com.sg', role: 'quotations_specialist' });
   });
 
   test('rejects a non-@efar.com.sg email before saving', async () => {
     renderPage();
+    await waitForDirectory();
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     const emailInput = screen.getByDisplayValue('camilla@efar.com.sg');
@@ -315,6 +349,7 @@ describe('Accounts Management - Edit user', () => {
 
   test('Cancel closes the modal without saving changes', async () => {
     renderPage();
+    await waitForDirectory();
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
     const nameInput = screen.getByDisplayValue('Camilla Cruz');

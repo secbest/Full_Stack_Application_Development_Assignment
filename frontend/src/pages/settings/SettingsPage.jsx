@@ -58,7 +58,11 @@ export default function SettingsPage() {
     validationSchema: changePasswordSchema,
     onSubmit: async (values, { setSubmitting, setFieldError, resetForm }) => {
       try {
-        await updatePassword(values)
+        const { token } = await updatePassword(values)
+        // Changing your password bumps token_version server-side (revokes other
+        // sessions), which would also invalidate the token this tab is holding -
+        // store the freshly re-signed one so this session stays logged in too.
+        updateUser(token)
         resetForm()
         toast.success('Password updated successfully.')
       } catch (err) {

@@ -8,7 +8,7 @@ function signToken(user) {
     ? process.env.JWT_SECRET
     : process.env.DEV_JWT_SECRET
   return jwt.sign(
-    { sub: user.id, name: user.name, email: user.email, role: user.role },
+    { sub: user.id, name: user.name, email: user.email, role: user.role, token_version: user.token_version },
     secret,
     { expiresIn: '8h' }
   )

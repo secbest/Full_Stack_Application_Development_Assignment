@@ -39,7 +39,16 @@ export function AuthProvider({ children }) {
     return decoded
   }
 
-  function logout() {
+  async function logout() {
+    // Best-effort: tells the server to clear last_active_at so Accounts Management
+    // reflects "Offline" immediately instead of waiting out the activity window
+    // (see backend authController.logout). A failed request here (offline, expired
+    // token) must never block the client from clearing its own session.
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // ignore - client-side logout proceeds regardless
+    }
     localStorage.removeItem('efar_token')
     setToken(null)
     setUser(null)

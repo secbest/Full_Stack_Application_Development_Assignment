@@ -19,4 +19,15 @@ const updatePasswordSchema = Yup.object({
   newPassword: Yup.string().min(8, 'Password must be at least 8 characters').required('New password is required'),
 })
 
-module.exports = { userIdParamSchema, updateProfileSchema, updatePasswordSchema }
+// Role list mirrors registerSchema's in backend/src/validators/index.js - each
+// validators file keeps its own copy rather than sharing one, matching that file's
+// existing convention.
+const ROLES = ['managing_director', 'ar_specialist', 'ap_specialist', 'quotations_specialist', 'field_crew']
+
+const updateUserSchema = Yup.object({
+  name: Yup.string().min(2).max(100).required('Name is required'),
+  email: Yup.string().email('Must be a valid email').matches(EFAR_EMAIL_DOMAIN, 'Email must be an @efar.com.sg address').required('Email is required'),
+  role: Yup.string().oneOf(ROLES, `Role must be one of: ${ROLES.join(', ')}`).required('Role is required'),
+})
+
+module.exports = { userIdParamSchema, updateProfileSchema, updatePasswordSchema, updateUserSchema }

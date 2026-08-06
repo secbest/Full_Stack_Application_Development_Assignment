@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
-const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema } = require('../validators')
-const { fleetOverview, vendorExpenses, revenueLeakage } = require('../controllers/dashboardController')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema, revenueByServiceTypeQuerySchema, leakageHistoryQuerySchema } = require('../validators')
+const { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory } = require('../controllers/dashboardController')
 
 router.get(
   '/fleet-overview',
@@ -28,6 +28,42 @@ router.get(
   authorise('managing_director', 'ar_specialist'),
   validate(revenueLeakageQuerySchema, 'query'),
   revenueLeakage
+)
+
+router.get(
+  '/cycle-time',
+  authenticate,
+  authorise('managing_director'),
+  validate(cycleTimeQuerySchema, 'query'),
+  cycleTime
+)
+
+router.get('/xero-health', authenticate, authorise('managing_director'), xeroHealth)
+
+router.get(
+  '/revenue-trend',
+  authenticate,
+  authorise('managing_director'),
+  validate(revenueTrendQuerySchema, 'query'),
+  revenueTrend
+)
+
+router.get('/top-clients', authenticate, authorise('managing_director'), topClients)
+
+router.get(
+  '/revenue-by-service-type',
+  authenticate,
+  authorise('managing_director'),
+  validate(revenueByServiceTypeQuerySchema, 'query'),
+  revenueByServiceType
+)
+
+router.get(
+  '/leakage-history',
+  authenticate,
+  authorise('managing_director'),
+  validate(leakageHistoryQuerySchema, 'query'),
+  leakageHistory
 )
 
 module.exports = router
