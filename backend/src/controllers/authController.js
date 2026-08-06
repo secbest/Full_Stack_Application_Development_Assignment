@@ -21,14 +21,38 @@ async function register(req, res) {
   }
 }
 
+// Consecutive failed attempts before an account auto-locks. Cleared by
+// userController.unlockUser (managing_director only).
+const MAX_FAILED_LOGIN_ATTEMPTS = 5
+
 async function login(req, res) {
   try {
     const body = await loginSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
     const user = await User.findOne({ where: { email: body.email } })
+
+    if (user && user.is_locked) {
+      return error(
+        res,
+        'This account has been locked after too many failed login attempts. Ask a Managing Director to unlock it.',
+        'ACCOUNT_LOCKED',
+        403
+      )
+    }
+
     // Constant-time comparison: always run bcrypt even when user not found to prevent timing attacks
     const hash = user ? user.password : '$2b$12$invalidhashfortimingreasons00000000000'
     const valid = await bcrypt.compare(body.password, hash)
-    if (!user || !valid) return error(res, 'Invalid email or password.', 'INVALID_CREDENTIALS', 401)
+
+    if (!user || !valid) {
+      if (user) {
+        const failedCount = user.failed_login_count + 1
+        await user.update({ failed_login_count: failedCount, is_locked: failedCount >= MAX_FAILED_LOGIN_ATTEMPTS })
+      }
+      return error(res, 'Invalid email or password.', 'INVALID_CREDENTIALS', 401)
+    }
+
+    await user.update({ failed_login_count: 0, last_login_at: new Date(), last_active_at: new Date() })
+
     const token = signToken(user)
     return success(res, {
       token,
