@@ -64,4 +64,17 @@ async function login(req, res) {
   }
 }
 
-module.exports = { register, login }
+// POST /api/auth/logout - clears last_active_at so Accounts Management's
+// "Currently Online" reflects this the moment the user signs out, instead of
+// waiting out the 5-minute activity window authenticate() otherwise relies on
+// (see middleware/index.js and userController.isOnline).
+async function logout(req, res) {
+  try {
+    await User.update({ last_active_at: null }, { where: { id: req.user.sub } })
+    return success(res, { message: 'Logged out.' })
+  } catch (err) {
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+module.exports = { register, login, logout }

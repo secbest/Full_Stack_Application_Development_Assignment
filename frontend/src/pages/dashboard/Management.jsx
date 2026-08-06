@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Users, Eye, EyeOff } from 'lucide-react';
+import { Search, Users, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { listAccounts, updateUser as updateUserApi, forceLogoutUser, unlockUser as unlockUserApi } from '../../api/users';
 import api from '../../api';
@@ -356,6 +356,15 @@ function AccountsManagement() {
 
   useEffect(() => { refetch(); }, [refetch]);
 
+  // Online/offline status is derived server-side from last_active_at (see
+  // backend userController.isOnline), so a tab left open never sees another
+  // user's login/logout without this poll - re-fetch every 30s to keep
+  // "Currently Online" and "Last Login" reasonably fresh across sessions.
+  useEffect(() => {
+    const id = setInterval(refetch, 30000);
+    return () => clearInterval(id);
+  }, [refetch]);
+
   async function confirmRemove() {
     const row = userToDelete;
     setDeleting(true);
@@ -497,7 +506,17 @@ function AccountsManagement() {
       <div style={{ ...cardBase, overflow: "hidden" }}>
         <div style={{ padding: "16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>User Directory</h2>
-          <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{filtered.length} of {accounts.length} users</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'Inter', sans-serif" }}>{filtered.length} of {accounts.length} users</span>
+            <button
+              onClick={refetch}
+              disabled={loadStatus === "loading"}
+              title="Refresh online status and last login"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", cursor: loadStatus === "loading" ? "default" : "pointer" }}
+            >
+              <RefreshCw size={14} color="#64748B" style={loadStatus === "loading" ? { animation: "efar-spin 0.7s linear infinite" } : undefined} />
+            </button>
+          </div>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -553,6 +572,7 @@ function AccountsManagement() {
           </tbody>
         </table>
       </div>
+      <style>{`@keyframes efar-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

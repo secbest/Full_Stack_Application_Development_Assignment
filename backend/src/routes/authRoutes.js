@@ -1,5 +1,5 @@
 const router = require('express').Router()
-const { register, login } = require('../controllers/authController')
+const { register, login, logout } = require('../controllers/authController')
 const { authenticate, authorise, validate } = require('../middleware')
 const { ROLE } = require('../models')
 const { registerSchema } = require('../validators')
@@ -18,5 +18,6 @@ const { registerSchema } = require('../validators')
 // gating it doesn't create a bootstrap chicken-and-egg problem.
 router.post('/register', authenticate, authorise(ROLE.MANAGING_DIRECTOR), validate(registerSchema), register)
 router.post('/login', login)
+router.post('/logout', authenticate, logout)
 
 module.exports = router

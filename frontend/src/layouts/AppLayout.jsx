@@ -72,8 +72,8 @@ export default function AppLayout() {
   const visibleRoutes = NAV_ROUTES.filter(r => r.roles.includes(user?.role))
   const roleMeta = ROLE_META[user?.role] ?? { label: user?.role ?? '', badge: 'bg-gray-100 text-gray-700' }
 
-  function handleLogout() {
-    logout()
+  async function handleLogout() {
+    await logout()
     navigate('/login', { replace: true })
   }
 
