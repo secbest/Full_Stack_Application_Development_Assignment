@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Download, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { listInvoices as fetchInvoices } from '../../api/ar';
+import { getRevenueByServiceType, getCycleTime, getLeakageHistory, getVendorExpenses } from '../../api/fieldOps';
 
 const REPORT_TABS = [
   { id: "revenue", label: "Revenue" },
@@ -107,8 +108,8 @@ function escapeHtml(val) {
   return String(val ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function exportReportCSV(reportTab, period, invoices) {
-  const data = getReportTableData(reportTab, invoices);
+function exportReportCSV(reportTab, period, invoices, cycleTimeData, leakageHistoryData) {
+  const data = getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData);
   if (!data) {
     alert("No data available to export for this report yet.");
     return;
@@ -125,8 +126,8 @@ function exportReportCSV(reportTab, period, invoices) {
   URL.revokeObjectURL(url);
 }
 
-function exportReportPDF(reportTab, period, invoices) {
-  const data = getReportTableData(reportTab, invoices);
+function exportReportPDF(reportTab, period, invoices, cycleTimeData, leakageHistoryData) {
+  const data = getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData);
   if (!data) {
     alert("No data available to export for this report yet.");
     return;
@@ -164,10 +165,10 @@ function exportReportPDF(reportTab, period, invoices) {
   }
 }
 
-function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading }) {
+function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading, cycleTimeData, leakageHistoryData }) {
   const [dfFocus, setDfFocus] = useState(false);
   const [dtFocus, setDtFocus] = useState(false);
-  const exportDisabled = !getReportTableData(reportTab, invoices) || (reportTab === "revenue" && invoicesLoading);
+  const exportDisabled = !getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) || (reportTab === "revenue" && invoicesLoading);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 16px", flexWrap: "wrap" }}>
@@ -199,13 +200,13 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
       )}
       <div style={{ flex: 1 }} />
       <div style={{ display: "flex", gap: 8 }}>
-        <button disabled={exportDisabled} onClick={() => exportReportCSV(reportTab, period, invoices)}
+        <button disabled={exportDisabled} onClick={() => exportReportCSV(reportTab, period, invoices, cycleTimeData, leakageHistoryData)}
           style={{ height: 36, padding: "0 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#FFFFFF", color: "#1E293B", fontSize: 13, fontWeight: 500, cursor: exportDisabled ? "not-allowed" : "pointer", opacity: exportDisabled ? 0.5 : 1, fontFamily: "'Inter', sans-serif", display: "flex", alignItems: "center", gap: 6 }}
           onMouseEnter={(e) => { if (!exportDisabled) e.currentTarget.style.borderColor = "#1E293B"; }}
           onMouseLeave={(e) => e.currentTarget.style.borderColor = "#E2E8F0"}>
           <Download size={13} /> Export CSV
         </button>
-        <button disabled={exportDisabled} onClick={() => exportReportPDF(reportTab, period, invoices)}
+        <button disabled={exportDisabled} onClick={() => exportReportPDF(reportTab, period, invoices, cycleTimeData, leakageHistoryData)}
           style={{ height: 36, padding: "0 14px", borderRadius: 8, background: "#1E293B", color: "#FFFFFF", border: "none", fontSize: 13, fontWeight: 600, cursor: exportDisabled ? "not-allowed" : "pointer", opacity: exportDisabled ? 0.5 : 1, fontFamily: "'Inter', sans-serif", display: "flex", alignItems: "center", gap: 6, transition: "background 0.12s" }}
           onMouseEnter={(e) => { if (!exportDisabled) e.currentTarget.style.background = "#0F172A"; }}
           onMouseLeave={(e) => e.currentTarget.style.background = "#1E293B"}>
@@ -619,6 +620,13 @@ export default function ReportsScreen() {
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState("");
 
+  const [serviceBreakdown, setServiceBreakdown] = useState([]);
+  const [cycleTimeData, setCycleTimeData] = useState(null);
+  const [leakageHistoryData, setLeakageHistoryData] = useState(null);
+  const [vendorExpenseData, setVendorExpenseData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState("");
+
   // Recompute the concrete start/end Date objects whenever the active period button
   // (or, for Custom, either date input) changes.
   useEffect(() => {
@@ -656,6 +664,45 @@ export default function ReportsScreen() {
     return () => { cancelled = true; };
   }, [dateRange, period]);
 
+  // The four dashboard-analytics endpoints all take the same YYYY-MM-DD date_from/date_to
+  // shape (see backend/src/validators/dashboardValidators.js), unlike the invoices fetch
+  // above which takes ISO datetimes - so this effect converts dateRange separately.
+  useEffect(() => {
+    if (period === "Custom" && (!dateRange.startDate || !dateRange.endDate)) return;
+
+    let cancelled = false;
+    setAnalyticsLoading(true);
+    setAnalyticsError("");
+
+    const toYMD = (d) => d.toISOString().slice(0, 10);
+    const params = {};
+    if (dateRange.startDate) params.date_from = toYMD(dateRange.startDate);
+    if (dateRange.endDate) params.date_to = toYMD(dateRange.endDate);
+
+    Promise.all([
+      getRevenueByServiceType(params),
+      getCycleTime(params),
+      getLeakageHistory(params),
+      getVendorExpenses(params),
+    ])
+      .then(([serviceRes, cycleRes, leakageRes, vendorRes]) => {
+        if (cancelled) return;
+        setServiceBreakdown(serviceRes.data.data.breakdown);
+        setCycleTimeData(cycleRes.data.data);
+        setLeakageHistoryData(leakageRes.data.data);
+        setVendorExpenseData(vendorRes.data.data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAnalyticsError(err.response?.data?.message || "Failed to load report analytics.");
+      })
+      .finally(() => {
+        if (!cancelled) setAnalyticsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [dateRange, period]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: 32, background: "#F8FAFC", minHeight: "100%" }}>
       {/* Page header */}
@@ -675,13 +722,13 @@ export default function ReportsScreen() {
       </div>
 
       {/* Period bar */}
-      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} />
+      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} cycleTimeData={cycleTimeData} leakageHistoryData={leakageHistoryData} />
 
       {/* Tab content */}
-      {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} />}
-      {reportTab === "billing" && <ReportBillingCycle />}
-      {reportTab === "leakage" && <ReportLeakage />}
-      {reportTab === "vendor" && <ReportVendorExpenditure />}
+      {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} serviceBreakdown={serviceBreakdown} />}
+      {reportTab === "billing" && <ReportBillingCycle data={cycleTimeData} loading={analyticsLoading} error={analyticsError} />}
+      {reportTab === "leakage" && <ReportLeakage data={leakageHistoryData} loading={analyticsLoading} error={analyticsError} />}
+      {reportTab === "vendor" && <ReportVendorExpenditure data={vendorExpenseData} loading={analyticsLoading} error={analyticsError} />}
     </div>
   );
 }
