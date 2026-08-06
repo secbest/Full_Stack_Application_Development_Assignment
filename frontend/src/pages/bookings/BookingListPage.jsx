@@ -16,7 +16,7 @@ const SERVICE_TYPE_LABELS = {
 // Backend stores status as a lowercase code. A naive "capitalize first letter, replace
 // underscore with space" (the previous approach) turns in_progress into "In progress"
 // (lowercase p) - which matches neither the "In Progress" filter buttons below nor the
-// STATUS_BADGE_CLASSES/STATUS_ROW_CLASSES keys, so in-progress bookings silently fell
+// STATUS_BADGE_CLASSES keys, so in-progress bookings silently fell
 // through to the default/no-match styling. An explicit label map avoids that mismatch.
 const BOOKING_STATUS_LABELS = {
   confirmed: 'Confirmed',
@@ -40,26 +40,12 @@ const STATUS_BADGE_CLASSES = {
 // closest equivalent to Intake's amber "Pending") turns amber/yellow when selected,
 // instead of every pill turning the same neutral black regardless of which status it is.
 const BOOKING_STATUS_FILTER_PILLS = [
-  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white' },
-  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white' },
-  { value: 'In Progress', label: 'In Progress', activeClass: 'bg-amber-500 text-white' },
-  { value: 'Completed', label: 'Completed', activeClass: 'bg-slate-600 text-white' },
-  { value: 'Invoiced', label: 'Invoiced', activeClass: 'bg-emerald-500 text-white' },
+  { value: '', label: 'All', activeClass: 'bg-slate-900 text-white border-slate-900', inactiveClass: 'bg-slate-100 text-slate-700 border-slate-900 hover:bg-slate-200' },
+  { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white border-blue-500', inactiveClass: 'bg-blue-50 text-blue-700 border-blue-500 hover:bg-blue-100' },
+  { value: 'In Progress', label: 'In Progress', activeClass: 'bg-amber-500 text-white border-amber-500', inactiveClass: 'bg-amber-50 text-amber-700 border-amber-500 hover:bg-amber-100' },
+  { value: 'Completed', label: 'Completed', activeClass: 'bg-slate-600 text-white border-slate-600', inactiveClass: 'bg-slate-100 text-slate-700 border-slate-600 hover:bg-slate-200' },
+  { value: 'Invoiced', label: 'Invoiced', activeClass: 'bg-emerald-500 text-white border-emerald-500', inactiveClass: 'bg-emerald-50 text-emerald-700 border-emerald-500 hover:bg-emerald-100' },
 ]
-
-// Row tint mirrors the badge colors so status is readable at a glance; unassigned
-// takes priority since it's the most actionable state regardless of booking status.
-const STATUS_ROW_CLASSES = {
-  Confirmed: 'bg-blue-100/70',
-  'In Progress': 'bg-amber-100/70',
-  Completed: 'bg-slate-200/70',
-  Invoiced: 'bg-emerald-100/70',
-}
-
-function getRowBackground(booking) {
-  if (!booking.assignedCrew) return 'bg-red-200/60'
-  return STATUS_ROW_CLASSES[booking.status] || 'bg-white'
-}
 
 // Booking.js documents each stage as driven by a different team: Confirmed (Quotations),
 // In Progress (crew assignment, since there's no separate "Start Job" action yet),
@@ -394,7 +380,7 @@ export default function BookingListPage() {
                       <button
                         key={pill.value || 'all'}
                         onClick={() => { setStatusFilter(pill.value); setUnassignedFilter(false) }}
-                        className={`h-8 px-3 rounded-full text-xs transition-colors ${statusFilter === pill.value && !unassignedFilter ? pill.activeClass : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                        className={`h-8 px-3 rounded-full border text-xs transition-colors ${statusFilter === pill.value && !unassignedFilter ? pill.activeClass : pill.inactiveClass}`}
                       >
                         {pill.label}
                       </button>
@@ -449,7 +435,7 @@ export default function BookingListPage() {
                         <tr
                           key={b.ref}
                           onClick={() => { setSelectedBooking(b); setAssignedCrew(b.assignedCrew || ''); setCrewSearch(''); setCrewMenuOpen(false); }}
-                          className={`h-12 cursor-pointer ${getRowBackground(b)}`}
+                          className="h-12 cursor-pointer odd:bg-white even:bg-slate-50 hover:bg-slate-100"
                         >
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{b.ref}</span></td>
                           <td className="px-4 py-2 align-middle"><span className="text-xs font-medium text-slate-800">{b.client}</span></td>
