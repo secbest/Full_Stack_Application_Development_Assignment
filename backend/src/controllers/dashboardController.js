@@ -322,4 +322,120 @@ async function cycleTime(req, res) {
   }
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime }
+// GET /api/dashboard/xero-health - synced/pending/failed invoice counts, the most
+// recent successful sync, and whether Xero pushes are simulated or live. None of this
+// was previously surfaced on the Executive Dashboard - only on the Xero Settings and
+// Sync Status screens.
+async function xeroHealth(req, res) {
+  try {
+    const [synced, pending, failed] = await Promise.all([
+      Invoice.count({ where: { status: 'synced_to_xero' } }),
+      Invoice.count({ where: { status: 'approved' } }),
+      Invoice.count({ where: { status: 'failed' } }),
+    ])
+
+    const lastLog = await XeroSyncLog.findOne({
+      where: { entity_type: 'ar_invoice', status: 'success' },
+      order: [['synced_at', 'DESC']],
+      attributes: ['synced_at'],
+    })
+
+    return success(res, {
+      counts: { synced, pending, failed },
+      last_synced_at: lastLog ? lastLog.synced_at : null,
+      mode: xeroService.describeMode(),
+    })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+// GET /api/dashboard/revenue-trend?granularity=month|week - invoiced revenue over
+// time. Only counts invoices that reached synced_to_xero, since anything earlier in
+// the pipeline isn't confirmed revenue yet. Defaults to the trailing 12 months.
+async function revenueTrend(req, res) {
+  try {
+    const granularity = req.query.granularity === 'week' ? 'week' : 'month'
+    const now = new Date()
+    const from = new Date(now)
+    if (granularity === 'week') from.setDate(from.getDate() - 7 * 12)
+    else from.setMonth(from.getMonth() - 12)
+
+    const invoices = await Invoice.findAll({
+      where: { status: 'synced_to_xero', createdAt: { [Op.gte]: from } },
+      attributes: ['total_amount', 'createdAt'],
+    })
+
+    const bucketKey = (date) => {
+      if (granularity === 'week') {
+        const d = new Date(date)
+        const monday = new Date(d)
+        monday.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+        return toDateOnly(monday)
+      }
+      return new Date(date).toISOString().slice(0, 7) // YYYY-MM
+    }
+
+    const buckets = new Map()
+    for (const inv of invoices) {
+      const key = bucketKey(inv.createdAt)
+      buckets.set(key, (buckets.get(key) || 0) + Number(inv.total_amount))
+    }
+
+    const trend = [...buckets.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([bucket, total]) => ({ bucket, total_revenue: total.toFixed(2) }))
+
+    return success(res, { granularity, from: toDateOnly(from), to: toDateOnly(now), trend })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+// GET /api/dashboard/top-clients - top 5 clients by invoiced (synced_to_xero)
+// revenue, with each client's total booking volume shown alongside.
+async function topClients(req, res) {
+  try {
+    const invoices = await Invoice.findAll({
+      where: { status: 'synced_to_xero' },
+      include: [{ model: Client, attributes: ['id', 'name'] }],
+      attributes: ['client_id', 'total_amount'],
+    })
+
+    const byClient = new Map()
+    for (const inv of invoices) {
+      const entry = byClient.get(inv.client_id) || {
+        client_id: inv.client_id,
+        client_name: inv.Client ? inv.Client.name : 'Unknown Client',
+        total_revenue: 0,
+        invoice_count: 0,
+      }
+      entry.total_revenue += Number(inv.total_amount)
+      entry.invoice_count += 1
+      byClient.set(inv.client_id, entry)
+    }
+
+    const bookings = await Booking.findAll({ attributes: ['client_id', 'id'] })
+    const bookingCountByClient = new Map()
+    for (const b of bookings) {
+      bookingCountByClient.set(b.client_id, (bookingCountByClient.get(b.client_id) || 0) + 1)
+    }
+
+    const topClientsList = [...byClient.values()]
+      .map((c) => ({
+        client_id: c.client_id,
+        client_name: c.client_name,
+        total_revenue: c.total_revenue.toFixed(2),
+        invoice_count: c.invoice_count,
+        booking_count: bookingCountByClient.get(c.client_id) || 0,
+      }))
+      .sort((a, b) => Number(b.total_revenue) - Number(a.total_revenue))
+      .slice(0, 5)
+
+    return success(res, { top_clients: topClientsList })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients }
