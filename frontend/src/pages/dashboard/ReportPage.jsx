@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Download, AlertTriangle, FileBarChart } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { listInvoices as fetchInvoices } from '../../api/ar';
 import { getRevenueByServiceType, getCycleTime, getLeakageHistory, getVendorExpenses } from '../../api/fieldOps';
 
@@ -11,10 +12,34 @@ const REPORT_TABS = [
   { id: "vendor",  label: "Vendor Expenditure" },
 ];
 
+// Matches the Executive Dashboard's Today/This Week/This Month segmented control
+// (FleetOverviewTab.jsx) so the two "period" controls in the MD area look and behave
+// the same way. "This Quarter" read oddly next to a default of "Today" elsewhere in
+// the app, so this list is Today/This Month/This Year/Custom instead.
+const PERIOD_OPTIONS = ["Today", "This Month", "This Year", "Custom"];
+
 // Assigns a color to each service-type slice in the order the backend returns them
 // (sorted by revenue descending), since GET /dashboard/revenue-by-service-type
 // returns amounts, not colors. Repeats if there are ever more than 4 service types.
 const DONUT_COLORS = ["#1E293B", "#3B82F6", "#F59E0B", "#22C55E"];
+
+// Draws each slice's dollar value just outside the ring (Recharts custom Pie label),
+// rather than requiring a hover to see the figure via the Tooltip - matches the
+// "add data labels" request for a quick-glance read of the chart. Outside the ring
+// (rather than on it) so a thin slice's label never gets squeezed into a space
+// narrower than the text itself.
+const DONUT_LABEL_RADIAN = Math.PI / 180;
+function renderDonutValueLabel({ cx, cy, midAngle, outerRadius, value }) {
+  const radius = outerRadius + 16;
+  const x = cx + radius * Math.cos(-midAngle * DONUT_LABEL_RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * DONUT_LABEL_RADIAN);
+  const label = value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+  return (
+    <text x={x} y={y} fill="#1E293B" textAnchor={x > cx ? "start" : x < cx ? "end" : "middle"} dominantBaseline="central" fontSize={12} fontWeight={700} fontFamily="'Inter', sans-serif">
+      {label}
+    </text>
+  );
+}
 
 // Real AR invoice statuses (backend VALID_STATUSES in invoiceController.js), mapped to
 // the app's standard status-badge colors (see CLAUDE.md's status badge pattern).
@@ -31,23 +56,16 @@ const INVOICE_STATUS_CONFIG = {
 // the custom range straight from the two date inputs when period === "Custom".
 function getPeriodDateRange(period, customFrom, customTo) {
   const now = new Date();
+  if (period === "Today") {
+    return {
+      startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999),
+    };
+  }
   if (period === "This Month") {
     return {
       startDate: new Date(now.getFullYear(), now.getMonth(), 1),
       endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
-    };
-  }
-  if (period === "Last Month") {
-    return {
-      startDate: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-      endDate: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999),
-    };
-  }
-  if (period === "This Quarter") {
-    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-    return {
-      startDate: new Date(now.getFullYear(), quarterStartMonth, 1),
-      endDate: new Date(now.getFullYear(), quarterStartMonth + 3, 0, 23, 59, 59, 999),
     };
   }
   if (period === "This Year") {
@@ -189,14 +207,11 @@ function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 16px", flexWrap: "wrap" }}>
       <span style={{ fontSize: 12, fontWeight: 500, color: "#64748B", fontFamily: "'Inter', sans-serif", flexShrink: 0 }}>Period:</span>
-      <div style={{ display: "flex", gap: 3, background: "#F1F5F9", borderRadius: 8, padding: 4, flexShrink: 0 }}>
-        {["This Month", "Last Month", "This Quarter", "This Year", "Custom"].map((p) => (
-          <button key={p} onClick={() => setPeriod(p)}
-            style={{ padding: "5px 11px", borderRadius: 6, border: period === p ? "1px solid #E2E8F0" : "1px solid transparent", background: period === p ? "#FFFFFF" : "transparent", color: period === p ? "#1E293B" : "#64748B", fontSize: 12, fontWeight: period === p ? 600 : 400, cursor: "pointer", fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap", transition: "all 0.12s" }}>
-            {p}
-          </button>
-        ))}
-      </div>
+      <Tabs value={period} onValueChange={setPeriod}>
+        <TabsList>
+          {PERIOD_OPTIONS.map((p) => <TabsTrigger key={p} value={p}>{p}</TabsTrigger>)}
+        </TabsList>
+      </Tabs>
       {period === "Custom" && (
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {[
@@ -280,7 +295,12 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, ser
     ? invoices.filter((inv) => (inv.client_name || "Unknown Client") === clientBars[activeClientIdx].client)
     : invoices;
 
-  const donutData = (serviceBreakdown || []).map((d, i) => ({ label: d.label, value: Number(d.total_revenue), color: DONUT_COLORS[i % DONUT_COLORS.length] }));
+  // Zero-revenue service types (e.g. no MTS invoices this period) are dropped rather
+  // than shown as a 0%/$0 row - they add nothing to a "where did revenue come from"
+  // chart and would just clutter the legend with something the client did no business in.
+  const donutData = (serviceBreakdown || [])
+    .map((d, i) => ({ label: d.label, value: Number(d.total_revenue), color: DONUT_COLORS[i % DONUT_COLORS.length] }))
+    .filter((d) => d.value > 0);
   const totalRevenueDonut = donutData.reduce((s, d) => s + d.value, 0);
 
   return (
@@ -290,17 +310,22 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, ser
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Revenue ({period})</p>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>${totalRevenue.toFixed(2)}</span>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", height: 34, lineHeight: "34px", marginBottom: 4 }}>${totalRevenue.toFixed(2)}</span>
           <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Across {invoices.length} invoice{invoices.length === 1 ? "" : "s"}.</p>
         </div>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Average Invoice Value</p>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4 }}>${avgInvoiceValue.toFixed(2)}</span>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", height: 34, lineHeight: "34px", marginBottom: 4 }}>${avgInvoiceValue.toFixed(2)}</span>
           <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Across all statuses in this period.</p>
         </div>
         <div style={{ ...cardBase, padding: "20px 24px" }}>
           <p style={{ fontSize: 11, color: "#64748B", fontWeight: 500, fontFamily: "'Inter', sans-serif", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Largest Client This Period</p>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", marginBottom: 4, lineHeight: 1.2 }}>{largestClient ? largestClient.client : "—"}</span>
+          <span
+            title={largestClient ? largestClient.client : undefined}
+            style={{ fontSize: 20, fontWeight: 700, color: "#1E293B", fontFamily: "'Inter', sans-serif", display: "block", height: 34, lineHeight: "34px", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+          >
+            {largestClient ? largestClient.client : "—"}
+          </span>
           <p style={{ fontSize: 12, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>{largestClient ? `$${largestClient.amount.toFixed(2)} · ${largestClientInvoiceCount} invoice${largestClientInvoiceCount === 1 ? "" : "s"}` : "No invoices in this period."}</p>
         </div>
       </div>
@@ -346,21 +371,21 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, ser
         </div>
 
         {/* Revenue by Service Type */}
-        <div style={{ ...cardBase, padding: 0, overflow: "hidden" }}>
+        <div style={{ ...cardBase, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Revenue by Service Type</h2>
           </div>
-          <div style={{ padding: "16px 24px" }}>
+          <div style={{ padding: "16px 24px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             {serviceBreakdownError ? (
               <p style={{ fontSize: 13, color: "#EF4444", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>{serviceBreakdownError}</p>
             ) : donutData.length === 0 ? (
               <p style={{ fontSize: 13, color: "#94A3B8", fontFamily: "'Inter', sans-serif", textAlign: "center", padding: "20px 0" }}>No invoices in this period.</p>
             ) : (
               <>
-                <div style={{ height: 180 }}>
+                <div style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={84} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false}>
+                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false} label={renderDonutValueLabel} labelLine={{ stroke: "#CBD5E1", strokeWidth: 1 }}>
                         {donutData.map((entry, i) => <Cell key={`donut-cell-${i}`} fill={entry.color} />)}
                       </Pie>
                       <Tooltip formatter={(v, name) => [`$${v.toLocaleString()}`, name]} contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 13, fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} itemStyle={{ color: "#1E293B" }} labelStyle={{ color: "#64748B" }} />
@@ -391,7 +416,7 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, ser
       <div style={{ ...cardBase, overflow: "hidden" }}>
         <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "baseline", gap: 10 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>Invoice Breakdown</h2>
-          <span style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic", fontFamily: "'Inter', sans-serif" }}>Read-only. Invoice actions require Sarah's login.</span>
+          <span style={{ fontSize: 12, color: "#94A3B8", fontStyle: "italic", fontFamily: "'Inter', sans-serif" }}>Read-only. Invoice actions require the AR Specialist role.</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -630,10 +655,10 @@ function ReportVendorExpenditure({ data, loading, error }) {
 
 export default function ReportsScreen() {
   const [reportTab, setReportTab] = useState("revenue");
-  const [period, setPeriod] = useState("This Quarter");
+  const [period, setPeriod] = useState("Today");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [dateRange, setDateRange] = useState(() => getPeriodDateRange("This Quarter"));
+  const [dateRange, setDateRange] = useState(() => getPeriodDateRange("Today"));
   const [invoices, setInvoices] = useState([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [invoicesError, setInvoicesError] = useState("");
@@ -772,13 +797,12 @@ export default function ReportsScreen() {
       </div>
 
       {/* Report type tabs */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #E2E8F0", marginBottom: 20 }}>
-        {REPORT_TABS.map((tab) => (
-          <button key={tab.id} onClick={() => setReportTab(tab.id)}
-            style={{ padding: "12px 20px", background: "none", border: "none", borderBottom: reportTab === tab.id ? "2px solid #1E293B" : "2px solid transparent", color: reportTab === tab.id ? "#1E293B" : "#64748B", fontSize: 14, fontWeight: reportTab === tab.id ? 600 : 400, cursor: "pointer", fontFamily: "'Inter', sans-serif", marginBottom: -1, transition: "color 0.12s", whiteSpace: "nowrap" }}>
-            {tab.label}
-          </button>
-        ))}
+      <div style={{ marginBottom: 20 }}>
+        <Tabs value={reportTab} onValueChange={setReportTab}>
+          <TabsList>
+            {REPORT_TABS.map((tab) => <TabsTrigger key={tab.id} value={tab.id}>{tab.label}</TabsTrigger>)}
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Period bar */}
@@ -789,6 +813,13 @@ export default function ReportsScreen() {
       {reportTab === "billing" && <ReportBillingCycle data={cycleTimeData} loading={analyticsLoading} error={cycleTimeError} />}
       {reportTab === "leakage" && <ReportLeakage data={leakageHistoryData} loading={analyticsLoading} error={leakageHistoryError} />}
       {reportTab === "vendor" && <ReportVendorExpenditure data={vendorExpenseData} loading={analyticsLoading} error={vendorExpenseError} />}
+
+      {/* Recharts makes its SVG surface focusable for keyboard accessibility, so a mouse
+          click on the Revenue by Service Type donut leaves it focused and the browser
+          draws its default focus rectangle around the whole chart until focus moves
+          elsewhere. Suppressing the outline here only (Recharts isn't used anywhere else
+          in this app) keeps the click-to-inspect interaction without the visual clutter. */}
+      <style>{`.recharts-wrapper:focus, .recharts-wrapper *:focus, .recharts-surface:focus { outline: none; }`}</style>
     </div>
   );
 }

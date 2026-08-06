@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Loader2, RefreshCcw } from 'lucide-react'
-import { PieChart } from '@mui/x-charts/PieChart'
+import { PieChart, pieArcLabelClasses } from '@mui/x-charts/PieChart'
 import { LineChart } from '@mui/x-charts/LineChart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -135,8 +135,9 @@ export default function FleetOverviewTab() {
               <p className="text-sm text-muted-foreground py-12 text-center">No bookings in this period.</p>
             ) : (
               <PieChart
-                series={[{ data: pieData, innerRadius: 50, outerRadius: 90, paddingAngle: pieData.length > 1 ? 2 : 0 }]}
+                series={[{ data: pieData, innerRadius: 50, outerRadius: 90, paddingAngle: pieData.length > 1 ? 2 : 0, arcLabel: 'value', arcLabelMinAngle: 20 }]}
                 height={260}
+                sx={{ [`& .${pieArcLabelClasses.root}`]: { fill: '#FFFFFF', fontWeight: 700, fontSize: 13, fontFamily: "'Inter', sans-serif" } }}
               />
             )}
           </CardContent>
