@@ -385,7 +385,7 @@ function ReportRevenue({ invoices, loading, error, period, serviceBreakdown, ser
                 <div style={{ height: 220 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="label" isAnimationActive={false} label={renderDonutValueLabel} labelLine={{ stroke: "#CBD5E1", strokeWidth: 1 }}>
+                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="label" animationDuration={700} animationEasing="ease-out" label={renderDonutValueLabel} labelLine={{ stroke: "#CBD5E1", strokeWidth: 1 }}>
                         {donutData.map((entry, i) => <Cell key={`donut-cell-${i}`} fill={entry.color} />)}
                       </Pie>
                       <Tooltip formatter={(v, name) => [`$${v.toLocaleString()}`, name]} contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 13, fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} itemStyle={{ color: "#1E293B" }} labelStyle={{ color: "#64748B" }} />
