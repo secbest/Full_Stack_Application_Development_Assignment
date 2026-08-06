@@ -48,4 +48,10 @@ test('renders the average billing cycle KPI, Xero sync health, and top clients o
 
   expect(screen.getByText('Top Clients')).toBeInTheDocument();
   expect(screen.getByText('TTSH')).toBeInTheDocument();
+
+  // Xero Sync Health and Top Clients are all-time widgets; Revenue Trend is a fixed
+  // trailing-12-months window. None respond to the Today/This Week/This Month tab bar,
+  // so each needs a caption saying so.
+  expect(screen.getAllByText('All time.')).toHaveLength(2);
+  expect(screen.getByText('Trailing 12 months.')).toBeInTheDocument();
 });

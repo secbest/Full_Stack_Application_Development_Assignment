@@ -123,7 +123,7 @@ export default function FleetOverviewTab() {
         <KpiCard label="Invoices Synced" value={overview.totals.invoices_synced_to_xero} valueColor="#22C55E" />
         <KpiCard
           label="Average Billing Cycle"
-          value={cycleTime && cycleTime.overall_average_days !== null ? `${cycleTime.overall_average_days} days` : '—'}
+          value={cycleTime && cycleTime.overall_average_days != null ? `${cycleTime.overall_average_days} days` : '—'}
         />
       </div>
 
@@ -164,7 +164,10 @@ export default function FleetOverviewTab() {
 
       {xeroHealth && (
         <Card className={xeroHealth.counts.failed > 0 ? 'border-l-4' : undefined} style={xeroHealth.counts.failed > 0 ? { borderLeftColor: '#EF4444' } : undefined}>
-          <CardHeader><CardTitle>Xero Sync Health</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Xero Sync Health</CardTitle>
+            <p className="text-xs text-muted-foreground">All time.</p>
+          </CardHeader>
           <CardContent className="flex items-center gap-8">
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Synced</p>
@@ -197,7 +200,10 @@ export default function FleetOverviewTab() {
 
       <div className="grid grid-cols-[1.2fr_1fr] gap-4">
         <Card>
-          <CardHeader><CardTitle>Revenue Trend</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Revenue Trend</CardTitle>
+            <p className="text-xs text-muted-foreground">Trailing 12 months.</p>
+          </CardHeader>
           <CardContent>
             {!revenueTrend || revenueTrend.trend.length === 0 ? (
               <p className="text-sm text-muted-foreground py-12 text-center">Not enough synced revenue yet to show a trend.</p>
@@ -212,7 +218,10 @@ export default function FleetOverviewTab() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Top Clients</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Top Clients</CardTitle>
+            <p className="text-xs text-muted-foreground">All time.</p>
+          </CardHeader>
           <CardContent>
             {!topClients || topClients.top_clients.length === 0 ? (
               <p className="text-sm text-muted-foreground py-12 text-center">No synced invoices yet.</p>

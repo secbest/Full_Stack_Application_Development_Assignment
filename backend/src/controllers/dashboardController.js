@@ -358,8 +358,8 @@ async function revenueTrend(req, res) {
     const granularity = req.query.granularity === 'week' ? 'week' : 'month'
     const now = new Date()
     const from = new Date(now)
-    if (granularity === 'week') from.setDate(from.getDate() - 7 * 12)
-    else from.setMonth(from.getMonth() - 12)
+    if (granularity === 'week') from.setUTCDate(from.getUTCDate() - 7 * 12)
+    else from.setUTCMonth(from.getUTCMonth() - 12)
 
     const invoices = await Invoice.findAll({
       where: { status: 'synced_to_xero', createdAt: { [Op.gte]: from } },
@@ -367,13 +367,12 @@ async function revenueTrend(req, res) {
     })
 
     const bucketKey = (date) => {
+      const d = new Date(date)
       if (granularity === 'week') {
-        const d = new Date(date)
-        const monday = new Date(d)
-        monday.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+        const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7)))
         return toDateOnly(monday)
       }
-      return new Date(date).toISOString().slice(0, 7) // YYYY-MM
+      return d.toISOString().slice(0, 7) // YYYY-MM, already UTC
     }
 
     const buckets = new Map()
@@ -415,22 +414,29 @@ async function topClients(req, res) {
       byClient.set(inv.client_id, entry)
     }
 
-    const bookings = await Booking.findAll({ attributes: ['client_id', 'id'] })
+    const topFive = [...byClient.values()]
+      .sort((a, b) => b.total_revenue - a.total_revenue)
+      .slice(0, 5)
+
+    const topFiveIds = topFive.map((c) => c.client_id)
+    const bookingCounts = topFiveIds.length
+      ? await Booking.findAll({
+          where: { client_id: { [Op.in]: topFiveIds }, status: 'invoiced' },
+          attributes: ['client_id'],
+        })
+      : []
     const bookingCountByClient = new Map()
-    for (const b of bookings) {
+    for (const b of bookingCounts) {
       bookingCountByClient.set(b.client_id, (bookingCountByClient.get(b.client_id) || 0) + 1)
     }
 
-    const topClientsList = [...byClient.values()]
-      .map((c) => ({
-        client_id: c.client_id,
-        client_name: c.client_name,
-        total_revenue: c.total_revenue.toFixed(2),
-        invoice_count: c.invoice_count,
-        booking_count: bookingCountByClient.get(c.client_id) || 0,
-      }))
-      .sort((a, b) => Number(b.total_revenue) - Number(a.total_revenue))
-      .slice(0, 5)
+    const topClientsList = topFive.map((c) => ({
+      client_id: c.client_id,
+      client_name: c.client_name,
+      total_revenue: c.total_revenue.toFixed(2),
+      invoice_count: c.invoice_count,
+      booking_count: bookingCountByClient.get(c.client_id) || 0,
+    }))
 
     return success(res, { top_clients: topClientsList })
   } catch (err) {

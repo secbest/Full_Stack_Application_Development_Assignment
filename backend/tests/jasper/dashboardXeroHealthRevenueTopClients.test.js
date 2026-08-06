@@ -69,6 +69,24 @@ describe('revenueTrend', () => {
       ])
     )
   })
+
+  test('buckets by ISO week in UTC, so invoices in the same UTC week land in the same bucket regardless of local time-of-day', async () => {
+    Invoice.findAll.mockResolvedValue([
+      // Monday 2026-06-01 18:00 UTC and Wednesday 2026-06-03 02:00 UTC - same UTC week.
+      // On a non-UTC server, local-time bucketing could split these across two buckets.
+      { total_amount: '100.00', createdAt: new Date('2026-06-01T18:00:00.000Z') },
+      { total_amount: '50.00',  createdAt: new Date('2026-06-03T02:00:00.000Z') },
+    ])
+
+    const res = mockRes()
+    await revenueTrend({ query: { granularity: 'week' } }, res)
+
+    const data = jsonBody(res).data
+    expect(data.granularity).toBe('week')
+    expect(data.trend).toEqual([
+      { bucket: '2026-06-01', total_revenue: '150.00' },
+    ])
+  })
 })
 
 describe('topClients', () => {
@@ -78,9 +96,18 @@ describe('topClients', () => {
       { client_id: 1, total_amount: '500.00',  Client: { id: 1, name: 'TTSH' } },
       { client_id: 2, total_amount: '2000.00', Client: { id: 2, name: 'CGH' } },
     ])
-    Booking.findAll.mockResolvedValue([
-      { client_id: 1, id: 10 }, { client_id: 1, id: 11 }, { client_id: 2, id: 12 },
-    ])
+    // Booking.findAll is scoped by the controller to `status: 'invoiced'` - the mock
+    // applies that same filter so this test actually catches a regression to the old
+    // "count every booking regardless of status" behavior.
+    Booking.findAll.mockImplementation(({ where }) => {
+      const rows = [
+        { client_id: 1, id: 10, status: 'invoiced' },
+        { client_id: 1, id: 11, status: 'invoiced' },
+        { client_id: 2, id: 12, status: 'invoiced' },
+        { client_id: 2, id: 13, status: 'confirmed' }, // never reached 'invoiced' - must not be counted
+      ]
+      return Promise.resolve(rows.filter((b) => b.status === where.status))
+    })
 
     const res = mockRes()
     await topClients({ query: {} }, res)
