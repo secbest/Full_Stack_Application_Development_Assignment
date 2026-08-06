@@ -489,4 +489,60 @@ async function revenueByServiceType(req, res) {
   }
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType }
+// GET /api/dashboard/leakage-history - monthly-grouped view of the same
+// unpriced-surcharge data revenueLeakage above reports as a point-in-time snapshot.
+// Backs the Reports "Leakage History" tab. Reuses leakageService's reference-rate
+// and per-entry valuation helpers rather than buildLeakageReport's single aggregate
+// shape, since this needs one bucket per month instead of one bucket total.
+async function leakageHistory(req, res) {
+  try {
+    const { date_from, date_to } = req.query
+    const from = date_from || `${new Date().getFullYear()}-01-01`
+    const to = date_to || toDateOnly(new Date())
+
+    const invoices = await Invoice.findAll({
+      where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+      include: [
+        { model: Client, attributes: ['id', 'name'], required: false },
+        { model: Booking, attributes: ['reference_number'], required: false },
+      ],
+    })
+
+    const surchargeRows = await SurchargeSchedule.findAll({ attributes: ['surcharge_type', 'amount'] })
+    const reference = leakageService.buildReferenceRates(surchargeRows)
+
+    const byMonth = new Map()
+    for (const inv of invoices) {
+      const entries = Array.isArray(inv.unpriced_surcharges) ? inv.unpriced_surcharges : []
+      if (!entries.length) continue
+
+      let invoiceTotal = 0
+      for (const entry of entries) {
+        if (!entry || !entry.surcharge_type) continue
+        invoiceTotal += leakageService.valueEntry(entry, reference).estimated_amount
+      }
+
+      const month = new Date(inv.createdAt).toISOString().slice(0, 7)
+      const bucket = byMonth.get(month) || { month, estimated_leakage: 0, affected_invoice_count: 0, rows: [] }
+      bucket.estimated_leakage = round2(bucket.estimated_leakage + invoiceTotal)
+      bucket.affected_invoice_count += 1
+      bucket.rows.push({
+        invoice_id: inv.id,
+        booking_reference: inv.Booking ? inv.Booking.reference_number : null,
+        client_name: inv.Client ? inv.Client.name : null,
+        created_at: inv.createdAt,
+        unpriced_count: entries.length,
+        estimated_amount: round2(invoiceTotal),
+      })
+      byMonth.set(month, bucket)
+    }
+
+    const history = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
+
+    return success(res, { period: { from, to }, history })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory }
