@@ -69,3 +69,11 @@ export function getRevenueTrend(params) {
 export function getTopClients() {
   return api.get('/dashboard/top-clients')
 }
+
+export function getRevenueByServiceType(params) {
+  return api.get('/dashboard/revenue-by-service-type', { params })
+}
+
+export function getLeakageHistory(params) {
+  return api.get('/dashboard/leakage-history', { params })
+}
