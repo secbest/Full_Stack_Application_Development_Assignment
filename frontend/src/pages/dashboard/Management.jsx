@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Users, Eye, EyeOff } from 'lucide-react';
-import api from '../../api';
 import { useToast } from '../../context/ToastContext';
+import { listAccounts, updateUser as updateUserApi, forceLogoutUser, unlockUser as unlockUserApi } from '../../api/users';
+import api from '../../api';
 
 const ROLES = ["Quotations", "Field Crew", "Accounts Receivable", "Accounts Payable", "Managing Director"];
 
-// Maps the display labels above to the role slugs the backend's registerSchema expects.
+// Maps the display labels above to the role slugs the backend expects, and back.
 const ROLE_SLUGS = {
   "Quotations": "quotations_specialist",
   "Field Crew": "field_crew",
@@ -13,16 +14,34 @@ const ROLE_SLUGS = {
   "Accounts Payable": "ap_specialist",
   "Managing Director": "managing_director",
 };
+const ROLE_LABELS = Object.fromEntries(Object.entries(ROLE_SLUGS).map(([label, slug]) => [slug, label]));
 
-const INITIAL_ACCOUNTS = [
-  { name: "Camilla Cruz", email: "camilla@efar.com.sg", role: "Quotations",        status: "Online",  lastLogin: "Active now"  },
-  { name: "Ravi Kumar",   email: "ravi@efar.com.sg",    role: "Field Crew",        status: "Offline", lastLogin: "2 hours ago" },
-  { name: "Sarah Lee",    email: "sarah@efar.com.sg",   role: "Accounts Receivable", status: "Online",  lastLogin: "15 mins ago" },
-  { name: "Chloe Wong",   email: "chloe@efar.com.sg",   role: "Accounts Payable",  status: "Offline", lastLogin: "Yesterday"   },
-  { name: "Doris Tan",    email: "doris@efar.com.sg",   role: "Managing Director", status: "Online",  lastLogin: "Active now"  },
-];
+// Turns a GET /api/users row (real backend fields) into the shape this screen renders.
+function toDisplayRow(u) {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: ROLE_LABELS[u.role] || u.role,
+    status: u.is_locked ? "Locked" : u.is_online ? "Online" : "Offline",
+    lastLogin: formatLastLogin(u.last_login_at),
+  };
+}
 
-function AddUserModal({ onClose, onAdd }) {
+function formatLastLogin(lastLoginAt) {
+  if (!lastLoginAt) return "Never";
+  const diffMs = Date.now() - new Date(lastLoginAt).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 5) return "Active now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  return new Date(lastLoginAt).toLocaleDateString();
+}
+
+function AddUserModal({ onClose, onAdded }) {
   const toast = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -69,7 +88,7 @@ function AddUserModal({ onClose, onAdd }) {
         role: ROLE_SLUGS[role],
       });
       const newUser = data.data.user;
-      onAdd({ id: newUser.id, name: newUser.name, email: newUser.email, role, status: "Offline", lastLogin: "Just added" });
+      onAdded();
       toast.success(`Account created for ${newUser.name}.`);
       onClose();
     } catch (err) {
@@ -184,13 +203,24 @@ function EditUserModal({ user, onClose, onSave }) {
     setFieldErrors({});
     setGeneralError("");
     setSubmitting(true);
-    // Placeholder: no backend call yet, just commits the edit to local state so the
-    // UI reflects it immediately. Swap this for a real PATCH /api/users/:id call
-    // (mirroring how Remove already calls DELETE /api/users/:id) once that route exists.
-    onSave({ ...user, name: name.trim(), email: trimmedEmail, role });
-    toast.success(`${name.trim()}'s account was updated.`);
-    setSubmitting(false);
-    onClose();
+    try {
+      await onSave({ id: user.id, name: name.trim(), email: trimmedEmail, role });
+      toast.success(`${name.trim()}'s account was updated.`);
+      onClose();
+    } catch (err) {
+      const backendErrors = err.response?.data?.errors;
+      if (err.response?.status === 400 && Array.isArray(backendErrors)) {
+        const mapped = {};
+        backendErrors.forEach((e) => { if (e.field) mapped[e.field] = e.message; });
+        setFieldErrors(mapped);
+      } else {
+        const message = err.response?.data?.message || "Something went wrong while updating this account. Please try again.";
+        setGeneralError(message);
+        toast.error(message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const inp = (hasError) => ({ width: "100%", height: 38, padding: "0 12px", borderRadius: 8, border: `1px solid ${hasError ? "#EF4444" : "#E2E8F0"}`, background: "#F8FAFC", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", boxSizing: "border-box" });
@@ -296,7 +326,8 @@ function AccountsManagement() {
   const cardBase = { background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
   const toast = useToast();
 
-  const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
+  const [accounts, setAccounts] = useState([]);
+  const [loadStatus, setLoadStatus] = useState("loading"); // 'loading' | 'ready' | 'error'
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
@@ -305,28 +336,60 @@ function AccountsManagement() {
   const [userToDelete, setUserToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Only rows created via Add New User in this session carry a real backend `id` -
-  // the seeded demo rows above are UI mock data, not actual DB users, so removing
-  // them is correctly rejected by the backend rather than silently faked here.
+  const refetch = useCallback(async () => {
+    setLoadStatus("loading");
+    try {
+      const users = await listAccounts();
+      setAccounts(users.map(toDisplayRow));
+      setLoadStatus("ready");
+    } catch (err) {
+      setLoadStatus("error");
+      toast.error(err.response?.data?.message || "Failed to load the user directory.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
   async function confirmRemove() {
     const row = userToDelete;
-    if (!row.id) {
-      toast.error("This demo account isn't backed by a real user record, so it can't be removed.");
-      setUserToDelete(null);
-      return;
-    }
     setDeleting(true);
     try {
       await api.delete(`/users/${row.id}`);
-      setAccounts((prev) => prev.filter((r) => r.email !== row.email));
       toast.success(`${row.name}'s account was removed.`);
       setUserToDelete(null);
+      await refetch();
     } catch (err) {
       const message = err.response?.data?.message || "Something went wrong while removing this account. Please try again.";
       toast.error(message);
       // Modal stays open on failure so the admin can retry or cancel.
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleEditSave(updated) {
+    await updateUserApi(updated.id, { name: updated.name, email: updated.email, role: ROLE_SLUGS[updated.role] });
+    await refetch();
+  }
+
+  async function handleForceLogout(row) {
+    try {
+      await forceLogoutUser(row.id);
+      toast.success(`${row.name} has been logged out of all sessions.`);
+      await refetch();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Something went wrong while forcing logout. Please try again.");
+    }
+  }
+
+  async function handleUnlock(row) {
+    try {
+      await unlockUserApi(row.id);
+      toast.success(`${row.name}'s account has been unlocked.`);
+      await refetch();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Something went wrong while unlocking this account. Please try again.");
     }
   }
 
@@ -343,12 +406,16 @@ function AccountsManagement() {
 
   const selSty = { height: 32, padding: "0 28px 0 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#FFFFFF", fontSize: 13, color: "#1E293B", outline: "none", fontFamily: "'Inter', sans-serif", appearance: "none", cursor: "pointer" };
 
+  if (loadStatus === "loading" && accounts.length === 0) {
+    return <div style={{ ...cardBase, padding: "48px 24px", textAlign: "center", fontSize: 13, color: "#64748B", fontFamily: "'Inter', sans-serif" }}>Loading user directory…</div>;
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {showAddModal && (
         <AddUserModal
           onClose={() => setShowAddModal(false)}
-          onAdd={(u) => setAccounts((prev) => [u, ...prev])}
+          onAdded={refetch}
         />
       )}
 
@@ -356,7 +423,7 @@ function AccountsManagement() {
         <EditUserModal
           user={userToEdit}
           onClose={() => setUserToEdit(null)}
-          onSave={(updated) => setAccounts((prev) => prev.map((r) => r.email === userToEdit.email ? updated : r))}
+          onSave={handleEditSave}
         />
       )}
 
@@ -445,7 +512,7 @@ function AccountsManagement() {
             ) : filtered.map((row, i) => {
               const dotColor = row.status === "Online" ? "#22C55E" : row.status === "Locked" ? "#EF4444" : "#64748B";
               return (
-                <tr key={row.email} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #F1F5F9" : "none", height: 52, background: "#FFFFFF" }}>
+                <tr key={row.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #F1F5F9" : "none", height: 52, background: row.status === "Locked" ? "#FEF2F2" : "#FFFFFF" }}>
                   <td style={{ padding: "0 16px" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <span style={{ fontSize: 14, fontWeight: 500, color: "#1E293B", fontFamily: "'Inter', sans-serif" }}>{row.name}</span>
@@ -468,10 +535,10 @@ function AccountsManagement() {
                       <ActionButton variant="info" onClick={() => setUserToEdit(row)}>Edit</ActionButton>
                       <ActionButton variant="neutral" onClick={() => setUserToDelete(row)}>Remove</ActionButton>
                       {row.status === "Online" && (
-                        <ActionButton variant="destructive" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline", lastLogin: "Just now" } : r))}>Force Logout</ActionButton>
+                        <ActionButton variant="destructive" onClick={() => handleForceLogout(row)}>Force Logout</ActionButton>
                       )}
                       {row.status === "Locked" && (
-                        <ActionButton variant="info" onClick={() => setAccounts((prev) => prev.map((r) => r.email === row.email ? { ...r, status: "Offline" } : r))}>Unlock</ActionButton>
+                        <ActionButton variant="info" onClick={() => handleUnlock(row)}>Unlock</ActionButton>
                       )}
                     </div>
                   </td>
