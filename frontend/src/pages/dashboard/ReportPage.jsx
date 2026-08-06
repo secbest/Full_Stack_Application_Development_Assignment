@@ -165,10 +165,13 @@ function exportReportPDF(reportTab, period, invoices, cycleTimeData, leakageHist
   }
 }
 
-function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading, cycleTimeData, leakageHistoryData }) {
+function PeriodBar({ period, setPeriod, dateFrom, setDateFrom, dateTo, setDateTo, reportTab, invoices, invoicesLoading, cycleTimeData, leakageHistoryData, analyticsLoading }) {
   const [dfFocus, setDfFocus] = useState(false);
   const [dtFocus, setDtFocus] = useState(false);
-  const exportDisabled = !getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) || (reportTab === "revenue" && invoicesLoading);
+  // Billing Cycle/Leakage History build a truthy { rows: [] } from getReportTableData even
+  // before cycleTimeData/leakageHistoryData resolve (empty array, not null) - without gating
+  // on analyticsLoading too, Export could fire mid-fetch and silently produce a zero-row file.
+  const exportDisabled = !getReportTableData(reportTab, invoices, cycleTimeData, leakageHistoryData) || (reportTab === "revenue" ? invoicesLoading : analyticsLoading);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 0 16px", flexWrap: "wrap" }}>
@@ -722,7 +725,7 @@ export default function ReportsScreen() {
       </div>
 
       {/* Period bar */}
-      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} cycleTimeData={cycleTimeData} leakageHistoryData={leakageHistoryData} />
+      <PeriodBar period={period} setPeriod={setPeriod} dateFrom={dateFrom} setDateFrom={setDateFrom} dateTo={dateTo} setDateTo={setDateTo} reportTab={reportTab} invoices={invoices} invoicesLoading={invoicesLoading} cycleTimeData={cycleTimeData} leakageHistoryData={leakageHistoryData} analyticsLoading={analyticsLoading} />
 
       {/* Tab content */}
       {reportTab === "revenue" && <ReportRevenue invoices={invoices} loading={invoicesLoading} error={invoicesError} period={period} serviceBreakdown={serviceBreakdown} />}
