@@ -217,7 +217,12 @@ export default function BookingListPage() {
   async function fetchCrewOptions() {
     try {
       const { data } = await api.get('/users', { params: { role: 'field_crew' } })
-      setCrewOptions(data.data.map((user) => ({ id: user.id, name: user.name })))
+      setCrewOptions(data.data.map((user) => ({
+        id: user.id,
+        name: user.name,
+        onJob: user.on_job,
+        activeJobCount: user.active_job_count || 0,
+      })))
     } catch (err) {
       setAssignmentNotification({ type: 'error', message: 'Failed to load crew list.' })
     }
@@ -654,9 +659,16 @@ export default function BookingListPage() {
                                     type="button"
                                     key={crew.id}
                                     onClick={() => { setAssignedCrew(crew.name); setCrewMenuOpen(false); setCrewSearch(''); }}
-                                    className={`block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 ${assignedCrew === crew.name ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-700'}`}
+                                    className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 ${assignedCrew === crew.name ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-700'}`}
                                   >
-                                    {crew.name}
+                                    <span>{crew.name}</span>
+                                    {crew.onJob ? (
+                                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">On Job</span>
+                                    ) : crew.activeJobCount > 0 ? (
+                                      <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">{crew.activeJobCount} Scheduled</span>
+                                    ) : (
+                                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Available</span>
+                                    )}
                                   </button>
                                 ))
                               )}

@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs')
 const { Op } = require('sequelize')
-const { User } = require('../models')
+const { User, Booking } = require('../models')
 const { success, notFound, error, internalError } = require('../utils')
 const { signToken } = require('../utils/token')
 
@@ -36,7 +36,7 @@ async function deleteUser(req, res) {
 async function updateProfile(req, res) {
   try {
     const { name, email } = req.body
-    const existing = await User.findOne({ where: { email, id: { [Op.ne]: req.user.sub } } })
+    const existing = await User.findOne({ where: { email: email.trim().toLowerCase(), id: { [Op.ne]: req.user.sub } } })
     if (existing) return error(res, 'An account with this email already exists.', 'EMAIL_IN_USE', 409)
 
     const user = await User.findByPk(req.user.sub)
@@ -99,7 +99,41 @@ async function listUsers(req, res) {
       : ['id', 'name', 'role']
 
     const users = await User.findAll({ where, attributes, order: [['name', 'ASC']] })
-    if (!isManagingDirector) return success(res, users)
+
+    // Field crew availability - lets the crew-assignment picker (Booking Detail /
+    // Booking List) show whether a crew member is already out on a job, so a
+    // Quotations Specialist can avoid double-booking them before it happens instead
+    // of discovering the conflict afterwards.
+    let jobCounts = {}
+    if (req.query.role === 'field_crew' && users.length) {
+      const activeBookings = await Booking.findAll({
+        where: {
+          assigned_crew_id: { [Op.in]: users.map((u) => u.id) },
+          status: { [Op.in]: ['confirmed', 'in_progress'] },
+        },
+        attributes: ['assigned_crew_id', 'status'],
+      })
+      jobCounts = activeBookings.reduce((acc, b) => {
+        const entry = acc[b.assigned_crew_id] || { active_job_count: 0, on_job: false }
+        entry.active_job_count += 1
+        if (b.status === 'in_progress') entry.on_job = true
+        acc[b.assigned_crew_id] = entry
+        return acc
+      }, {})
+    }
+    const withCrewStatus = (u) => (req.query.role === 'field_crew' ? {
+      active_job_count: jobCounts[u.id]?.active_job_count || 0,
+      on_job: jobCounts[u.id]?.on_job || false,
+    } : {})
+
+    if (!isManagingDirector) {
+      return success(res, users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        ...withCrewStatus(u),
+      })))
+    }
 
     return success(res, users.map((u) => ({
       id: u.id,
@@ -110,6 +144,7 @@ async function listUsers(req, res) {
       last_active_at: u.last_active_at,
       is_online: isOnline(u.last_active_at),
       is_locked: u.is_locked,
+      ...withCrewStatus(u),
     })))
   } catch (err) {
     return internalError(res, err)
@@ -125,7 +160,7 @@ async function updateUser(req, res) {
     if (!user) return notFound(res, 'No user with this id.', 'USER_NOT_FOUND')
 
     const { name, email, role } = req.body
-    const existing = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } })
+    const existing = await User.findOne({ where: { email: email.trim().toLowerCase(), id: { [Op.ne]: user.id } } })
     if (existing) return error(res, 'An account with this email already exists.', 'EMAIL_IN_USE', 409)
 
     user.name = name

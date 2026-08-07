@@ -1,4 +1,4 @@
-// Adds 'job_assigned' and 'memo_returned' to the notifications.type ENUM.
+// Adds 'job_assigned', 'memo_returned', and 'job_rejected' to the notifications.type ENUM.
 //
 // Background: the Notification model (src/models/Notification.js) now declares these
 // two additional ENUM values, but `sequelize.sync({ alter: true })` does not add values
@@ -25,8 +25,10 @@ async function main() {
     await sequelize.query('ALTER TYPE "enum_notifications_type" ADD VALUE IF NOT EXISTS \'job_assigned\';')
     console.log('[add-notification-enum-values] Adding memo_returned...')
     await sequelize.query('ALTER TYPE "enum_notifications_type" ADD VALUE IF NOT EXISTS \'memo_returned\';')
+    console.log('[add-notification-enum-values] Adding job_rejected...')
+    await sequelize.query('ALTER TYPE "enum_notifications_type" ADD VALUE IF NOT EXISTS \'job_rejected\';')
 
-    console.log('[add-notification-enum-values] Done. Both values are now valid.')
+    console.log('[add-notification-enum-values] Done. All values are now valid.')
   } catch (err) {
     console.error('[add-notification-enum-values] Failed:', err.message)
     process.exit(1)

@@ -58,6 +58,21 @@ npm test           # run unit tests
 
 ---
 
+## Backend Dev Server Management (Port 3000)
+
+The backend runs on plain `node` (not `nodemon`), so code changes never hot-reload -
+the process must be killed and restarted after every backend edit for it to take
+effect. `predev`/`npm run dev` refuses to start (and `npm start` binds a second
+process) if port 3000 is already in use, which is the #1 cause of "I can't run the
+backend."
+
+Rules to follow every time the backend is started/restarted in this session:
+- Before starting the backend in the background, always check `netstat -ano | grep ":3000" | grep LISTENING` first. If something is already listening, kill that PID before starting a new one - never stack a second process on top.
+- After finishing a task that involved a background-started backend (testing an endpoint, verifying a fix), kill that background process before ending the turn. Do not leave it running "in case it's still needed" - an orphaned backend process on port 3000 is exactly what blocks the user's own `npm run dev` afterwards.
+- If the currently running process was started by the user (not by this session), ask before killing it. If it was started by this session's own background restart, killing it to free the port is expected cleanup, not a destructive action.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |

@@ -16,4 +16,11 @@ const bookingIdParamSchema = Yup.object({
   id: Yup.number().integer().positive().required('A valid booking id is required'),
 })
 
-module.exports = { MILESTONE_TYPES, milestoneBodySchema, bookingIdParamSchema }
+// POST /api/bookings/:id/reject - field crew declining a job they're assigned to.
+// A reason is mandatory so Quotations has context when reassigning, same rule as
+// intakeRejectSchema's rejection_reason.
+const bookingRejectSchema = Yup.object({
+  reason: Yup.string().trim().required('A reason is required to reject this job'),
+})
+
+module.exports = { MILESTONE_TYPES, milestoneBodySchema, bookingIdParamSchema, bookingRejectSchema }

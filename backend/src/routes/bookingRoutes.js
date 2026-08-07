@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
-const { milestoneBodySchema, bookingIdParamSchema } = require('../validators')
-const { listMyJobs, listBookings, getBookingById, updateBookingCrew, deleteBooking } = require('../controllers/bookingController')
+const { milestoneBodySchema, bookingIdParamSchema, bookingRejectSchema } = require('../validators')
+const { listMyJobs, listBookings, getBookingById, updateBookingCrew, rejectBooking, deleteBooking } = require('../controllers/bookingController')
 const { recordMilestone } = require('../controllers/jobMilestoneController')
 
 router.get(
@@ -34,6 +34,17 @@ router.post(
   validate(bookingIdParamSchema, 'params'),
   validate(milestoneBodySchema),
   recordMilestone
+)
+
+// Field crew declining a job (current or upcoming) - sends it back to Quotations for
+// reassignment. Same field_crew-only-their-own-booking rule as the milestone route.
+router.post(
+  '/:id/reject',
+  authenticate,
+  authorise('field_crew', 'managing_director'),
+  validate(bookingIdParamSchema, 'params'),
+  validate(bookingRejectSchema),
+  rejectBooking
 )
 
 module.exports = router
