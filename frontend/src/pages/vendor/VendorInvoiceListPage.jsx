@@ -79,12 +79,14 @@ export default function VendorInvoiceListPage() {
           <Building2 className="w-5 h-5 text-muted-foreground" />
           <h1 className="text-2xl font-semibold text-foreground">Vendor Invoices</h1>
         </div>
-        <button
-          onClick={() => setUploadOpen(true)}
-          className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
-        >
-          <UploadCloud size={16} /> Upload Invoice
-        </button>
+        {user?.role === 'ap_specialist' && (
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
+          >
+            <UploadCloud size={16} /> Upload Invoice
+          </button>
+        )}
       </div>
 
       {intakeSettings && (
@@ -165,9 +167,11 @@ export default function VendorInvoiceListPage() {
                       <td className="px-4 py-2"><ConfidenceCell confidence={inv.extraction_confidence} isLowConfidence={inv.is_low_confidence} /></td>
                       <td className="px-4 py-2"><StatusBadge status={inv.status} /></td>
                       <td className="px-4 py-2">
-                        <button onClick={() => navigate(`/vendor-invoices/${inv.id}`)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all">
-                          <Eye size={12} /><span>Review</span>
-                        </button>
+                        {user?.role === 'ap_specialist' ? (
+                          <button onClick={() => navigate(`/vendor-invoices/${inv.id}`)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all">
+                            <Eye size={12} /><span>Review</span>
+                          </button>
+                        ) : <span className="text-xs text-slate-400">Read only</span>}
                       </td>
                     </tr>
                   ))}

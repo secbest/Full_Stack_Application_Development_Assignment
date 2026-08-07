@@ -92,7 +92,7 @@ export const NAV_ROUTES = [
     label: 'Vendor Invoices',
     sub: 'OCR & rebates',
     Icon: Building2,
-    roles: ['ap_specialist'],
+    roles: ['ap_specialist', 'managing_director'],
   },
 
   // ── Shared: Xero settings + sync status (Kwan Hua) ───────────────────────────
