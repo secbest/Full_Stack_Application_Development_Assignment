@@ -139,7 +139,7 @@ Full screen prompts and navigation map are in `design/figma-make-prompts.md`.
 | `src/app/App.tsx` | Login screen + role-based routing entry point |
 | `src/app/shared.tsx` | Shared components (ToastContainer, XeroSyncTable, mock data arrays) |
 | `src/app/APApp.tsx` | AP Specialist (Chloe Tan) - Xero settings, sync status |
-| `src/app/ARApp.tsx` | AR Specialist (Sarah Lim) - memo review, invoices, pricing contracts, AR dashboard |
+| `src/app/ARApp.tsx` | AR Specialist (Sarah Lim) - memo review, invoices, pricing contracts |
 | `src/app/FieldApp.tsx` | Field Crew (Ravi Kumar) - My Jobs, memo wizard |
 | `src/app/MDApp.tsx` | Managing Director (Doris Tan) - executive dashboard |
 
@@ -150,8 +150,8 @@ After login, role is detected from the email and the app renders the matching co
 | Email keyword | Role | User | Landing screen |
 |---|---|---|---|
 | `ravi` | field | Ravi Kumar | My Jobs |
-| `chloe` | ap | Chloe Tan | AP Dashboard |
-| `sarah` | ar | Sarah Lim | AR Dashboard |
+| `chloe` | ap | Chloe Tan | Vendor Invoice List (no AP dashboard - see Logic Correction 6) |
+| `sarah` | ar | Sarah Lim | Invoice List (no AR dashboard - see Logic Correction 6) |
 | `doris` | md | Doris Tan | Executive Dashboard |
 | anything else | quotations | Camilla Wong | Intake Queue |
 
@@ -221,7 +221,7 @@ Expired/Neutral:              #94A3B8
 5. **Booking Detail** - 3-column layout (details / status timeline / crew assignment + linked records)
 
 #### AR Specialist (Sarah Lim)
-6. **AR Dashboard** - KPI cards, invoice status breakdown chart, revenue leakage alerts, Xero bank feed
+6. ~~**AR Dashboard**~~ - **DROPPED, do not build.** See Logic Correction 6. Sarah lands on the Invoice List instead.
 7. **Memo Review Queue** - table of submitted memos awaiting review, overdue rows in red
 8. **Memo Review Detail** - 60/40 layout, all memo fields with pricing engine section highlighted blue, approve/return actions
 9. **Invoice List** - 6 status types (Matched/Adjusted/Approved/Synced/Failed/Unmatched), batch approve button
@@ -232,7 +232,7 @@ Expired/Neutral:              #94A3B8
 14. **Xero Sync Status** - shared with AP, stat cards, retry logic, max-retry warning (3 attempts)
 
 #### AP Specialist (Chloe Tan)
-15. **AP Dashboard** - 4 stat cards (Pending/Low Confidence/Synced/Failed), recent activity list, quick actions
+15. ~~**AP Dashboard**~~ - **DROPPED, do not build.** See Logic Correction 6. Chloe lands on the Vendor Invoice List instead.
 16. **Vendor Invoice List** - upload modal (PDF drag-drop), OCR confidence column, color-coded confidence %
 17. **AP Invoice Review** - two equal panels: PDF viewer left, AI-extracted editable fields right; rebate auto-calculation
 18. **Xero Integration Settings** - connected/disconnected states, token expiry warning, sync overview
@@ -267,13 +267,28 @@ These override the use case documents where they conflict:
 
 5. **No email confirmations** - There is no email service in the stack. All confirmations use in-app toast notifications (bottom-right, 8s auto-dismiss, green success / red error). Never show "confirmation email sent" language.
 
+6. **No AR or AP dashboard** - The Managing Director is the only role with a dashboard. Screens 6 (AR Dashboard) and 15 (AP Dashboard) in the prototype are dropped and must not be built. Both specialists land directly on their work queue:
+
+   | Role | Landing screen | Route |
+   |---|---|---|
+   | AR Specialist (Sarah) | Invoice List | `/invoices` |
+   | AP Specialist (Chloe) | Vendor Invoice List | `/vendor-invoices` |
+
+   The dropped dashboards' content is either already covered elsewhere or intentionally out of scope:
+   - *Invoice / vendor-invoice status breakdown* - covered by the status filter chips with live counts at the top of each list screen.
+   - *Revenue leakage alerts* - covered by the standalone Revenue Leakage report at `/reports/revenue-leakage`, visible to both the MD and the AR Specialist.
+   - *Xero bank feed* - out of scope. `bank_feed` exists only as an unused `entity_type` enum value on `xero_sync_logs`; there is no bank-feed UI and none is required.
+   - *Recent activity list / quick actions* - out of scope. The sidebar is the navigation surface for both roles.
+
+   Screen numbering is deliberately NOT re-sequenced after these two removals - existing code comments cite screens by number (for example "Invoice List (screen 9)"), so 6 and 15 remain as tombstones.
+
 ### Navigation Map Summary
 
 ```
 Login
   → quotations  → Intake Queue
-  → ar          → AR Dashboard
-  → ap          → AP Dashboard
+  → ar          → Invoice List        (no AR dashboard)
+  → ap          → Vendor Invoice List (no AP dashboard)
   → field       → My Jobs
   → md          → Executive Dashboard
 
