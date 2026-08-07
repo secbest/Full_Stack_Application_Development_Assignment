@@ -62,7 +62,7 @@ Rules:
 - invoice_date must be YYYY-MM-DD. Use an empty string if no date is printed.
 - due_date must be YYYY-MM-DD. Use an empty string if no due date is printed.
 - Transcribe the currency code and supplier GST registration number when printed.
-- Transcribe subtotal_excluding_gst, gst_rate_percent, gst_amount, and total_including_gst separately. Do not calculate missing tax fields.
+- Transcribe subtotal_excluding_gst, gst_rate_percent, gst_amount, and total_including_gst separately. A GST amount of 0 is valid only when the document explicitly shows no GST; do not use 0 as a placeholder for an unread field.
 - extracted_total is the final amount payable including GST before EFAR's own rebate.
 - items must list every line item on the invoice. Use each line's GST-exclusive amount when the document provides it.
 - confidence: your own estimate (0 to 1) of how legibly the totals and line items were printed.`
@@ -80,6 +80,42 @@ function getClient() {
 // change should degrade to a parse attempt rather than a hard failure.
 function stripCodeFence(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+}
+
+function usableAmount(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+}
+
+// A model occasionally transcribes a printed GST-inclusive total and subtotal but emits
+// `gst_amount: 0`. Do not silently accept that contradictory result. When the difference
+// is exactly a Singapore GST rate (7%, 8%, or 9%), retain the printed total, derive the
+// missing tax value, and force the invoice through the low-confidence confirmation path.
+// That lets AP proceed with a reviewable value without treating an inference as OCR fact.
+function repairMissingGstAmount(parsed) {
+  if (!usableAmount(parsed.subtotal_excluding_gst) || !usableAmount(parsed.total_including_gst)) return parsed
+
+  const subtotal = Number(parsed.subtotal_excluding_gst)
+  const total = Number(parsed.total_including_gst)
+  const printedGst = usableAmount(parsed.gst_amount) ? Number(parsed.gst_amount) : null
+  const inferredGst = round2(total - subtotal)
+  const inferredRate = subtotal > 0 ? round2((inferredGst / subtotal) * 100) : null
+  const matchesSingaporeGst = [7, 8, 9].some((rate) => Math.abs(inferredRate - rate) <= 0.01)
+
+  if (
+    subtotal <= 0 ||
+    inferredGst <= RECONCILIATION_TOLERANCE ||
+    !matchesSingaporeGst ||
+    (printedGst !== null && Math.abs(printedGst) > RECONCILIATION_TOLERANCE)
+  ) return parsed
+
+  return {
+    ...parsed,
+    gst_amount: inferredGst,
+    gst_rate_percent: usableAmount(parsed.gst_rate_percent) && Number(parsed.gst_rate_percent) > 0
+      ? Number(parsed.gst_rate_percent)
+      : inferredRate,
+    gst_amount_inferred_from_totals: true,
+  }
 }
 
 // Cross-checks the model's own output for internal consistency. This is the part of the
@@ -178,7 +214,7 @@ function reconcile(parsed) {
     discrepancy: hasStatedTotal ? round2(Math.abs(itemsSum - statedSubtotal)) : null,
     checks,
     confidence,
-    isLowConfidence: !reconciles || confidence < CONFIDENCE_THRESHOLD,
+    isLowConfidence: Boolean(parsed.gst_amount_inferred_from_totals) || !reconciles || confidence < CONFIDENCE_THRESHOLD,
   }
 }
 
@@ -228,12 +264,14 @@ async function extractVendorInvoice(pdfBuffer) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(parsed.invoice_date || ''))) parsed.invoice_date = null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(parsed.due_date || ''))) parsed.due_date = null
 
-  return { ...parsed, reconciliation: reconcile(parsed) }
+  const normalised = repairMissingGstAmount(parsed)
+  return { ...normalised, reconciliation: reconcile(normalised) }
 }
 
 module.exports = {
   extractVendorInvoice,
   reconcile,
+  repairMissingGstAmount,
   CONFIDENCE_THRESHOLD,
   RECONCILIATION_TOLERANCE,
 }

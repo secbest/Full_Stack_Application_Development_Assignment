@@ -6,7 +6,7 @@
 // whether a human ever looks at a vendor invoice - and nothing anywhere checked the single
 // most standard AP control: that the extracted line items actually sum to the extracted
 // invoice total.
-const { reconcile, CONFIDENCE_THRESHOLD } = require('../../src/services/ocrService')
+const { reconcile, repairMissingGstAmount, CONFIDENCE_THRESHOLD } = require('../../src/services/ocrService')
 
 // A clean extraction: three items summing exactly to the stated total.
 function goodExtraction(overrides = {}) {
@@ -28,6 +28,35 @@ function goodExtraction(overrides = {}) {
 function checkFor(result, name) {
   return result.checks.find((c) => c.check === name)
 }
+
+describe('repairMissingGstAmount', () => {
+  test('derives a missing 9% GST amount from a printed subtotal and total, then flags it for review', () => {
+    const repaired = repairMissingGstAmount({
+      subtotal_excluding_gst: 1343,
+      gst_amount: 0,
+      gst_rate_percent: 0,
+      total_including_gst: 1463.87,
+    })
+
+    expect(repaired).toMatchObject({
+      gst_amount: 120.87,
+      gst_rate_percent: 9,
+      gst_amount_inferred_from_totals: true,
+    })
+    expect(reconcile({ ...goodExtraction(), ...repaired, extracted_total: 1463.87, items: [
+      { description: 'Masks', amount: 1343 },
+    ] }).isLowConfidence).toBe(true)
+  })
+
+  test('does not guess tax for a difference that is not a Singapore GST rate', () => {
+    const original = {
+      subtotal_excluding_gst: 100,
+      gst_amount: 0,
+      total_including_gst: 110,
+    }
+    expect(repairMissingGstAmount(original)).toBe(original)
+  })
+})
 
 describe('reconcile - the arithmetic control', () => {
   test('a fully consistent extraction reconciles and keeps the model confidence', () => {
