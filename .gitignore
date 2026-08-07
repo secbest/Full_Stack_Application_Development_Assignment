@@ -25,3 +25,4 @@ backend/skills/
 # Logs
 *.log
 npm-debug.log*
+AR_WORKFLOW_GUIDE.md
