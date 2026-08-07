@@ -1,4 +1,5 @@
 const { Op } = require('sequelize')
+const crypto = require('crypto')
 const sequelize = require('../config')
 const { VendorInvoice, VendorInvoiceItem, VendorInvoiceAudit, User, XeroSyncLog } = require('../models')
 const {
@@ -842,8 +843,170 @@ async function reextractVendorInvoice(req, res) {
   }
 }
 
+function matchesInboundSecret(provided, expected) {
+  if (!provided || !expected) return false
+  const actual = Buffer.from(String(provided))
+  const configured = Buffer.from(String(expected))
+  return actual.length === configured.length && crypto.timingSafeEqual(actual, configured)
+}
+
+async function inboundApUserId() {
+  const configuredId = Number(process.env.AP_INBOUND_UPLOADED_BY)
+  if (Number.isInteger(configuredId) && configuredId > 0) return configuredId
+
+  const specialist = await User.findOne({
+    where: { role: 'ap_specialist' },
+    order: [['id', 'ASC']],
+    attributes: ['id'],
+  })
+  return specialist?.id || null
+}
+
+// POST /api/vendor-invoices/inbound-email. An email provider forwards PDF
+// attachments here as multipart `attachments`, with its retry-safe message id in
+// `message_id` and the shared secret in X-AP-Inbound-Secret. This endpoint does
+// not accept browser authentication: it is intentionally for the mail adapter.
+async function receiveInboundEmail(req, res) {
+  try {
+    if (!process.env.AP_INBOUND_EMAIL_SECRET) {
+      return error(res, 'Inbound email intake is not configured.', 'INBOUND_EMAIL_DISABLED', 503)
+    }
+    if (!matchesInboundSecret(req.get?.('X-AP-Inbound-Secret') || req.headers?.['x-ap-inbound-secret'], process.env.AP_INBOUND_EMAIL_SECRET)) {
+      return error(res, 'Invalid inbound email credentials.', 'UNAUTHORIZED', 401)
+    }
+
+    const messageId = String(req.body?.message_id || req.get?.('X-AP-Message-Id') || '').trim()
+    if (!messageId || messageId.length > 450) {
+      return error(res, 'A valid message_id is required for inbound email intake.', 'INVALID_MESSAGE_ID', 400)
+    }
+    const files = req.files || []
+    if (!files.length) return error(res, 'No PDF invoice attachments were received.', 'FILE_REQUIRED', 400)
+
+    const { rebate_percentage: rebatePercentage } = await vendorInvoiceUploadSchema.validate(req.body || {}, {
+      abortEarly: false,
+      stripUnknown: true,
+    })
+    const uploadedBy = await inboundApUserId()
+    if (!uploadedBy) return error(res, 'No AP specialist is available to own inbound invoices.', 'AP_SPECIALIST_NOT_FOUND', 503)
+
+    const results = []
+    for (const [index, file] of files.entries()) {
+      const inboundEmailId = `${messageId}:${index + 1}`
+      const alreadyReceived = await VendorInvoice.findOne({ where: { inbound_email_id: inboundEmailId } })
+      if (alreadyReceived) {
+        results.push({ id: alreadyReceived.id, status: alreadyReceived.status, duplicate: true })
+        continue
+      }
+
+      let pdfUrl
+      try {
+        pdfUrl = await cloudinaryService.uploadPdf(file.buffer, file.originalname)
+      } catch {
+        results.push({ filename: file.originalname, status: 'failed', code: 'CLOUDINARY_UPLOAD_FAILED' })
+        continue
+      }
+
+      let extraction
+      try {
+        extraction = await ocrService.extractVendorInvoice(file.buffer)
+      } catch {
+        const failed = await sequelize.transaction(async (t) => {
+          const row = await VendorInvoice.create({
+            uploaded_by: uploadedBy,
+            vendor_name: 'Unknown Vendor',
+            invoice_number: `PENDING-${Date.now()}-${index + 1}`,
+            pdf_url: pdfUrl,
+            inbound_email_id: inboundEmailId,
+            rebate_percentage: rebatePercentage,
+            status: 'extraction_failed',
+          }, { transaction: t })
+          await vendorInvoiceAuditService.record({
+            invoiceId: row.id, userId: uploadedBy, action: 'received_by_email',
+            note: 'PDF received by email, but OCR extraction failed.', transaction: t,
+          })
+          return row
+        })
+        results.push({ id: failed.id, status: failed.status, needs_manual_review: true })
+        continue
+      }
+
+      try {
+        const taxFields = await taxFieldsFromExtraction(extraction, rebatePercentage)
+        const rec = extraction.reconciliation
+        const invoice = await sequelize.transaction(async (t) => {
+          const row = await VendorInvoice.create({
+            uploaded_by: uploadedBy,
+            vendor_name: extraction.vendor_name,
+            invoice_number: extraction.invoice_number,
+            invoice_date: extraction.invoice_date,
+            pdf_url: pdfUrl,
+            inbound_email_id: inboundEmailId,
+            ...taxFields,
+            rebate_percentage: rebatePercentage,
+            extraction_confidence: rec.confidence,
+            is_low_confidence: rec.isLowConfidence,
+            extraction_checks: rec.checks,
+            extracted_items_sum: rec.itemsSum,
+            reconciliation_delta: rec.discrepancy,
+            status: 'pending_review',
+          }, { transaction: t })
+          await Promise.all((extraction.items || []).map((item) => VendorInvoiceItem.create({
+            vendor_invoice_id: row.id,
+            description: item.description,
+            quantity: item.quantity ?? 1,
+            unit_price: item.unit_price,
+            amount: item.amount,
+          }, { transaction: t })))
+          await vendorInvoiceAuditService.record({
+            invoiceId: row.id, userId: uploadedBy, action: 'received_by_email',
+            note: 'PDF received by email and OCR extraction completed.', transaction: t,
+          })
+          return row
+        })
+        if (invoice.is_low_confidence) {
+          notificationService.create({
+            user_id: uploadedBy,
+            type: 'ocr_low_confidence',
+            title: `Low-confidence OCR on ${invoice.vendor_name}`,
+            body: lowConfidenceReason(rec),
+            link: `/vendor-invoices/${invoice.id}`,
+          })
+        }
+        results.push({ id: invoice.id, status: invoice.status, needs_manual_review: invoice.is_low_confidence })
+      } catch (err) {
+        if (err.name === 'SequelizeUniqueConstraintError') {
+          const duplicate = await VendorInvoice.findOne({ where: { inbound_email_id: inboundEmailId } })
+          results.push(duplicate
+            ? { id: duplicate.id, status: duplicate.status, duplicate: true }
+            : { filename: file.originalname, status: 'failed', code: 'DUPLICATE_INVOICE' })
+          continue
+        }
+        throw err
+      }
+    }
+
+    return created(res, { received: results, received_count: results.filter((row) => row.id && !row.duplicate).length })
+  } catch (err) {
+    if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 422)
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+// Exposes only the forwarding address and readiness state to staff. The webhook
+// secret is deliberately never returned to the browser.
+function getInboundEmailSettings(req, res) {
+  return success(res, {
+    configured: Boolean(process.env.AP_INBOUND_EMAIL_ADDRESS && process.env.AP_INBOUND_EMAIL_SECRET),
+    forwarding_address: process.env.AP_INBOUND_EMAIL_ADDRESS || null,
+    max_attachment_size_mb: 10,
+    accepted_attachment_type: 'application/pdf',
+  })
+}
+
 module.exports = {
   calculateRebate,
+  receiveInboundEmail,
+  getInboundEmailSettings,
   uploadVendorInvoice,
   listVendorInvoices,
   getVendorInvoiceById,

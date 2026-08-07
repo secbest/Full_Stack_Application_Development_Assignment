@@ -20,6 +20,8 @@ Authorization: Bearer <token>
 | 4 | DELETE | `/api/xero/disconnect` | UC-01 | Yes |
 | 4A | GET | `/api/xero/expense-accounts` | UC-06, UC-07 | Yes |
 | 5 | POST | `/api/vendor-invoices` | UC-03, UC-04, UC-05 | Yes |
+| 5A | POST | `/api/vendor-invoices/inbound-email` | AP automatic intake | Inbound secret |
+| 5B | GET | `/api/vendor-invoices/intake-settings` | AP automatic intake | Yes |
 | 6 | GET | `/api/vendor-invoices` | UC-06 | Yes |
 | 7 | GET | `/api/vendor-invoices/:id` | UC-06 | Yes |
 | 8 | PATCH | `/api/vendor-invoices/:id` | UC-06 | Yes |

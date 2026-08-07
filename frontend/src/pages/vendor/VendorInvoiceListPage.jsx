@@ -3,11 +3,11 @@
 // color-coded confidence %, status filter tabs.
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Eye, UploadCloud, FileText, X } from 'lucide-react'
+import { Building2, Eye, UploadCloud, FileText, Mail, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
-import { listVendorInvoices, uploadVendorInvoice } from '@/api/vendor'
+import { getVendorInvoiceIntakeSettings, listVendorInvoices, uploadVendorInvoice } from '@/api/vendor'
 
 const STATUSES = ['pending_review', 'extraction_failed', 'approved', 'synced_to_xero', 'failed', 'rejected']
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
@@ -27,6 +27,7 @@ export default function VendorInvoiceListPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [statusCounts, setStatusCounts] = useState({})
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [intakeSettings, setIntakeSettings] = useState(null)
 
   async function fetchInvoices() {
     setLoading(true)
@@ -42,6 +43,11 @@ export default function VendorInvoiceListPage() {
   }
 
   useEffect(() => { fetchInvoices() }, [statusFilter])
+  useEffect(() => {
+    // This is supplementary information; a temporarily unavailable configuration
+    // endpoint must never stop staff from opening the AP queue.
+    getVendorInvoiceIntakeSettings().then(setIntakeSettings).catch(() => {})
+  }, [])
 
   return (
     <div className="p-6 space-y-4 font-sans">
@@ -57,6 +63,24 @@ export default function VendorInvoiceListPage() {
           <UploadCloud size={16} /> Upload Invoice
         </button>
       </div>
+
+      {intakeSettings && (
+        <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+          intakeSettings.configured
+            ? 'border-blue-200 bg-blue-50 text-blue-900'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          <Mail size={18} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold">Email invoice intake</div>
+            {intakeSettings.configured ? (
+              <p className="mt-0.5 text-xs">Forward vendor PDF invoices to <span className="font-mono font-semibold">{intakeSettings.forwarding_address}</span>. Each attachment enters this review queue automatically.</p>
+            ) : (
+              <p className="mt-0.5 text-xs">Automatic forwarding has not been configured yet. You can still upload a PDF manually.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

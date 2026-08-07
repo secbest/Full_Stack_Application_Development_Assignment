@@ -1,7 +1,7 @@
 jest.mock('../../src/models', () => ({
   VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn() },
   VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn(), findAll: jest.fn() },
-  User: {},
+  User: { findOne: jest.fn() },
   VendorInvoiceAudit: {},
   XeroSyncLog: { create: jest.fn() },
 }))
@@ -36,11 +36,11 @@ jest.mock('../../src/config', () => ({
   transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })),
 }))
 
-const { VendorInvoice, VendorInvoiceItem, XeroSyncLog } = require('../../src/models')
+const { VendorInvoice, VendorInvoiceItem, XeroSyncLog, User } = require('../../src/models')
 const { xeroService, apInvoiceService, ocrService, vendorInvoiceAuditService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  calculateRebate, uploadVendorInvoice, listVendorInvoices, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
+  calculateRebate, receiveInboundEmail, uploadVendorInvoice, listVendorInvoices, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
   reextractVendorInvoice,
 } = require('../../src/controllers/vendorInvoiceController')
 
@@ -309,6 +309,43 @@ describe('rejectVendorInvoice (UC-06)', () => {
     expect(invoice.status).toBe('rejected')
     expect(invoice.rejection_reason).toBe('Bad scan')
     expect(res.status).toHaveBeenCalledWith(200)
+  })
+})
+
+describe('receiveInboundEmail - automatic AP intake', () => {
+  const originalSecret = process.env.AP_INBOUND_EMAIL_SECRET
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.AP_INBOUND_EMAIL_SECRET
+    else process.env.AP_INBOUND_EMAIL_SECRET = originalSecret
+  })
+
+  test('rejects an inbound request with an invalid shared secret before processing attachments', async () => {
+    process.env.AP_INBOUND_EMAIL_SECRET = 'correct-secret'
+    const res = mockRes()
+    await receiveInboundEmail({
+      headers: { 'x-ap-inbound-secret': 'wrong-secret' },
+      get: jest.fn(), body: { message_id: 'provider-message-1' }, files: [{ originalname: 'invoice.pdf', buffer: Buffer.from('pdf') }],
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
+  })
+
+  test('returns an existing row when an email provider retries the same attachment', async () => {
+    process.env.AP_INBOUND_EMAIL_SECRET = 'correct-secret'
+    User.findOne.mockResolvedValue({ id: 8 })
+    VendorInvoice.findOne.mockResolvedValue({ id: 55, status: 'pending_review' })
+    const res = mockRes()
+    await receiveInboundEmail({
+      headers: { 'x-ap-inbound-secret': 'correct-secret' },
+      get: jest.fn((header) => header === 'X-AP-Inbound-Secret' ? 'correct-secret' : undefined),
+      body: { message_id: 'provider-message-1' }, files: [{ originalname: 'invoice.pdf', buffer: Buffer.from('pdf') }],
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(payload(res).data).toMatchObject({ received_count: 0, received: [{ id: 55, duplicate: true }] })
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
   })
 })
 

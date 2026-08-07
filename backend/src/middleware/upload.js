@@ -81,8 +81,27 @@ function uploadPdf(fieldName) {
   }
 }
 
+// Email providers such as Mailgun and SendGrid POST a multipart request with one or
+// more attachments. Keep those PDFs in memory just like a staff upload, but accept
+// multiple field names because providers do not share a single attachment convention.
+function uploadInboundPdfs() {
+  return (req, res, next) => {
+    pdfUpload.array('attachments', 10)(req, res, (err) => {
+      if (!err) return next()
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return error(res, 'An emailed attachment exceeds the 10 MB limit.', 'FILE_TOO_LARGE', 400)
+      }
+      if (err.message === 'INVALID_FILE_TYPE') {
+        return error(res, 'Only PDF invoice attachments are accepted.', 'INVALID_FILE_TYPE', 400)
+      }
+      return error(res, err.message, 'UPLOAD_ERROR', 400)
+    })
+  }
+}
+
 module.exports = {
   uploadSignatureFile: handleUpload(signatureUpload, 'Signature image exceeds the 5 MB limit.'),
   uploadHospitalStampFile: handleUpload(hospitalStampUpload, 'Hospital stamp image exceeds the 10 MB limit.'),
   uploadPdf,
+  uploadInboundPdfs,
 }

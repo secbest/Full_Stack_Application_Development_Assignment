@@ -47,6 +47,11 @@ export async function reextractVendorInvoice(id) {
   return res.data.data
 }
 
+export async function getVendorInvoiceIntakeSettings() {
+  const res = await api.get('/vendor-invoices/intake-settings')
+  return res.data.data
+}
+
 export async function updateVendorInvoiceItem(itemId, payload) {
   const res = await api.patch(`/vendor-invoice-items/${itemId}`, payload)
   return res.data.data // { ...item, parent_invoice }
