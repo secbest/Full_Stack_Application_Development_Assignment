@@ -15,7 +15,7 @@ AP_INBOUND_UPLOADED_BY=<optional-ap-specialist-user-id>
 
 `AP_INBOUND_UPLOADED_BY` is optional. Without it, the platform uses the first AP Specialist account as the intake owner.
 
-Run `npm run db:sync` after deployment so the `inbound_email_id` idempotency column and index are created.
+Run `npm run db:migrate:ap-inbound-email` after deployment so the `inbound_email_id` idempotency column and index are created. This migration is safe to run more than once.
 
 ## Provider request contract
 
