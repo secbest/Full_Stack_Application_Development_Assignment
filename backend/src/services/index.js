@@ -8,6 +8,7 @@ const leakageService = require('./leakageService')
 const gstService = require('./gstService')
 const apInvoiceService = require('./apInvoiceService')
 const vendorInvoiceAuditService = require('./vendorInvoiceAuditService')
+const geocodingService = require('./geocodingService')
 
 module.exports = {
   xeroService,
@@ -18,4 +19,5 @@ module.exports = {
   gstService,
   apInvoiceService,
   vendorInvoiceAuditService,
+  geocodingService,
 }

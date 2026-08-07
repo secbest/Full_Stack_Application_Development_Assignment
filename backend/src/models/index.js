@@ -26,6 +26,9 @@ const MemoSignature       = require('./MemoSignature')
 // Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
 const JobMilestone        = require('./JobMilestone')
 
+// Jasper - Live Fleet Tracker (geocoding cache, no FK associations - standalone)
+const GeocodedLocation    = require('./GeocodedLocation')
+
 // Kwan Hua - Xero Foundation, OCR & AP Processing
 const XeroConnection      = require('./XeroConnection')
 const VendorInvoice       = require('./VendorInvoice')
@@ -164,6 +167,9 @@ VendorInvoiceAudit.belongsTo(User, { foreignKey: 'user_id', as: 'actor' })
 // Polymorphic - no static belongsTo. Always query with both entity_type AND entity_id.
 // Scoped hasMany associations are declared on Invoice and VendorInvoice above.
 
+// ── GeocodedLocation ──────────────────────────────────────────────────────────
+// Standalone cache table keyed by address_text - no FK associations.
+
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
@@ -192,6 +198,9 @@ module.exports = {
 
   // Jasper - field ops follow-up
   JobMilestone,
+
+  // Jasper - Live Fleet Tracker
+  GeocodedLocation,
 
   // Kwan Hua
   XeroConnection,
