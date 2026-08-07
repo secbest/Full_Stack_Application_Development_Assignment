@@ -5,6 +5,7 @@ const { intakeCreateSchema, intakeConfirmSchema, intakeRejectSchema } = require(
 const notificationService = require('../services/notificationService')
 const pricingService = require('../services/pricingService')
 const { findActiveContract } = require('../services/activeContractService')
+const { resolveClientForIntake } = require('../services/clientResolutionService')
 
 function buildReference(prefix, nextNumber) {
   return `${prefix}-${String(nextNumber).padStart(5, '0')}`
@@ -178,12 +179,10 @@ async function confirmIntake(req, res) {
 
     const body = await intakeConfirmSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
 
-    const clientName = intake.organisation || intake.customer_name
-    const clientEmail = intake.contact_email
-    const [client] = await Client.findOrCreate({
-      where: { contact_email: clientEmail },
-      defaults: { name: clientName, contact_email: clientEmail, contact_phone: intake.contact_phone },
-    })
+    // Organisation name identifies a corporate customer; email only identifies an
+    // individual. Matching on email alone silently billed one organisation's booking to
+    // another whenever an email was reused - see services/clientResolutionService.js.
+    const { client } = await resolveClientForIntake(intake)
 
     const scheduledDate = body.scheduled_date || intake.preferred_date
     let pricingContractId = null
