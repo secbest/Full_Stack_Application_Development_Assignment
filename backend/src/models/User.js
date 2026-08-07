@@ -26,7 +26,17 @@ const User = sequelize.define('User', {
     allowNull: false,
   },
   name:     { type: DataTypes.STRING(100), allowNull: false },
-  email:    { type: DataTypes.STRING(255), allowNull: false, unique: true },
+  // Normalised to lowercase on every write so "Ravi@efar.com.sg" and "ravi@efar.com.sg"
+  // are the same account - the unique constraint and login lookup are both case-sensitive
+  // in Postgres otherwise.
+  email:    {
+    type: DataTypes.STRING(255),
+    allowNull: false,
+    unique: true,
+    set(value) {
+      this.setDataValue('email', typeof value === 'string' ? value.trim().toLowerCase() : value)
+    },
+  },
   password: { type: DataTypes.STRING(255), allowNull: false },
   role:     { type: DataTypes.ENUM(...ROLES), allowNull: false },
   // Bumped by POST /users/:id/force-logout. Embedded in every JWT (see utils/token.js);

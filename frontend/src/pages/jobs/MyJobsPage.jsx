@@ -18,7 +18,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StatusBadge } from '@/components/StatusBadge'
 import { MilestoneStepper } from '@/components/MilestoneStepper'
 import { useToast } from '@/context/ToastContext'
-import { listMyJobs, recordMilestone } from '@/api/fieldOps'
+import { listMyJobs, recordMilestone, rejectJob } from '@/api/fieldOps'
 
 const DATE_FILTERS = [
   { value: 'all', label: 'All Upcoming' },
@@ -110,10 +110,57 @@ function JobRoute({ job }) {
   )
 }
 
+// A crew member can decline a job any time before its memo is submitted (confirmed or
+// in_progress) - captures a reason so Quotations knows why when they see it reappear
+// needing reassignment.
+function RejectJobDialog({ job, busy, onConfirm, onCancel }) {
+  const [reason, setReason] = useState('')
+  if (!job) return null
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 px-4">
+      <div role="alertdialog" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="px-6 pt-6 pb-2">
+          <div className="text-base font-semibold text-slate-900">Reject this job?</div>
+          <p className="mt-1 text-sm text-slate-500">
+            {job.reference_number} will be unassigned from you and returned to Quotations for reassignment.
+          </p>
+        </div>
+        <div className="px-6 py-2">
+          <label htmlFor="reject-reason" className="text-xs font-medium uppercase text-slate-500">Reason (required)</label>
+          <textarea
+            id="reject-reason"
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Vehicle breakdown, unable to reach location in time"
+            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+            rows={3}
+          />
+        </div>
+        <div className="flex justify-end gap-2 px-6 pb-6 pt-4">
+          <button type="button" onClick={onCancel} className="h-10 rounded-md border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy || !reason.trim()}
+            onClick={() => onConfirm(reason.trim())}
+            className="h-10 rounded-md px-4 text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: '#EF4444' }}
+          >
+            {busy ? 'Rejecting…' : 'Reject Job'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // The single "what am I doing right now" card (item 3), carrying the milestone
 // stepper (item 1). Once job_completed is recorded, creating the memo becomes the
 // emphasized next action.
-function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo }) {
+function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo, onRejectJob }) {
   const jobComplete = (job.milestones || []).some((m) => m.milestone_type === 'job_completed')
 
   return (
@@ -155,6 +202,10 @@ function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo })
             </Button>
           </div>
         )}
+
+        <Button variant="destructive" className="w-full h-11" onClick={() => onRejectJob(job)}>
+          Reject Job
+        </Button>
       </CardContent>
     </Card>
   )
@@ -162,7 +213,7 @@ function CurrentJobHero({ job, onRecordMilestone, milestoneBusy, onCreateMemo })
 
 // Only ever rendered for a confirmed or in_progress job - see UPCOMING_STATUSES.
 // A completed/invoiced booking's memo is already submitted, so it never reaches here.
-function JobCard({ job, onCreateMemo, onStartJob, startBusy, startEligible }) {
+function JobCard({ job, onCreateMemo, onStartJob, startBusy, startEligible, onRejectJob }) {
   const accentColor = { confirmed: '#3B82F6', in_progress: '#F59E0B' }[job.status] || '#94A3B8'
 
   return (
@@ -218,6 +269,9 @@ function JobCard({ job, onCreateMemo, onStartJob, startBusy, startEligible }) {
                 Create Memo
               </Button>
             )}
+            <Button size="sm" variant="destructive" onClick={() => onRejectJob(job)} className="w-full h-11 md:w-auto md:h-9">
+              Reject Job
+            </Button>
           </div>
         </CardContent>
       </div>
@@ -231,6 +285,8 @@ export default function MyJobsPage() {
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [milestoneBusy, setMilestoneBusy] = useState(false)
   const [startingJobId, setStartingJobId] = useState(null)
+  const [rejectTarget, setRejectTarget] = useState(null)
+  const [rejectBusy, setRejectBusy] = useState(false)
   const [now, setNow] = useState(() => new Date())
   const navigate = useNavigate()
   const toast = useToast()
@@ -282,6 +338,24 @@ export default function MyJobsPage() {
     navigate(`/jobs/${job.id}/memo`)
   }
 
+  // Rejecting unassigns the crew and resets the booking to 'confirmed' server-side, so
+  // it simply drops off this crew member's own job list rather than needing a status
+  // to render locally.
+  async function handleRejectJob(reason) {
+    if (!rejectTarget) return
+    setRejectBusy(true)
+    try {
+      await rejectJob(rejectTarget.id, reason)
+      setJobs((prev) => prev.filter((j) => j.id !== rejectTarget.id))
+      toast.success(`${rejectTarget.reference_number} was rejected and sent back to Quotations.`)
+      setRejectTarget(null)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reject the job. Please try again.')
+    } finally {
+      setRejectBusy(false)
+    }
+  }
+
   // Activates a confirmed job straight from its Upcoming jobs card - the same
   // 'activated' milestone the hero's stepper records, but not gated on this job
   // holding the single hero slot (see JobCard).
@@ -330,6 +404,7 @@ export default function MyJobsPage() {
               onRecordMilestone={handleRecordMilestone}
               milestoneBusy={milestoneBusy}
               onCreateMemo={handleCreateMemo}
+              onRejectJob={setRejectTarget}
             />
           ) : (
             <Card>
@@ -374,12 +449,20 @@ export default function MyJobsPage() {
                   onStartJob={handleStartJob}
                   startBusy={startingJobId === job.id}
                   startEligible={isDueForActivation(job, now)}
+                  onRejectJob={setRejectTarget}
                 />
               ))}
             </div>
           )}
         </>
       )}
+
+      <RejectJobDialog
+        job={rejectTarget}
+        busy={rejectBusy}
+        onConfirm={handleRejectJob}
+        onCancel={() => setRejectTarget(null)}
+      />
     </div>
   )
 }

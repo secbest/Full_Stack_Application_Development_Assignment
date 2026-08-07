@@ -46,6 +46,11 @@ export function recordMilestone(bookingId, milestoneType) {
   return api.post(`/bookings/${bookingId}/milestone`, { milestone_type: milestoneType })
 }
 
+// Sends a job back to Quotations for reassignment - the crew must give a reason.
+export function rejectJob(bookingId, reason) {
+  return api.post(`/bookings/${bookingId}/reject`, { reason })
+}
+
 export function getFleetOverview(params) {
   return api.get('/dashboard/fleet-overview', { params })
 }

@@ -7,7 +7,7 @@ const { signToken } = require('../utils/token')
 async function register(req, res) {
   try {
     const body = req.body
-    const exists = await User.findOne({ where: { email: body.email } })
+    const exists = await User.findOne({ where: { email: body.email.trim().toLowerCase() } })
     if (exists) return error(res, 'An account with this email already exists.', 'EMAIL_IN_USE', 409)
     const hash = await bcrypt.hash(body.password, 12)
     const user = await User.create({ name: body.name, email: body.email, password: hash, role: body.role })
@@ -28,7 +28,7 @@ const MAX_FAILED_LOGIN_ATTEMPTS = 5
 async function login(req, res) {
   try {
     const body = await loginSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
-    const user = await User.findOne({ where: { email: body.email } })
+    const user = await User.findOne({ where: { email: body.email.trim().toLowerCase() } })
 
     if (user && user.is_locked) {
       return error(

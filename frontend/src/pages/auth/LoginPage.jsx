@@ -417,11 +417,11 @@ export default function LoginPage() {
         }
         .efar-glow { animation: glowPulse 6s ease-in-out infinite; }
 
-        @keyframes ekgDraw { to { stroke-dashoffset: 0; } }
+        @keyframes ekgDraw { to { stroke-dashoffset: -300; } }
         .efar-ekg-path {
           stroke-dasharray: 300;
           stroke-dashoffset: 300;
-          animation: ekgDraw 1s ease-out forwards;
+          animation: ekgDraw 6.0s linear infinite;
         }
 
         @keyframes shake {

@@ -2,7 +2,7 @@ const { Op } = require('sequelize')
 const sequelize = require('../config')
 const { Booking, Client, User, IntakeSubmission, ServiceMemo, Invoice, InvoiceLineItem, JobMilestone } = require('../models')
 const { success, error, notFound, forbidden, internalError } = require('../utils')
-const { bookingCrewSchema } = require('../validators')
+const { bookingCrewSchema, bookingRejectSchema } = require('../validators')
 const { serializeMilestones } = require('./jobMilestoneController')
 const notificationService = require('../services/notificationService')
 
@@ -227,6 +227,61 @@ async function updateBookingCrew(req, res) {
   }
 }
 
+// POST /api/bookings/:id/reject - field crew declining a job (current or upcoming) they
+// were assigned. Sends it back to Quotations for reassignment rather than leaving it
+// stuck on a crew member who can't do it - unassigns the crew, resets status to
+// 'confirmed' (so it reappears in Booking List's "unassigned" filter), and wipes any
+// milestones already recorded so the next crew starts the job from a clean slate.
+async function rejectBooking(req, res) {
+  try {
+    const body = await bookingRejectSchema.validate(req.body, { abortEarly: false, stripUnknown: true })
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [{ model: User, as: 'assignedCrew', attributes: ['id', 'name'] }],
+    })
+
+    // Same blurred 404 as recordMilestone - "doesn't exist" and "not this crew
+    // member's job" are deliberately indistinguishable so booking ids can't be probed.
+    const isOwnBooking = booking && (req.user.role !== 'field_crew' || booking.assigned_crew_id === req.user.sub)
+    if (!isOwnBooking) {
+      return error(res, 'Booking not found or not assigned to this crew member.', 'BOOKING_NOT_FOUND', 404)
+    }
+    if (!['confirmed', 'in_progress'].includes(booking.status)) {
+      return error(res, `This job can no longer be rejected - it is already ${booking.status}.`, 'BOOKING_ALREADY_COMPLETED', 409)
+    }
+
+    const rejectingCrewName = booking.assignedCrew?.name || 'Unassigned'
+    const rejectionNote = `[Rejected by ${rejectingCrewName} on ${new Date().toISOString().slice(0, 10)}] ${body.reason}`
+
+    await sequelize.transaction(async (t) => {
+      await JobMilestone.destroy({ where: { booking_id: booking.id }, transaction: t })
+      await booking.update({
+        assigned_crew_id: null,
+        status: 'confirmed',
+        notes: booking.notes ? `${booking.notes}\n${rejectionNote}` : rejectionNote,
+      }, { transaction: t })
+    })
+
+    const quotationsSpecialists = await User.findAll({ where: { role: 'quotations_specialist' }, attributes: ['id'] })
+    await Promise.all(quotationsSpecialists.map((u) => notificationService.create({
+      user_id: u.id,
+      type: 'job_rejected',
+      title: 'Job rejected by field crew',
+      body: `${rejectingCrewName} rejected booking ${booking.reference_number}: ${body.reason}`,
+      link: '/bookings',
+    })))
+
+    return success(res, {
+      id: booking.id,
+      reference_number: booking.reference_number,
+      status: booking.status,
+      assigned_crew_id: booking.assigned_crew_id,
+    })
+  } catch (err) {
+    if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 400)
+    return internalError(res, err)
+  }
+}
+
 // Only invoiced bookings can be deleted - by that stage Xero holds the master copy of
 // the invoice, so removing the local operational record just clears completed clutter
 // from the Bookings table. XeroSyncLog rows are deliberately left untouched: they're
@@ -257,4 +312,4 @@ async function deleteBooking(req, res) {
   }
 }
 
-module.exports = { listMyJobs, listBookings, getBookingById, updateBookingCrew, deleteBooking }
+module.exports = { listMyJobs, listBookings, getBookingById, updateBookingCrew, rejectBooking, deleteBooking }

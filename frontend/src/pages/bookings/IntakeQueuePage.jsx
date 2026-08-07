@@ -374,8 +374,8 @@ export default function IntakeQueuePage() {
 
       {showDetails && selectedIntake ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white shadow-2xl overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-6 py-4">
               <div>
                 <div className="text-lg font-semibold text-slate-900">Review Submission</div>
                 <div className="text-sm text-slate-500">{selectedIntake.ref} · {selectedIntake.status}</div>
@@ -384,8 +384,8 @@ export default function IntakeQueuePage() {
                 <X size={16} />
               </button>
             </div>
-            <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr] px-6 py-6">
-              <div className="space-y-4">
+            <div className="grid min-h-0 flex-1 gap-6 px-6 py-6 lg:grid-cols-[1.4fr_1fr]">
+              <div className="space-y-4 overflow-y-auto pr-1">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <div className="text-xs font-medium uppercase text-slate-500">Reference</div>
@@ -449,7 +449,8 @@ export default function IntakeQueuePage() {
                   <div className="text-sm text-slate-900">{selectedIntake.notes}</div>
                 </div>
               </div>
-              <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-slate-50">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Action</div>
                 </div>
@@ -501,10 +502,11 @@ export default function IntakeQueuePage() {
                   <label className="text-xs font-medium uppercase text-slate-500">Rejection Reason</label>
                   <textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="Required if rejecting this submission" className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" rows={3} />
                 </div>
-                <div className="space-y-2">
-                  <button onClick={() => { handleConfirmBooking(selectedIntake); }} className="w-full rounded-lg bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-950">Confirm Booking</button>
-                  <button onClick={() => { handleReject(selectedIntake); }} className="w-full rounded-lg bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600">Reject Submission</button>
-                </div>
+              </div>
+              <div className="shrink-0 space-y-2 border-t border-slate-200 p-4">
+                <button onClick={() => { handleConfirmBooking(selectedIntake); }} className="w-full rounded-lg bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-950">Confirm Booking</button>
+                <button onClick={() => { handleReject(selectedIntake); }} className="w-full rounded-lg bg-red-500 py-3 text-sm font-semibold text-white hover:bg-red-600">Reject Submission</button>
+              </div>
               </div>
             </div>
           </div>

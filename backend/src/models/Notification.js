@@ -13,6 +13,7 @@ const Notification = sequelize.define('Notification', {
       'memo_submitted',
       'memo_returned',
       'job_assigned',
+      'job_rejected',
       'xero_sync_failed',
       'ocr_low_confidence'
     ),
