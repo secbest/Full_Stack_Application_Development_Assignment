@@ -391,14 +391,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          <p
-            className="efar-fade-up"
-            style={{ marginTop: 16, fontSize: 12, color: '#64748B', textAlign: 'center', animationDelay: '0.32s' }}
-          >
-            Forgot password?{' '}
-            <span style={{ color: '#94A3B8' }}>Contact your administrator.</span>
-          </p>
         </div>
       </div>
 
