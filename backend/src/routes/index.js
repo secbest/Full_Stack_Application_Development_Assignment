@@ -51,4 +51,7 @@ router.use('/vendor-invoices', vendorInvoiceRoutes)
 const vendorInvoiceItemRoutes = require('./vendorInvoiceItemRoutes') // Wave 3: PATCH line item
 router.use('/vendor-invoice-items', vendorInvoiceItemRoutes)
 
+const gmailRoutes = require('./gmailRoutes')
+router.use('/gmail', gmailRoutes)
+
 module.exports = router

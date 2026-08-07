@@ -97,10 +97,23 @@ _List all test cases below before submission. Include what is being tested and t
 | 91 | vendor-invoices.test.js | `rejectVendorInvoice()` happy path | 200, invoice -> `rejected` with the reason stored |
 | 92 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` unknown item id | 404 |
 | 93 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` parent invoice not editable | 409 `INVALID_STATUS` |
-| 94 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` non-positive `amount` | 400 `INVALID_AMOUNT` |
-| 95 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` edit without an amount change | Parent invoice total left untouched |
+| 94 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` client supplies a false `amount` | Amount derived from quantity × unit price |
+| 95 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` changes unit price | Line and parent totals recomputed |
 | 96 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` amount change | Parent `extracted_total`/rebate recomputed from all line items |
+| 97 | vendor-invoice-items.test.js | `createVendorInvoiceItem()` unknown/locked parent | 404 or 409; no item created |
+| 98 | vendor-invoice-items.test.js | Add a manual line after OCR failure | Server-derived amount; totals recalculated; status becomes `pending_review`; audit recorded |
+| 99 | vendor-invoice-items.test.js | Delete a line from an editable invoice | Item deleted; remaining totals recalculated; audit recorded |
+| 100 | vendor-invoice-items.test.js | Delete the final line | Totals become zero and invoice remains `pending_review` for approval validation to block |
+| 101 | vendor-invoices.test.js | `reextractVendorInvoice()` without confirmation | 409 before OCR starts |
+| 102 | vendor-invoices.test.js | OCR retry fails | Existing status/fields/items preserved and failure audited |
+| 103 | vendor-invoices.test.js | Invoice changes while OCR runs | 409 `INVOICE_CHANGED`; replacement not applied |
+| 104 | vendor-invoices.test.js | Confirmed OCR retry succeeds | Atomic replacement with before/after audit snapshots |
+| 105 | vendor-invoices.test.js | `updateVendorInvoice()` failed Xero-sync invoice | Corrections are audited while status/approval metadata remain intact |
+| 106 | vendor-invoices.test.js | `rejectVendorInvoice()` failed Xero-sync invoice | 409 `INVALID_STATUS`; approved failed-sync invoices are not rejectable |
+| 107 | vendor-invoices.test.js | `reextractVendorInvoice()` failed Xero-sync invoice | 409 `INVALID_STATUS`; OCR is not called |
+| 108 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` failed Xero-sync invoice | Line and parent totals recompute while status remains `failed` |
+| 109 | xeroSyncRetry.test.js | `retrySync()` AP invoice fails local validation | 409 `APPROVAL_VALIDATION_FAILED`; Xero is not called |
+| 110 | xeroSyncRetry.test.js | `listSyncLogs()` status counts | Counts ignore only the selected status filter |
 
-_Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path and
-`reextractVendorInvoice` (both require mocking `fetch`/Cloudinary/OCR I/O rather than pure
-DB + logic branches) - these are exercised manually via the AP Invoice Review screen instead._
+_Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path.
+The re-extraction fetch/OCR boundary is mocked in `vendor-invoices.test.js`._

@@ -1,4 +1,5 @@
 const { Op } = require('sequelize')
+const crypto = require('crypto')
 const sequelize = require('../config')
 const { VendorInvoice, VendorInvoiceItem, VendorInvoiceAudit, User, XeroSyncLog } = require('../models')
 const {
@@ -13,7 +14,9 @@ const { getFreshConnection } = require('./xeroController')
 const { vendorInvoiceUploadSchema } = require('../validators')
 const { success, created, error, notFound, round2 } = require('../utils')
 
-const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const HEADER_EDITABLE_STATUSES = ['pending_review', 'extraction_failed', 'failed']
+const PRE_APPROVAL_EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const VENDOR_INVOICE_STATUSES = ['pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed']
 
 // Rebate Calculation (UC-05): rebate_amount = extracted_total * (rebate_percentage / 100),
 // verified_total = extracted_total - rebate_amount. Deferred (returns nulls) if extracted_total is missing.
@@ -256,22 +259,31 @@ async function listVendorInvoices(req, res) {
       return error(res, '`date_from` must be before or equal to `date_to`', 'INVALID_DATE_RANGE', 400)
     }
 
-    const where = {}
-    if (statusFilter) where.status = statusFilter
-    if (vendor_name) where.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
+    const baseWhere = {}
+    if (vendor_name) baseWhere.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
     if (date_from || date_to) {
-      where.invoice_date = {}
-      if (date_from) where.invoice_date[Op.gte] = date_from
-      if (date_to) where.invoice_date[Op.lte] = date_to
+      baseWhere.invoice_date = {}
+      if (date_from) baseWhere.invoice_date[Op.gte] = date_from
+      if (date_to) baseWhere.invoice_date[Op.lte] = date_to
     }
+    const where = statusFilter ? { ...baseWhere, status: statusFilter } : baseWhere
 
     const offset = (page - 1) * limit
-    const { rows, count } = await VendorInvoice.findAndCountAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset,
-    })
+    const [{ rows, count }, groupedCounts] = await Promise.all([
+      VendorInvoice.findAndCountAll({
+        where,
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+      }),
+      // Counts intentionally omit only the status filter. Vendor/date search filters
+      // still apply, but selecting one status must not make every other badge read zero.
+      VendorInvoice.count({ where: baseWhere, group: ['status'] }),
+    ])
+    const statusCounts = Object.fromEntries(VENDOR_INVOICE_STATUSES.map((status) => [status, 0]))
+    for (const row of groupedCounts || []) {
+      if (row.status in statusCounts) statusCounts[row.status] = Number(row.count)
+    }
 
     return success(res, {
       data: rows.map((v) => ({
@@ -295,6 +307,7 @@ async function listVendorInvoices(req, res) {
         created_at: v.createdAt,
       })),
       pagination: { page, limit, total: count, total_pages: Math.ceil(count / limit) || 1 },
+      status_counts: statusCounts,
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
@@ -332,8 +345,8 @@ async function updateVendorInvoice(req, res) {
   try {
     const invoice = await VendorInvoice.findByPk(req.params.id, { include: [{ model: VendorInvoiceItem }] })
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
-      return error(res, 'Invoice cannot be edited in its current status. Only `pending_review` and `extraction_failed` invoices are editable.', 'INVALID_STATUS', 409)
+    if (!HEADER_EDITABLE_STATUSES.includes(invoice.status)) {
+      return error(res, 'Invoice cannot be edited in its current status. Only `pending_review`, `extraction_failed`, and failed Xero-sync invoices are editable.', 'INVALID_STATUS', 409)
     }
 
     const {
@@ -478,8 +491,9 @@ async function approveVendorInvoice(req, res) {
     // serialises them; the loser sees the status check fail and is rejected.
     let invoice
     let approvedAt
+    let log
     try {
-      ({ invoice, approvedAt } = await sequelize.transaction(async (t) => {
+      ({ invoice, approvedAt, log } = await sequelize.transaction(async (t) => {
         const inv = await VendorInvoice.findByPk(req.params.id, {
           include: [{ model: VendorInvoiceItem }],
           lock: t.LOCK.UPDATE,
@@ -542,7 +556,13 @@ async function approveVendorInvoice(req, res) {
             : null,
           transaction: t,
         })
-        return { invoice: inv, approvedAt: at }
+        const syncLog = await XeroSyncLog.create({
+          entity_type: 'vendor_invoice',
+          entity_id: inv.id,
+          status: 'pending',
+          attempt_count: 1,
+        }, { transaction: t })
+        return { invoice: inv, approvedAt: at, log: syncLog }
       }))
     } catch (err) {
       if (err.httpCode) {
@@ -556,13 +576,7 @@ async function approveVendorInvoice(req, res) {
     // status screen shows and the retry endpoint can recover - not a silent dead end.
     const conn = await getFreshConnection()
     if (!conn) {
-      const log = await XeroSyncLog.create({
-        entity_type: 'vendor_invoice',
-        entity_id: invoice.id,
-        status: 'failed',
-        attempt_count: 1,
-        error_message: 'Xero is not connected.',
-      })
+      await log.update({ status: 'failed', error_message: 'Xero is not connected.' })
       await invoice.update({ status: 'failed' })
       await vendorInvoiceAuditService.record({
         invoiceId: invoice.id,
@@ -576,7 +590,6 @@ async function approveVendorInvoice(req, res) {
       })
     }
 
-    const log = await XeroSyncLog.create({ entity_type: 'vendor_invoice', entity_id: invoice.id, status: 'pending', attempt_count: 1 })
     const result = await xeroService.pushBill(invoice, conn)
 
     if (result.ok) {
@@ -636,7 +649,7 @@ async function rejectVendorInvoice(req, res) {
     const reason = typeof req.body.rejection_reason === 'string' ? req.body.rejection_reason.trim() : ''
     if (!reason) return error(res, '`rejection_reason` is required when rejecting an invoice', 'MISSING_REASON', 400)
 
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
+    if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(invoice.status)) {
       return error(res, 'Only invoices with status `pending_review` or `extraction_failed` can be rejected', 'INVALID_STATUS', 409)
     }
 
@@ -670,35 +683,103 @@ async function rejectVendorInvoice(req, res) {
 // stored PDF, replacing the previously extracted header + line items.
 async function reextractVendorInvoice(req, res) {
   try {
-    const invoice = await VendorInvoice.findByPk(req.params.id)
-    if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
-      return error(res, 'Re-extraction is only available for invoices with status `pending_review` or `extraction_failed`', 'INVALID_STATUS', 409)
+    if (req.body?.confirm_replace !== true) {
+      return error(
+        res,
+        'Confirm that the existing extracted fields and line items may be replaced.',
+        'REEXTRACTION_CONFIRMATION_REQUIRED',
+        409
+      )
     }
 
-    let buffer
-    try {
-      const resp = await fetch(invoice.pdf_url)
-      if (!resp.ok) throw new Error(`PDF fetch returned ${resp.status}`)
-      buffer = Buffer.from(await resp.arrayBuffer())
-    } catch {
-      await invoice.update({ status: 'extraction_failed' })
-      return error(res, 'Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually.', 'OCR_EXTRACTION_FAILED', 502)
+    const invoice = await VendorInvoice.findByPk(req.params.id)
+    if (!invoice) return notFound(res, 'Vendor invoice not found.')
+    if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(invoice.status)) {
+      return error(res, 'Re-extraction is only available for invoices with status `pending_review` or `extraction_failed`', 'INVALID_STATUS', 409)
     }
+    const startedUpdatedAt = invoice.updatedAt ? new Date(invoice.updatedAt).getTime() : null
 
     let extraction
     try {
+      const resp = await fetch(invoice.pdf_url)
+      if (!resp.ok) throw new Error(`PDF fetch returned ${resp.status}`)
+      const buffer = Buffer.from(await resp.arrayBuffer())
       extraction = await ocrService.extractVendorInvoice(buffer)
     } catch {
-      await invoice.update({ status: 'extraction_failed' })
-      return error(res, 'Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually.', 'OCR_EXTRACTION_FAILED', 502)
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'reextraction_failed',
+        note: 'OCR retry failed. Existing invoice fields, status, and line items were preserved.',
+      })
+      return error(
+        res,
+        'Re-extraction failed. Your existing invoice fields and line items were kept unchanged.',
+        'OCR_EXTRACTION_FAILED',
+        502
+      )
     }
 
     const rec = extraction.reconciliation
-    const taxFields = await taxFieldsFromExtraction(extraction, Number(invoice.rebate_percentage))
+    let taxFields
+    try {
+      taxFields = await taxFieldsFromExtraction(extraction, Number(invoice.rebate_percentage))
+    } catch (err) {
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'reextraction_failed',
+        note: `OCR retry completed, but its accounting fields could not be validated: ${err.message}. Existing invoice data was preserved.`,
+      })
+      return error(res, `Re-extraction could not be applied: ${err.message} Existing invoice data was kept unchanged.`, err.code || 'INVALID_GST_CONFIGURATION', 400)
+    }
+
+    const headerFields = [
+      'vendor_name', 'invoice_number', 'invoice_date', 'due_date', 'currency_code',
+      'supplier_gst_registration_no', 'gst_treatment', 'gst_rate_id', 'gst_rate_percent',
+      'gst_effective_date', 'xero_tax_type', 'xero_account_code', 'subtotal_excluding_gst',
+      'gst_amount', 'total_including_gst', 'extracted_total', 'rebate_amount',
+      'verified_total', 'extraction_confidence', 'is_low_confidence', 'extraction_checks',
+      'extracted_items_sum', 'reconciliation_delta', 'status',
+    ]
+    const snapshotHeader = (record) => headerFields.reduce((snapshot, field) => {
+      snapshot[field] = record[field] ?? null
+      return snapshot
+    }, {})
+    const snapshotItems = (items) => items.map((item) => ({
+      id: item.id ?? null,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      amount: item.amount,
+    }))
+
+    let appliedInvoice
     await sequelize.transaction(async (t) => {
+      const current = await VendorInvoice.findByPk(invoice.id, { transaction: t, lock: t.LOCK.UPDATE })
+      if (!current) throw Object.assign(new Error('Vendor invoice not found.'), { httpCode: 404, code: 'NOT_FOUND' })
+      if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(current.status)) {
+        throw Object.assign(
+          new Error('The invoice is no longer editable, so its data was not replaced.'),
+          { httpCode: 409, code: 'INVALID_STATUS' }
+        )
+      }
+      const currentUpdatedAt = current.updatedAt ? new Date(current.updatedAt).getTime() : null
+      if (startedUpdatedAt !== null && currentUpdatedAt !== null && currentUpdatedAt !== startedUpdatedAt) {
+        throw Object.assign(
+          new Error('The invoice changed while OCR was running. Review the latest data before retrying.'),
+          { httpCode: 409, code: 'INVOICE_CHANGED' }
+        )
+      }
+
+      const previousItems = await VendorInvoiceItem.findAll({
+        where: { vendor_invoice_id: current.id },
+        transaction: t,
+      })
+      const previousHeader = snapshotHeader(current)
+      const replacementItems = extraction.items || []
       await VendorInvoiceItem.destroy({ where: { vendor_invoice_id: invoice.id }, transaction: t })
-      await invoice.update({
+      await current.update({
         vendor_name: extraction.vendor_name,
         invoice_number: extraction.invoice_number,
         invoice_date: extraction.invoice_date,
@@ -712,8 +793,8 @@ async function reextractVendorInvoice(req, res) {
       }, { transaction: t })
 
       await Promise.all(
-        (extraction.items || []).map((item) => VendorInvoiceItem.create({
-          vendor_invoice_id: invoice.id,
+        replacementItems.map((item) => VendorInvoiceItem.create({
+          vendor_invoice_id: current.id,
           description: item.description,
           quantity: item.quantity ?? 1,
           unit_price: item.unit_price,
@@ -721,25 +802,32 @@ async function reextractVendorInvoice(req, res) {
         }, { transaction: t }))
       )
       await vendorInvoiceAuditService.record({
-        invoiceId: invoice.id,
+        invoiceId: current.id,
         userId: req.user?.sub || null,
         action: 'reextracted',
+        changes: {
+          previous_header: previousHeader,
+          previous_line_items: snapshotItems(previousItems),
+          replacement_header: snapshotHeader(current),
+          replacement_line_items: snapshotItems(replacementItems),
+        },
         note: 'OCR data and line items were replaced from the source PDF.',
         transaction: t,
       })
+      appliedInvoice = current
     })
 
-    if (invoice.is_low_confidence) {
+    if (appliedInvoice.is_low_confidence) {
       notificationService.create({
-        user_id: invoice.uploaded_by,
+        user_id: appliedInvoice.uploaded_by,
         type: 'ocr_low_confidence',
-        title: `Low-confidence OCR on ${invoice.vendor_name}`,
+        title: `Low-confidence OCR on ${appliedInvoice.vendor_name}`,
         body: `Re-extraction: ${lowConfidenceReason(rec)}`,
-        link: `/vendor-invoices/${invoice.id}`,
+        link: `/vendor-invoices/${appliedInvoice.id}`,
       })
     }
 
-    const reloaded = await VendorInvoice.findByPk(invoice.id, {
+    const reloaded = await VendorInvoice.findByPk(appliedInvoice.id, {
       include: [
         { model: VendorInvoiceItem },
         { model: VendorInvoiceAudit, as: 'auditTrail', include: [{ model: User, as: 'actor', attributes: ['id', 'name'] }] },
@@ -747,12 +835,178 @@ async function reextractVendorInvoice(req, res) {
     })
     return success(res, serializeInvoice(reloaded))
   } catch (err) {
+    if (err.httpCode) return error(res, err.message, err.code || 'REEXTRACTION_FAILED', err.httpCode)
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return error(res, 'The re-extracted vendor and invoice number already belong to another invoice. Existing data was kept unchanged.', 'DUPLICATE_INVOICE', 409)
+    }
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }
 }
 
+function matchesInboundSecret(provided, expected) {
+  if (!provided || !expected) return false
+  const actual = Buffer.from(String(provided))
+  const configured = Buffer.from(String(expected))
+  return actual.length === configured.length && crypto.timingSafeEqual(actual, configured)
+}
+
+async function inboundApUserId() {
+  const configuredId = Number(process.env.AP_INBOUND_UPLOADED_BY)
+  if (Number.isInteger(configuredId) && configuredId > 0) return configuredId
+
+  const specialist = await User.findOne({
+    where: { role: 'ap_specialist' },
+    order: [['id', 'ASC']],
+    attributes: ['id'],
+  })
+  return specialist?.id || null
+}
+
+// POST /api/vendor-invoices/inbound-email. An email provider forwards PDF
+// attachments here as multipart `attachments`, with its retry-safe message id in
+// `message_id` and the shared secret in X-AP-Inbound-Secret. This endpoint does
+// not accept browser authentication: it is intentionally for the mail adapter.
+async function receiveInboundEmail(req, res) {
+  try {
+    if (!req.internal_email_intake && !process.env.AP_INBOUND_EMAIL_SECRET) {
+      return error(res, 'Inbound email intake is not configured.', 'INBOUND_EMAIL_DISABLED', 503)
+    }
+    if (!req.internal_email_intake && !matchesInboundSecret(req.get?.('X-AP-Inbound-Secret') || req.headers?.['x-ap-inbound-secret'], process.env.AP_INBOUND_EMAIL_SECRET)) {
+      return error(res, 'Invalid inbound email credentials.', 'UNAUTHORIZED', 401)
+    }
+
+    const messageId = String(req.body?.message_id || req.get?.('X-AP-Message-Id') || '').trim()
+    if (!messageId || messageId.length > 450) {
+      return error(res, 'A valid message_id is required for inbound email intake.', 'INVALID_MESSAGE_ID', 400)
+    }
+    const files = req.files || []
+    if (!files.length) return error(res, 'No PDF invoice attachments were received.', 'FILE_REQUIRED', 400)
+
+    const { rebate_percentage: rebatePercentage } = await vendorInvoiceUploadSchema.validate(req.body || {}, {
+      abortEarly: false,
+      stripUnknown: true,
+    })
+    const uploadedBy = await inboundApUserId()
+    if (!uploadedBy) return error(res, 'No AP specialist is available to own inbound invoices.', 'AP_SPECIALIST_NOT_FOUND', 503)
+
+    const results = []
+    for (const [index, file] of files.entries()) {
+      const inboundEmailId = `${messageId}:${index + 1}`
+      const alreadyReceived = await VendorInvoice.findOne({ where: { inbound_email_id: inboundEmailId } })
+      if (alreadyReceived) {
+        results.push({ id: alreadyReceived.id, status: alreadyReceived.status, duplicate: true })
+        continue
+      }
+
+      let pdfUrl
+      try {
+        pdfUrl = await cloudinaryService.uploadPdf(file.buffer, file.originalname)
+      } catch {
+        results.push({ filename: file.originalname, status: 'failed', code: 'CLOUDINARY_UPLOAD_FAILED' })
+        continue
+      }
+
+      let extraction
+      try {
+        extraction = await ocrService.extractVendorInvoice(file.buffer)
+      } catch {
+        const failed = await sequelize.transaction(async (t) => {
+          const row = await VendorInvoice.create({
+            uploaded_by: uploadedBy,
+            vendor_name: 'Unknown Vendor',
+            invoice_number: `PENDING-${Date.now()}-${index + 1}`,
+            pdf_url: pdfUrl,
+            inbound_email_id: inboundEmailId,
+            rebate_percentage: rebatePercentage,
+            status: 'extraction_failed',
+          }, { transaction: t })
+          await vendorInvoiceAuditService.record({
+            invoiceId: row.id, userId: uploadedBy, action: 'received_by_email',
+            note: 'PDF received by email, but OCR extraction failed.', transaction: t,
+          })
+          return row
+        })
+        results.push({ id: failed.id, status: failed.status, needs_manual_review: true })
+        continue
+      }
+
+      try {
+        const taxFields = await taxFieldsFromExtraction(extraction, rebatePercentage)
+        const rec = extraction.reconciliation
+        const invoice = await sequelize.transaction(async (t) => {
+          const row = await VendorInvoice.create({
+            uploaded_by: uploadedBy,
+            vendor_name: extraction.vendor_name,
+            invoice_number: extraction.invoice_number,
+            invoice_date: extraction.invoice_date,
+            pdf_url: pdfUrl,
+            inbound_email_id: inboundEmailId,
+            ...taxFields,
+            rebate_percentage: rebatePercentage,
+            extraction_confidence: rec.confidence,
+            is_low_confidence: rec.isLowConfidence,
+            extraction_checks: rec.checks,
+            extracted_items_sum: rec.itemsSum,
+            reconciliation_delta: rec.discrepancy,
+            status: 'pending_review',
+          }, { transaction: t })
+          await Promise.all((extraction.items || []).map((item) => VendorInvoiceItem.create({
+            vendor_invoice_id: row.id,
+            description: item.description,
+            quantity: item.quantity ?? 1,
+            unit_price: item.unit_price,
+            amount: item.amount,
+          }, { transaction: t })))
+          await vendorInvoiceAuditService.record({
+            invoiceId: row.id, userId: uploadedBy, action: 'received_by_email',
+            note: 'PDF received by email and OCR extraction completed.', transaction: t,
+          })
+          return row
+        })
+        if (invoice.is_low_confidence) {
+          notificationService.create({
+            user_id: uploadedBy,
+            type: 'ocr_low_confidence',
+            title: `Low-confidence OCR on ${invoice.vendor_name}`,
+            body: lowConfidenceReason(rec),
+            link: `/vendor-invoices/${invoice.id}`,
+          })
+        }
+        results.push({ id: invoice.id, status: invoice.status, needs_manual_review: invoice.is_low_confidence })
+      } catch (err) {
+        if (err.name === 'SequelizeUniqueConstraintError') {
+          const duplicate = await VendorInvoice.findOne({ where: { inbound_email_id: inboundEmailId } })
+          results.push(duplicate
+            ? { id: duplicate.id, status: duplicate.status, duplicate: true }
+            : { filename: file.originalname, status: 'failed', code: 'DUPLICATE_INVOICE' })
+          continue
+        }
+        throw err
+      }
+    }
+
+    return created(res, { received: results, received_count: results.filter((row) => row.id && !row.duplicate).length })
+  } catch (err) {
+    if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 422)
+    return error(res, err.message, 'INTERNAL_ERROR', 500)
+  }
+}
+
+// Exposes only the forwarding address and readiness state to staff. The webhook
+// secret is deliberately never returned to the browser.
+function getInboundEmailSettings(req, res) {
+  return success(res, {
+    configured: Boolean(process.env.AP_INBOUND_EMAIL_ADDRESS && process.env.AP_INBOUND_EMAIL_SECRET),
+    forwarding_address: process.env.AP_INBOUND_EMAIL_ADDRESS || null,
+    max_attachment_size_mb: 10,
+    accepted_attachment_type: 'application/pdf',
+  })
+}
+
 module.exports = {
   calculateRebate,
+  receiveInboundEmail,
+  getInboundEmailSettings,
   uploadVendorInvoice,
   listVendorInvoices,
   getVendorInvoiceById,

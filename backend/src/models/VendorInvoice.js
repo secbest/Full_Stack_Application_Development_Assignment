@@ -14,6 +14,10 @@ const VendorInvoice = sequelize.define('VendorInvoice', {
   invoice_date:         { type: DataTypes.DATEONLY,    allowNull: true },
   due_date:             { type: DataTypes.DATEONLY,    allowNull: true },
   pdf_url:              { type: DataTypes.STRING(512), allowNull: false },
+  // A stable message-id plus attachment index supplied by the inbound-mail adapter.
+  // This makes provider retries idempotent without treating two PDFs in one email as
+  // the same invoice.
+  inbound_email_id:     { type: DataTypes.STRING(512), allowNull: true },
   currency_code:        { type: DataTypes.STRING(3),   allowNull: false, defaultValue: 'SGD' },
   supplier_gst_registration_no: { type: DataTypes.STRING(50), allowNull: true },
   gst_treatment: {
@@ -63,6 +67,7 @@ const VendorInvoice = sequelize.define('VendorInvoice', {
   underscored: true,
   indexes: [
     { unique: true, fields: ['vendor_name', 'invoice_number'] },
+    { unique: true, fields: ['inbound_email_id'] },
   ],
 })
 

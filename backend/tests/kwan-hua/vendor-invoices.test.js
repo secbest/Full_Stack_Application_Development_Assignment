@@ -1,7 +1,7 @@
 jest.mock('../../src/models', () => ({
-  VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn() },
-  VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn() },
-  User: {},
+  VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn() },
+  VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn(), findAll: jest.fn() },
+  User: { findOne: jest.fn() },
   VendorInvoiceAudit: {},
   XeroSyncLog: { create: jest.fn() },
 }))
@@ -36,11 +36,12 @@ jest.mock('../../src/config', () => ({
   transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })),
 }))
 
-const { VendorInvoice, XeroSyncLog } = require('../../src/models')
-const { xeroService, apInvoiceService } = require('../../src/services')
+const { VendorInvoice, VendorInvoiceItem, XeroSyncLog, User } = require('../../src/models')
+const { xeroService, apInvoiceService, ocrService, vendorInvoiceAuditService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  calculateRebate, uploadVendorInvoice, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
+  calculateRebate, receiveInboundEmail, uploadVendorInvoice, listVendorInvoices, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
+  reextractVendorInvoice,
 } = require('../../src/controllers/vendorInvoiceController')
 
 function mockRes() {
@@ -65,6 +66,7 @@ function makeVendorInvoice(overrides = {}) {
     ...overrides,
   }
   obj.update = jest.fn(async (fields) => { Object.assign(obj, fields); return obj })
+  obj.toJSON = jest.fn(() => ({ ...obj }))
   return obj
 }
 
@@ -199,7 +201,8 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     VendorInvoice.findByPk.mockResolvedValue(invoice)
     VendorInvoice.findOne.mockResolvedValue(null)
     xeroController.getFreshConnection.mockResolvedValue(null)
-    XeroSyncLog.create.mockResolvedValue({ id: 9, update: jest.fn() })
+    const syncLog = { id: 9, update: jest.fn() }
+    XeroSyncLog.create.mockResolvedValue(syncLog)
 
     const res = mockRes()
     await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, res)
@@ -207,7 +210,11 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     expect(res.status).toHaveBeenCalledWith(503)
     expect(payload(res).code).toBe('XERO_NOT_CONNECTED')
     expect(invoice.status).toBe('failed')
-    expect(XeroSyncLog.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', entity_type: 'vendor_invoice' }))
+    expect(XeroSyncLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', entity_type: 'vendor_invoice' }),
+      expect.any(Object)
+    )
+    expect(syncLog.update).toHaveBeenCalledWith({ status: 'failed', error_message: 'Xero is not connected.' })
   })
 
   // Xero does not deduplicate ACCPAY bills, so the status check must happen under the row
@@ -286,6 +293,14 @@ describe('rejectVendorInvoice (UC-06)', () => {
     expect(payload(res).code).toBe('INVALID_STATUS')
   })
 
+  test('does not allow rejecting an approved invoice that only failed Xero sync', async () => {
+    VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice({ status: 'failed' }))
+    const res = mockRes()
+    await rejectVendorInvoice({ params: { id: 1 }, body: { rejection_reason: 'Wrong account' } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVALID_STATUS')
+  })
+
   test('rejects the invoice with the given reason', async () => {
     const invoice = makeVendorInvoice()
     VendorInvoice.findByPk.mockResolvedValue(invoice)
@@ -294,6 +309,209 @@ describe('rejectVendorInvoice (UC-06)', () => {
     expect(invoice.status).toBe('rejected')
     expect(invoice.rejection_reason).toBe('Bad scan')
     expect(res.status).toHaveBeenCalledWith(200)
+  })
+})
+
+describe('receiveInboundEmail - automatic AP intake', () => {
+  const originalSecret = process.env.AP_INBOUND_EMAIL_SECRET
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.AP_INBOUND_EMAIL_SECRET
+    else process.env.AP_INBOUND_EMAIL_SECRET = originalSecret
+  })
+
+  test('rejects an inbound request with an invalid shared secret before processing attachments', async () => {
+    process.env.AP_INBOUND_EMAIL_SECRET = 'correct-secret'
+    const res = mockRes()
+    await receiveInboundEmail({
+      headers: { 'x-ap-inbound-secret': 'wrong-secret' },
+      get: jest.fn(), body: { message_id: 'provider-message-1' }, files: [{ originalname: 'invoice.pdf', buffer: Buffer.from('pdf') }],
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
+  })
+
+  test('returns an existing row when an email provider retries the same attachment', async () => {
+    process.env.AP_INBOUND_EMAIL_SECRET = 'correct-secret'
+    User.findOne.mockResolvedValue({ id: 8 })
+    VendorInvoice.findOne.mockResolvedValue({ id: 55, status: 'pending_review' })
+    const res = mockRes()
+    await receiveInboundEmail({
+      headers: { 'x-ap-inbound-secret': 'correct-secret' },
+      get: jest.fn((header) => header === 'X-AP-Inbound-Secret' ? 'correct-secret' : undefined),
+      body: { message_id: 'provider-message-1' }, files: [{ originalname: 'invoice.pdf', buffer: Buffer.from('pdf') }],
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(payload(res).data).toMatchObject({ received_count: 0, received: [{ id: 55, duplicate: true }] })
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
+  })
+})
+
+describe('listVendorInvoices status counts', () => {
+  test('returns queue-wide counts even when one status is selected', async () => {
+    VendorInvoice.findAndCountAll.mockResolvedValue({
+      rows: [makeVendorInvoice({ id: 2, status: 'pending_review' })],
+      count: 1,
+    })
+    VendorInvoice.count.mockResolvedValue([
+      { status: 'pending_review', count: '3' },
+      { status: 'failed', count: '2' },
+      { status: 'synced_to_xero', count: '8' },
+    ])
+    const res = mockRes()
+
+    await listVendorInvoices({
+      query: { status: 'pending_review', vendor_name: null, date_from: null, date_to: null, page: 1, limit: 20 },
+    }, res)
+
+    expect(VendorInvoice.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'pending_review' },
+    }))
+    expect(VendorInvoice.count).toHaveBeenCalledWith({ where: {}, group: ['status'] })
+    expect(payload(res).data.status_counts).toMatchObject({
+      pending_review: 3,
+      failed: 2,
+      synced_to_xero: 8,
+      rejected: 0,
+    })
+  })
+})
+
+describe('reextractVendorInvoice (UC-04)', () => {
+  const originalFetch = global.fetch
+
+  afterEach(() => { global.fetch = originalFetch })
+
+  test('requires explicit confirmation before starting destructive replacement', async () => {
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: {}, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('REEXTRACTION_CONFIRMATION_REQUIRED')
+    expect(VendorInvoice.findByPk).not.toHaveBeenCalled()
+  })
+
+  test('keeps the current status, fields and line items when OCR retry fails', async () => {
+    const invoice = makeVendorInvoice({ status: 'pending_review', vendor_name: 'Manually Corrected Vendor' })
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockRejectedValue(new Error('Gemini unavailable'))
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(502)
+    expect(payload(res).code).toBe('OCR_EXTRACTION_FAILED')
+    expect(payload(res).message).toMatch(/kept unchanged/i)
+    expect(invoice.status).toBe('pending_review')
+    expect(invoice.vendor_name).toBe('Manually Corrected Vendor')
+    expect(invoice.update).not.toHaveBeenCalled()
+    expect(VendorInvoiceItem.destroy).not.toHaveBeenCalled()
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 3,
+      action: 'reextraction_failed',
+    }))
+  })
+
+  test('does not allow re-extraction on an approved invoice that only failed Xero sync', async () => {
+    VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice({ status: 'failed' }))
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVALID_STATUS')
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
+  })
+
+  test('does not overwrite an invoice changed while OCR was running', async () => {
+    const initial = makeVendorInvoice({ updatedAt: '2026-08-07T10:00:00.000Z' })
+    const changed = makeVendorInvoice({ updatedAt: '2026-08-07T10:01:00.000Z', vendor_name: 'Latest Manual Edit' })
+    VendorInvoice.findByPk.mockResolvedValueOnce(initial).mockResolvedValueOnce(changed)
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockResolvedValue({
+      vendor_name: 'OCR Vendor', invoice_number: 'OCR-1', invoice_date: '2026-08-07',
+      subtotal_excluding_gst: 50, gst_amount: 0, total_including_gst: 50, extracted_total: 50,
+      items: [{ description: 'Fuel', quantity: 1, unit_price: 50, amount: 50 }],
+      reconciliation: { confidence: 0.95, isLowConfidence: false, checks: [], itemsSum: 50, discrepancy: 0 },
+    })
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVOICE_CHANGED')
+    expect(changed.vendor_name).toBe('Latest Manual Edit')
+    expect(VendorInvoiceItem.destroy).not.toHaveBeenCalled()
+  })
+
+  test('replaces data atomically and audits before/after snapshots after confirmation', async () => {
+    const invoice = makeVendorInvoice({ updatedAt: '2026-08-07T10:00:00.000Z' })
+    const replacementLine = { description: 'Medical transport', quantity: 1, unit_price: 250, amount: 250 }
+    const reloaded = makeVendorInvoice({
+      vendor_name: 'New Vendor', invoice_number: 'NEW-1', extracted_total: 250,
+      VendorInvoiceItems: [{ id: 22, ...replacementLine }], auditTrail: [],
+    })
+    VendorInvoice.findByPk
+      .mockResolvedValueOnce(invoice)
+      .mockResolvedValueOnce(invoice)
+      .mockResolvedValueOnce(reloaded)
+    VendorInvoiceItem.findAll.mockResolvedValue(invoice.VendorInvoiceItems)
+    VendorInvoiceItem.create.mockImplementation(async (fields) => ({ id: 22, ...fields }))
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockResolvedValue({
+      vendor_name: 'New Vendor', invoice_number: 'NEW-1', invoice_date: '2026-08-07', due_date: '2026-09-07',
+      currency_code: 'SGD', subtotal_excluding_gst: 250, gst_amount: 0, total_including_gst: 250, extracted_total: 250,
+      items: [replacementLine],
+      reconciliation: { confidence: 0.97, isLowConfidence: false, checks: [], itemsSum: 250, discrepancy: 0 },
+    })
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(VendorInvoice.findByPk).toHaveBeenNthCalledWith(2, 1, expect.objectContaining({ lock: 'UPDATE' }))
+    expect(VendorInvoiceItem.findAll).toHaveBeenCalled()
+    expect(VendorInvoiceItem.destroy).toHaveBeenCalled()
+    expect(invoice.vendor_name).toBe('New Vendor')
+    expect(invoice.status).toBe('pending_review')
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'reextracted',
+      changes: expect.objectContaining({
+        previous_header: expect.objectContaining({ vendor_name: 'Esso' }),
+        previous_line_items: [expect.objectContaining({ description: 'Fuel' })],
+        replacement_header: expect.objectContaining({ vendor_name: 'New Vendor' }),
+        replacement_line_items: [expect.objectContaining({ description: 'Medical transport' })],
+      }),
+    }))
+    expect(res.status).toHaveBeenCalledWith(200)
+  })
+
+  test('allows correcting a failed Xero-sync invoice without clearing approval state', async () => {
+    const invoice = makeVendorInvoice({
+      status: 'failed',
+      approved_by: 2,
+      approved_at: '2026-08-07T10:00:00.000Z',
+      xero_bill_id: null,
+    })
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    const res = mockRes()
+
+    await updateVendorInvoice({ params: { id: 1 }, body: { xero_account_code: '410' }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(invoice.status).toBe('failed')
+    expect(invoice.approved_by).toBe(2)
+    expect(invoice.approved_at).toBe('2026-08-07T10:00:00.000Z')
+    expect(invoice.xero_account_code).toBe('410')
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 3,
+      action: 'header_updated',
+    }))
   })
 })
 

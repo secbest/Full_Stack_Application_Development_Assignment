@@ -18,7 +18,10 @@ Authorization: Bearer <token>
 | 2 | GET | `/api/xero/connect` | UC-01 | Yes |
 | 3 | GET | `/api/xero/callback` | UC-01 | No |
 | 4 | DELETE | `/api/xero/disconnect` | UC-01 | Yes |
+| 4A | GET | `/api/xero/expense-accounts` | UC-06, UC-07 | Yes |
 | 5 | POST | `/api/vendor-invoices` | UC-03, UC-04, UC-05 | Yes |
+| 5A | POST | `/api/vendor-invoices/inbound-email` | AP automatic intake | Inbound secret |
+| 5B | GET | `/api/vendor-invoices/intake-settings` | AP automatic intake | Yes |
 | 6 | GET | `/api/vendor-invoices` | UC-06 | Yes |
 | 7 | GET | `/api/vendor-invoices/:id` | UC-06 | Yes |
 | 8 | PATCH | `/api/vendor-invoices/:id` | UC-06 | Yes |
@@ -26,6 +29,8 @@ Authorization: Bearer <token>
 | 10 | POST | `/api/vendor-invoices/:id/reject` | UC-06 | Yes |
 | 11 | POST | `/api/vendor-invoices/:id/reextract` | UC-04 | Yes |
 | 12 | PATCH | `/api/vendor-invoice-items/:id` | UC-06 | Yes |
+| 12A | POST | `/api/vendor-invoices/:id/items` | UC-06 | Yes |
+| 12B | DELETE | `/api/vendor-invoice-items/:id` | UC-06 | Yes |
 | 13 | GET | `/api/xero/sync-logs` | UC-08 | Yes |
 | 14 | POST | `/api/xero/sync-logs/:id/retry` | UC-08 | Yes |
 | 15 | GET | `/api/dashboard/revenue-leakage` | UC-09 | Yes |
@@ -149,6 +154,38 @@ Redirects to `/settings/xero?connected=true`
 
 ---
 
+## 4A. GET `/api/xero/expense-accounts`
+
+**Purpose:** Returns the connected organisation's active `EXPENSE`, `DIRECTCOSTS`, and `OVERHEADS` accounts for AP bill coding. The AP review screen uses this response as a selector instead of accepting an unchecked account-code string. Tokens remain on the server and are refreshed before the lookup.
+
+**Auth required:** Yes - roles: `ap_specialist`, `managing_director`
+
+**Success response `200 OK`:**
+```json
+{
+  "accounts": [
+    {
+      "code": "400",
+      "name": "Medical Supplies",
+      "type": "EXPENSE",
+      "tax_type": "INPUTY24"
+    }
+  ],
+  "simulated": false
+}
+```
+
+**Error responses:**
+
+| Status | Code | Message |
+|--------|------|---------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not permitted to view AP coding accounts |
+| 502 | `XERO_ACCOUNT_LOOKUP_FAILED` | Xero rejected or could not complete the account lookup |
+| 503 | `XERO_NOT_CONNECTED` | Xero is not connected or its token could not be refreshed |
+
+---
+
 ## 5. POST `/api/vendor-invoices`
 
 **Purpose:** Accepts a vendor PDF upload from Chloe (UC-03), forwards it to Cloudinary, creates the `vendor_invoices` record, synchronously runs Gemini OCR (UC-04), calculates the rebate (UC-05), and returns the fully populated invoice record ready for the review interface (UC-06). The response is the single source of truth Chloe's UI uses to pre-fill the review form.
@@ -252,9 +289,19 @@ Redirects to `/settings/xero?connected=true`
     "limit": 20,
     "total": 1,
     "total_pages": 1
+  },
+  "status_counts": {
+    "pending_review": 1,
+    "extraction_failed": 0,
+    "approved": 0,
+    "rejected": 2,
+    "synced_to_xero": 8,
+    "failed": 1
   }
 }
 ```
+
+`status_counts` respects the vendor/date filters but deliberately ignores the selected status filter. This keeps every queue badge accurate while the table displays one selected status.
 
 **Error responses:**
 
@@ -380,13 +427,13 @@ Redirects to `/settings/xero?connected=true`
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can edit vendor invoices |
 | 404 | `NOT_FOUND` | Vendor invoice not found |
-| 409 | `INVALID_STATUS` | Invoice cannot be edited in its current status. Only `pending_review` and `extraction_failed` invoices are editable. |
+| 409 | `INVALID_STATUS` | Invoice cannot be edited in its current status. Only `pending_review`, `extraction_failed`, and failed Xero-sync invoices are editable. |
 
 ---
 
 ## 9. POST `/api/vendor-invoices/:id/approve`
 
-**Purpose:** Chloe approves the reviewed invoice (UC-06 step 4). The server performs a duplicate check before approval, updates the status to `approved`, then immediately attempts to sync the bill to Xero (UC-07). The response reflects the final status after the sync attempt so the UI can render "Synced" or "Sync Failed" without a separate poll.
+**Purpose:** Chloe approves the reviewed invoice (UC-06 step 4). The server performs a duplicate check before approval, updates the status to `approved`, then immediately attempts to sync the bill to Xero (UC-07). Before posting, it verifies that the stored account code is still an active expense-family account and resolves an exact supplier to a stable Xero `ContactID`; a missing supplier is created once with a deterministic external contact number. Ambiguous or archived matches are blocked for review. The response reflects the final status after the sync attempt so the UI can render "Synced" or "Sync Failed" without a separate poll.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -425,7 +472,7 @@ Redirects to `/settings/xero?connected=true`
     "id": 15,
     "status": "failed",
     "attempt_count": 1,
-    "error_message": "ContactNotFound: The contact 'Esso Petroleum Singapore Pte Ltd' does not exist in Xero.",
+    "error_message": "Xero has multiple active contacts named \"Esso Petroleum Singapore Pte Ltd\". Add the supplier tax number or merge the duplicates before retrying.",
     "synced_at": null
   }
 }
@@ -488,7 +535,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 11. POST `/api/vendor-invoices/:id/reextract`
 
-**Purpose:** Re-triggers Gemini OCR extraction on an invoice that previously failed (status `extraction_failed`) or was manually requested for re-processing (UC-04 retry edge case). Replaces any previously extracted data and line items with the new extraction result.
+**Purpose:** Re-triggers Gemini OCR extraction on an invoice that previously failed (status `extraction_failed`) or was manually requested for re-processing (UC-04 retry edge case). Replacement requires explicit acknowledgement. Failed retries preserve the current status, fields, and line items; successful replacements store before/after snapshots in the audit trail.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -498,7 +545,12 @@ Redirects to `/settings/xero?connected=true`
 |-------|------|-------------|
 | `id` | integer | Vendor invoice ID |
 
-**Request body:** None
+**Request body:**
+```json
+{
+  "confirm_replace": true
+}
+```
 
 **Success response `200 OK`:**
 ```json
@@ -530,17 +582,19 @@ Redirects to `/settings/xero?connected=true`
 
 | Status | Code | Message |
 |--------|------|---------|
+| 400 | `VALIDATION_ERROR` | `confirm_replace` must be explicitly set to `true` |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can trigger re-extraction |
 | 404 | `NOT_FOUND` | Vendor invoice not found |
 | 409 | `INVALID_STATUS` | Re-extraction is only available for invoices with status `pending_review` or `extraction_failed` |
-| 502 | `OCR_EXTRACTION_FAILED` | Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually. |
+| 409 | `INVOICE_CHANGED` | Invoice data changed while OCR was running; no replacement was applied |
+| 502 | `OCR_EXTRACTION_FAILED` | Re-extraction failed; existing invoice fields, status, and line items were kept unchanged |
 
 ---
 
 ## 12. PATCH `/api/vendor-invoice-items/:id`
 
-**Purpose:** Allows Chloe to correct an individual line item extracted by OCR (UC-06 - editing line items in the right panel). Recalculates the parent invoice's `extracted_total` automatically if `amount` is changed.
+**Purpose:** Allows Chloe to correct an individual line item extracted by OCR (UC-06 - editing line items in the right panel). The server derives `amount` from `quantity × unit_price` and recalculates all parent totals, GST and rebate atomically.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -555,8 +609,7 @@ Redirects to `/settings/xero?connected=true`
 {
   "description": "Diesel 50ppm - 1,200 litres",
   "quantity": "1200.00",
-  "unit_price": "1.45",
-  "amount": "1740.00"
+  "unit_price": "1.45"
 }
 ```
 
@@ -583,11 +636,44 @@ Redirects to `/settings/xero?connected=true`
 
 | Status | Code | Message |
 |--------|------|---------|
-| 400 | `INVALID_AMOUNT` | `amount` must be a positive number |
+| 400 | `VALIDATION_ERROR` | Description, quantity or unit price is invalid |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can edit invoice line items |
 | 404 | `NOT_FOUND` | Invoice line item not found |
 | 409 | `INVALID_STATUS` | Line items cannot be edited - parent invoice is not in an editable status |
+
+---
+
+## 12A. POST `/api/vendor-invoices/:id/items`
+
+**Purpose:** Adds a manual line when OCR omitted invoice content, extraction failed, or a Xero-rejected bill needs accounting correction before retry. The amount is server-derived and all invoice totals are recalculated in the same transaction. Adding a line to an `extraction_failed` invoice returns it to `pending_review`; editing a failed Xero-sync invoice keeps it `failed` so the original approval and retry trail remain intact.
+
+**Auth required:** Yes - roles: `ap_specialist`
+
+**Request body:**
+```json
+{
+  "description": "Ambulance transport",
+  "quantity": 1,
+  "unit_price": 250.00
+}
+```
+
+**Success response:** `201 Created`, containing the created item and recalculated `parent_invoice` summary.
+
+**Errors:** `404 NOT_FOUND` for an unknown invoice, `409 INVALID_STATUS` when the invoice is no longer editable, and `400 VALIDATION_ERROR` for invalid line fields.
+
+---
+
+## 12B. DELETE `/api/vendor-invoice-items/:id`
+
+**Purpose:** Deletes an incorrect OCR or manual line and recalculates totals, GST and rebate in the same transaction. Deleting the final line is allowed, but approval validation will block an invoice with no line items.
+
+**Auth required:** Yes - roles: `ap_specialist`
+
+**Success response:** `200 OK`, containing the deleted item ID and recalculated `parent_invoice` summary.
+
+**Errors:** `404 NOT_FOUND` for an unknown item and `409 INVALID_STATUS` when the parent invoice is no longer editable. Line edits are allowed only for `pending_review`, `extraction_failed`, and failed Xero-sync invoices.
 
 ---
 
@@ -642,11 +728,17 @@ Redirects to `/settings/xero?connected=true`
     "total": 2,
     "total_pages": 1
   },
+  "status_counts": {
+    "pending": 1,
+    "success": 12,
+    "failed": 3
+  },
   "xero_connected": true
 }
 ```
 
 > `retry_available` is `false` when `status = 'success'`, `attempt_count >= 3`, or Xero is not connected.
+> `status_counts` respects the selected `entity_type` filter but ignores the selected `status` filter so the dashboard cards stay accurate while one status is selected.
 
 **Error responses:**
 
@@ -659,7 +751,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 14. POST `/api/xero/sync-logs/:id/retry`
 
-**Purpose:** Retries a failed Xero sync operation (UC-08 step 4). The server checks the token validity and the current `attempt_count` before attempting. If the attempt count is already 3 or more, the retry is blocked and the user is directed to contact support.
+**Purpose:** Retries a failed Xero sync operation (UC-08 step 4). The server checks token validity and the current `attempt_count` before attempting. AP vendor invoices are revalidated before a new Xero push so corrected bills do not resend incomplete coding, totals, or GST data. If the attempt count is already 3 or more, the retry is blocked and the user is directed to contact support.
 
 **Auth required:** Yes - roles: `ap_specialist`, `ar_specialist`
 
@@ -704,6 +796,7 @@ Redirects to `/settings/xero?connected=true`
 | 404 | `NOT_FOUND` | Sync log entry not found |
 | 409 | `RETRY_LIMIT_REACHED` | This sync has failed 3 or more times. Please contact support - this likely indicates a configuration issue in Xero. |
 | 409 | `NOT_FAILED` | Only failed sync log entries can be retried |
+| 409 | `APPROVAL_VALIDATION_FAILED` | Resolve the vendor invoice validation issues before retrying Xero sync. |
 | 503 | `XERO_NOT_CONNECTED` | Xero is not connected. Ask the Managing Director to reconnect before retrying. |
 
 ---

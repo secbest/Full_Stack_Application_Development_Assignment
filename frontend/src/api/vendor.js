@@ -43,11 +43,26 @@ export async function rejectVendorInvoice(id, reason) {
 }
 
 export async function reextractVendorInvoice(id) {
-  const res = await api.post(`/vendor-invoices/${id}/reextract`)
+  const res = await api.post(`/vendor-invoices/${id}/reextract`, { confirm_replace: true })
+  return res.data.data
+}
+
+export async function getVendorInvoiceIntakeSettings() {
+  const res = await api.get('/vendor-invoices/intake-settings')
   return res.data.data
 }
 
 export async function updateVendorInvoiceItem(itemId, payload) {
   const res = await api.patch(`/vendor-invoice-items/${itemId}`, payload)
   return res.data.data // { ...item, parent_invoice }
+}
+
+export async function createVendorInvoiceItem(invoiceId, payload) {
+  const res = await api.post(`/vendor-invoices/${invoiceId}/items`, payload)
+  return res.data.data // { ...item, parent_invoice }
+}
+
+export async function deleteVendorInvoiceItem(itemId) {
+  const res = await api.delete(`/vendor-invoice-items/${itemId}`)
+  return res.data.data // { id, parent_invoice }
 }

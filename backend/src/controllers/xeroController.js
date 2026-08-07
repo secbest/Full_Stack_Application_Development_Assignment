@@ -1,6 +1,6 @@
 const sequelize = require('../config')
 const { XeroConnection, VendorInvoice, VendorInvoiceItem, Invoice, InvoiceLineItem, Client, Booking, User, XeroSyncLog } = require('../models')
-const { xeroService } = require('../services')
+const { xeroService, apInvoiceService } = require('../services')
 const vendorInvoiceAuditService = require('../services/vendorInvoiceAuditService')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
@@ -157,6 +157,26 @@ async function disconnect(req, res) {
   }
 }
 
+// GET /api/xero/expense-accounts - exposes only active accounts suitable for
+// supplier bills. The access token remains server-side and is refreshed first.
+async function expenseAccounts(req, res) {
+  try {
+    const conn = await getFreshConnection()
+    if (!conn) {
+      return error(
+        res,
+        'Xero is not connected. Ask the Managing Director to connect Xero before selecting an expense account.',
+        'XERO_NOT_CONNECTED',
+        503
+      )
+    }
+    const accounts = await xeroService.listExpenseAccounts(conn)
+    return success(res, { accounts, simulated: xeroService.isSimulation() })
+  } catch (err) {
+    return error(res, err.message, 'XERO_ACCOUNT_LOOKUP_FAILED', 502)
+  }
+}
+
 // Resolves a human-readable reference for a sync log's polymorphic entity.
 async function resolveEntityReference(log) {
   if (log.entity_type === 'vendor_invoice') {
@@ -176,17 +196,24 @@ async function resolveEntityReference(log) {
 async function listSyncLogs(req, res) {
   try {
     const { status: statusFilter, entity_type, page, limit } = req.query
-    const where = {}
-    if (statusFilter) where.status = statusFilter
-    if (entity_type) where.entity_type = entity_type
+    const baseWhere = {}
+    if (entity_type) baseWhere.entity_type = entity_type
+    const where = statusFilter ? { ...baseWhere, status: statusFilter } : baseWhere
 
     const offset = (page - 1) * limit
-    const { rows, count } = await XeroSyncLog.findAndCountAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset,
-    })
+    const [{ rows, count }, groupedCounts] = await Promise.all([
+      XeroSyncLog.findAndCountAll({
+        where,
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+      }),
+      XeroSyncLog.count({ where: baseWhere, group: ['status'] }),
+    ])
+    const statusCounts = { pending: 0, success: 0, failed: 0 }
+    for (const row of groupedCounts || []) {
+      if (row.status in statusCounts) statusCounts[row.status] = Number(row.count)
+    }
 
     const conn = await getActiveConnection()
     const xeroConnected = !!conn
@@ -208,6 +235,7 @@ async function listSyncLogs(req, res) {
     return success(res, {
       data,
       pagination: { page, limit, total: count, total_pages: Math.ceil(count / limit) || 1 },
+      status_counts: statusCounts,
       xero_connected: xeroConnected,
     })
   } catch (err) {
@@ -288,6 +316,12 @@ async function retrySync(req, res) {
           synced_at: log.synced_at,
           note: 'This invoice was already present in Xero - the existing record was adopted rather than creating a duplicate bill.',
         })
+      }
+      const approvalValidation = await apInvoiceService.validateForApproval(vendorInvoice)
+      if (!approvalValidation.can_approve) {
+        const message = 'Resolve the vendor invoice validation issues before retrying Xero sync.'
+        await releaseClaim(message)
+        return error(res, message, 'APPROVAL_VALIDATION_FAILED', 409, { data: approvalValidation })
       }
       result = await xeroService.pushBill(vendorInvoice, conn)
     } else if (log.entity_type === 'ar_invoice') {
@@ -400,4 +434,4 @@ async function retrySync(req, res) {
   }
 }
 
-module.exports = { getActiveConnection, ensureFreshConnection, getFreshConnection, status, connect, callback, disconnect, listSyncLogs, retrySync }
+module.exports = { getActiveConnection, ensureFreshConnection, getFreshConnection, status, connect, callback, disconnect, expenseAccounts, listSyncLogs, retrySync }

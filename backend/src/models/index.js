@@ -31,6 +31,7 @@ const GeocodedLocation    = require('./GeocodedLocation')
 
 // Kwan Hua - Xero Foundation, OCR & AP Processing
 const XeroConnection      = require('./XeroConnection')
+const GmailConnection     = require('./GmailConnection')
 const VendorInvoice       = require('./VendorInvoice')
 const VendorInvoiceItem   = require('./VendorInvoiceItem')
 const VendorInvoiceAudit  = require('./VendorInvoiceAudit')
@@ -207,6 +208,7 @@ module.exports = {
 
   // Kwan Hua
   XeroConnection,
+  GmailConnection,
   VendorInvoice,
   VendorInvoiceItem,
   VendorInvoiceAudit,

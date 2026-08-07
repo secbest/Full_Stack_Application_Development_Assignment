@@ -3,9 +3,10 @@
 // editable fields right. Rebate auto-calculation, low-confidence flag, approve/reject/reextract.
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon, History } from 'lucide-react'
+import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon, History, Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useToast } from '@/context/ToastContext'
 import {
   getVendorInvoice,
@@ -13,11 +14,16 @@ import {
   approveVendorInvoice,
   rejectVendorInvoice,
   reextractVendorInvoice,
+  createVendorInvoiceItem,
   updateVendorInvoiceItem,
+  deleteVendorInvoiceItem,
 } from '@/api/vendor'
+import { getXeroExpenseAccounts } from '@/api/xero'
 
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
-const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const EDITABLE_STATUSES = ['pending_review', 'extraction_failed', 'failed']
+const REJECTABLE_STATUSES = ['pending_review', 'extraction_failed']
+const EMPTY_LINE_ITEM = { description: '', quantity: '1', unit_price: '' }
 
 export default function VendorInvoiceReviewPage() {
   const { id } = useParams()
@@ -31,8 +37,15 @@ export default function VendorInvoiceReviewPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [editingItemId, setEditingItemId] = useState(null)
   const [itemForm, setItemForm] = useState({})
+  const [addingItem, setAddingItem] = useState(false)
+  const [newItemForm, setNewItemForm] = useState(EMPTY_LINE_ITEM)
+  const [deleteItemTarget, setDeleteItemTarget] = useState(null)
+  const [confirmingReextract, setConfirmingReextract] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false)
+  const [expenseAccounts, setExpenseAccounts] = useState([])
+  const [expenseAccountsLoading, setExpenseAccountsLoading] = useState(true)
+  const [expenseAccountsError, setExpenseAccountsError] = useState('')
 
   async function load() {
     setLoading(true)
@@ -62,10 +75,33 @@ export default function VendorInvoiceReviewPage() {
     }
   }
 
-  useEffect(() => { load() }, [id])
+  async function loadExpenseAccounts() {
+    setExpenseAccountsLoading(true)
+    try {
+      const data = await getXeroExpenseAccounts()
+      setExpenseAccounts(data.accounts || [])
+      setExpenseAccountsError('')
+    } catch (err) {
+      setExpenseAccounts([])
+      setExpenseAccountsError(err.response?.data?.message || 'Unable to load expense accounts from Xero.')
+    } finally {
+      setExpenseAccountsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    loadExpenseAccounts()
+  }, [id])
 
   const editable = invoice && EDITABLE_STATUSES.includes(invoice.status)
+  const canReject = invoice && REJECTABLE_STATUSES.includes(invoice.status)
   const approvalValidation = invoice?.approval_validation || { can_approve: false, issues: [] }
+  const xeroAccountValid = Boolean(
+    form?.xero_account_code
+    && expenseAccounts.some((account) => account.code === String(form.xero_account_code))
+  )
+  const xeroAccountIssue = !expenseAccountsLoading && (!xeroAccountValid || Boolean(expenseAccountsError))
 
   function changeField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -76,7 +112,9 @@ export default function VendorInvoiceReviewPage() {
     setBusy(true)
     try {
       await updateVendorInvoice(invoice.id, form)
-      toast.success('Changes saved. Rebate recalculated.')
+      toast.success(invoice.status === 'failed'
+        ? 'Changes saved. Retry the Xero sync from Sync Status.'
+        : 'Changes saved. Rebate recalculated.')
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save changes.')
@@ -115,24 +153,86 @@ export default function VendorInvoiceReviewPage() {
   }
 
   async function handleReextract() {
+    setConfirmingReextract(false)
     setBusy(true)
     try {
       await reextractVendorInvoice(invoice.id)
       toast.success('Re-extraction complete.')
       await load()
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Re-extraction failed again.')
+      toast.error(err.response?.data?.message || 'Re-extraction failed. Your existing invoice data was kept.')
     } finally {
       setBusy(false)
     }
   }
 
+  function requestReextract() {
+    if (isDirty) {
+      toast.error('Save or discard the current header changes before retrying extraction.')
+      return
+    }
+    setConfirmingReextract(true)
+  }
+
   function startEditItem(item) {
+    if (isDirty) {
+      toast.error('Save the header changes before editing line items.')
+      return
+    }
+    setAddingItem(false)
     setEditingItemId(item.id)
     setItemForm({ description: item.description, quantity: item.quantity, unit_price: item.unit_price, amount: item.amount })
   }
 
+  function startAddItem() {
+    if (isDirty) {
+      toast.error('Save the header changes before adding line items.')
+      return
+    }
+    setEditingItemId(null)
+    setAddingItem(true)
+  }
+
+  function validLineItem(values) {
+    const quantity = Number(values.quantity)
+    const unitPrice = Number(values.unit_price)
+    if (!values.description.trim()) {
+      toast.error('Enter a line item description.')
+      return false
+    }
+    if (values.quantity === '' || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Quantity must be greater than zero.')
+      return false
+    }
+    if (values.unit_price === '' || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      toast.error('Unit price cannot be negative.')
+      return false
+    }
+    return true
+  }
+
+  async function addItem() {
+    if (!validLineItem(newItemForm)) return
+    setBusy(true)
+    try {
+      await createVendorInvoiceItem(invoice.id, newItemForm)
+      toast.success(invoice.status === 'extraction_failed'
+        ? 'Line item added. The invoice is ready for review.'
+        : invoice.status === 'failed'
+          ? 'Line item added. Retry the Xero sync from Sync Status.'
+          : 'Line item added.')
+      setAddingItem(false)
+      setNewItemForm(EMPTY_LINE_ITEM)
+      await load()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add line item.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function saveItem() {
+    if (!validLineItem(itemForm)) return
     setBusy(true)
     try {
       await updateVendorInvoiceItem(editingItemId, itemForm)
@@ -141,6 +241,27 @@ export default function VendorInvoiceReviewPage() {
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update line item.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeItem() {
+    if (!deleteItemTarget) return
+    if (isDirty) {
+      toast.error('Save the header changes before deleting line items.')
+      setDeleteItemTarget(null)
+      return
+    }
+    const itemId = deleteItemTarget.id
+    setDeleteItemTarget(null)
+    setBusy(true)
+    try {
+      await deleteVendorInvoiceItem(itemId)
+      toast.success('Line item deleted. Totals recalculated.')
+      await load()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete line item.')
     } finally {
       setBusy(false)
     }
@@ -165,14 +286,14 @@ export default function VendorInvoiceReviewPage() {
           {invoice.status === 'pending_review' && (
             <button
               onClick={handleApprove}
-              disabled={busy || isDirty || !approvalValidation.can_approve || (approvalValidation.requires_low_confidence_confirmation && !confirmedLowConfidence)}
-              title={isDirty ? 'Save your changes before approving.' : !approvalValidation.can_approve ? 'Resolve the validation issues first.' : undefined}
+              disabled={busy || isDirty || !approvalValidation.can_approve || !xeroAccountValid || (approvalValidation.requires_low_confidence_confirmation && !confirmedLowConfidence)}
+              title={isDirty ? 'Save your changes before approving.' : (!approvalValidation.can_approve || !xeroAccountValid) ? 'Resolve the validation issues first.' : undefined}
               className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40"
             >
               <UploadCloud size={16} /> Approve &amp; Sync
             </button>
           )}
-          {editable && (
+          {canReject && (
             <button onClick={() => setRejecting(true)} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-500 disabled:opacity-40">
               <XCircle size={16} /> Reject
             </button>
@@ -193,11 +314,14 @@ export default function VendorInvoiceReviewPage() {
           )}
         </div>
       )}
-      {invoice.status === 'pending_review' && (!approvalValidation.can_approve || isDirty) && (
+      {invoice.status === 'pending_review' && (!approvalValidation.can_approve || isDirty || xeroAccountIssue) && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <div className="font-semibold">Approval is blocked</div>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {isDirty && <li>Save the current changes before approving.</li>}
+            {xeroAccountIssue && (
+              <li>{expenseAccountsError || 'Select an active Xero expense account before approving.'}</li>
+            )}
             {(approvalValidation.issues || []).map((validationIssue) => (
               <li key={validationIssue.code}>{validationIssue.message}</li>
             ))}
@@ -207,8 +331,16 @@ export default function VendorInvoiceReviewPage() {
       {invoice.status === 'extraction_failed' && (
         <div className="flex items-center justify-between gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
           <span className="flex items-center gap-2"><AlertTriangle size={14} /> Gemini could not extract data from this PDF. Enter fields manually or retry extraction.</span>
-          <button onClick={handleReextract} disabled={busy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-500 disabled:opacity-40">
+          <button onClick={requestReextract} disabled={busy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-500 disabled:opacity-40">
             <RefreshCw size={12} /> Retry Extraction
+          </button>
+        </div>
+      )}
+      {invoice.status === 'failed' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> Xero rejected this approved bill. Correct the invoice fields or lines here, save, then retry the failed sync.</span>
+          <button onClick={() => navigate('/xero/sync-status')} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-500">
+            Open Sync Status
           </button>
         </div>
       )}
@@ -250,7 +382,14 @@ export default function VendorInvoiceReviewPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Currency" value={form.currency_code} editable={editable} onChange={(v) => changeField('currency_code', v.toUpperCase())} />
-                <Field label="Xero Expense Account" value={form.xero_account_code} editable={editable} onChange={(v) => changeField('xero_account_code', v)} />
+                <XeroAccountField
+                  value={form.xero_account_code}
+                  accounts={expenseAccounts}
+                  editable={editable}
+                  loading={expenseAccountsLoading}
+                  error={expenseAccountsError}
+                  onChange={(v) => changeField('xero_account_code', v)}
+                />
               </div>
               <SelectField
                 label="GST Treatment"
@@ -288,8 +427,34 @@ export default function VendorInvoiceReviewPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Line Items</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Line Items</CardTitle>
+              {editable && (
+                <button
+                  type="button"
+                  onClick={startAddItem}
+                  disabled={busy || addingItem || isDirty}
+                  title={isDirty ? 'Save the header changes first.' : undefined}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <Plus size={13} /> Add Item
+                </button>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {addingItem && (
+                <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                  <div className="grid gap-3 sm:grid-cols-[1fr_90px_120px]">
+                    <Field label="Line Description" value={newItemForm.description} editable onChange={(value) => setNewItemForm((current) => ({ ...current, description: value }))} />
+                    <Field label="Quantity" type="number" value={newItemForm.quantity} editable onChange={(value) => setNewItemForm((current) => ({ ...current, quantity: value }))} />
+                    <Field label="Unit Price" type="number" value={newItemForm.unit_price} editable onChange={(value) => setNewItemForm((current) => ({ ...current, unit_price: value }))} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => { setAddingItem(false); setNewItemForm(EMPTY_LINE_ITEM) }} disabled={busy} className="h-8 rounded-md px-3 text-xs font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+                    <button type="button" onClick={addItem} disabled={busy} className="h-8 rounded-md bg-blue-600 px-3 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40">Add Line</button>
+                  </div>
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <table className="w-full border-collapse">
                   <thead>
@@ -301,7 +466,7 @@ export default function VendorInvoiceReviewPage() {
                   </thead>
                   <tbody>
                     {invoice.items.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">No line items extracted.</td></tr>
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">{invoice.status === 'extraction_failed' ? 'No line items. Add one manually or retry extraction.' : invoice.status === 'failed' ? 'No line items. Add one manually before retrying sync.' : 'No line items. Add one manually before approving.'}</td></tr>
                     ) : invoice.items.map((item) => (
                       <tr key={item.id} className="border-b border-slate-100 last:border-0">
                         {editingItemId === item.id ? (
@@ -323,7 +488,10 @@ export default function VendorInvoiceReviewPage() {
                             <td className="px-3 py-2 text-sm font-medium text-slate-900">{money(item.amount)}</td>
                             <td className="px-3 py-2 text-right">
                               {editable && (
-                                <button onClick={() => startEditItem(item)} className="text-slate-400 hover:text-blue-600"><Pencil size={14} /></button>
+                                <div className="flex justify-end gap-2">
+                                  <button aria-label={`Edit ${item.description}`} onClick={() => startEditItem(item)} disabled={busy || isDirty} className="text-slate-400 hover:text-blue-600 disabled:opacity-40"><Pencil size={14} /></button>
+                                  <button aria-label={`Delete ${item.description}`} onClick={() => setDeleteItemTarget(item)} disabled={busy || isDirty} className="text-slate-400 hover:text-rose-600 disabled:opacity-40"><Trash2 size={14} /></button>
+                                </div>
                               )}
                             </td>
                           </>
@@ -397,6 +565,24 @@ export default function VendorInvoiceReviewPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteItemTarget)}
+        title="Delete line item?"
+        description={deleteItemTarget ? `Delete “${deleteItemTarget.description}”? The invoice totals will be recalculated.` : ''}
+        confirmLabel="Delete Item"
+        onCancel={() => setDeleteItemTarget(null)}
+        onConfirm={removeItem}
+      />
+
+      <ConfirmDialog
+        open={confirmingReextract}
+        title="Replace extracted invoice data?"
+        description={`This will replace the current extracted fields and ${invoice.items.length} line item${invoice.items.length === 1 ? '' : 's'} with a new OCR result. If OCR fails, the current data will be kept.`}
+        confirmLabel="Replace & Retry"
+        onCancel={() => setConfirmingReextract(false)}
+        onConfirm={handleReextract}
+      />
     </div>
   )
 }
@@ -413,6 +599,34 @@ function SelectField({ label, value, onChange, editable, options }) {
       >
         {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
       </select>
+    </label>
+  )
+}
+
+function XeroAccountField({ value, onChange, accounts, editable, loading, error }) {
+  const accountExists = accounts.some((account) => account.code === String(value || ''))
+  const unavailableCurrent = value && !accountExists
+  return (
+    <label className="block">
+      <span className="text-xs uppercase text-slate-500">Xero Expense Account</span>
+      <select
+        value={value || ''}
+        disabled={!editable || loading || Boolean(error)}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full h-9 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
+      >
+        <option value="">{loading ? 'Loading Xero accounts...' : 'Select an expense account'}</option>
+        {unavailableCurrent && <option value={value}>{value} - current code (not active in Xero)</option>}
+        {accounts.map((account) => (
+          <option key={account.code} value={account.code}>
+            {account.code} - {account.name} ({account.type})
+          </option>
+        ))}
+      </select>
+      {error && <span className="mt-1 block text-xs text-rose-600">{error}</span>}
+      {!error && !loading && unavailableCurrent && (
+        <span className="mt-1 block text-xs text-amber-700">Select an active Xero expense account before approval.</span>
+      )}
     </label>
   )
 }

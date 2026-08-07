@@ -39,6 +39,8 @@ describe('XeroSyncStatusPage', () => {
           xero_record_id: null,
           synced_at: null,
         }],
+        pagination: { page: 1, limit: 50, total: 1, total_pages: 1 },
+        status_counts: { pending: 2, success: 7, failed: 4 },
         xero_connected: true,
       },
     })
@@ -53,5 +55,10 @@ describe('XeroSyncStatusPage', () => {
     await userEvent.click(screen.getByText('View reason'))
     expect(disclosure).toHaveAttribute('open')
     expect(screen.getByText(reason)).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('7')).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Fix Invoice/i })).toBeInTheDocument()
+    expect(screen.getByText(/Page 1 of 1/)).toBeInTheDocument()
   })
 })

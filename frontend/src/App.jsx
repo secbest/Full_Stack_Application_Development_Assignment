@@ -110,8 +110,12 @@ export default function App() {
           </Route>
 
           {/* ── AP Specialist (Kwan Hua) ───────────────────────────────────── */}
-          <Route element={<RoleRoute roles={['ap_specialist']} />}>
+          {/* Doris needs read-only access to the AP queue to connect the invoice inbox
+              and view vendor spend; AP-only write controls remain guarded by the API. */}
+          <Route element={<RoleRoute roles={['ap_specialist', 'managing_director']} />}>
             <Route path="/vendor-invoices"     element={<VendorInvoiceListPage />} />
+          </Route>
+          <Route element={<RoleRoute roles={['ap_specialist']} />}>
             <Route path="/vendor-invoices/:id" element={<VendorInvoiceReviewPage />} />
           </Route>
 

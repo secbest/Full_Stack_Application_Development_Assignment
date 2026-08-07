@@ -4,7 +4,7 @@
 // area with no schema. Its single downstream guard rejected a NEGATIVE verified_total, which
 // a negative rebate_percentage can never trigger because it makes verified_total LARGER.
 // These tests pin the arithmetic that made that a money bug, then the bounds that stop it.
-const { vendorInvoiceUpdateSchema, vendorInvoiceItemUpdateSchema } = require('../../src/validators')
+const { vendorInvoiceUpdateSchema, vendorInvoiceReextractSchema, vendorInvoiceItemCreateSchema, vendorInvoiceItemUpdateSchema } = require('../../src/validators')
 const { calculateRebate } = require('../../src/controllers/vendorInvoiceController')
 
 async function validationErrors(schema, body) {
@@ -109,5 +109,34 @@ describe('vendorInvoiceItemUpdateSchema', () => {
   test('rejects non-numeric figures', async () => {
     expect(await validationErrors(vendorInvoiceItemUpdateSchema, { quantity: 'two' })).not.toBeNull()
     expect(await validationErrors(vendorInvoiceItemUpdateSchema, { unit_price: 'ten' })).not.toBeNull()
+  })
+})
+
+describe('vendorInvoiceItemCreateSchema', () => {
+  test('requires every editable line field', async () => {
+    const errors = await validationErrors(vendorInvoiceItemCreateSchema, {})
+
+    expect(errors).toEqual(expect.arrayContaining([
+      'description is required',
+      'quantity is required',
+      'unit_price is required',
+    ]))
+  })
+
+  test('accepts a valid zero-cost line and strips a client-supplied amount', async () => {
+    const cleaned = await vendorInvoiceItemCreateSchema.validate(
+      { description: 'Complimentary item', quantity: 1, unit_price: 0, amount: 999 },
+      { abortEarly: false, stripUnknown: true }
+    )
+
+    expect(cleaned).toEqual({ description: 'Complimentary item', quantity: 1, unit_price: 0 })
+  })
+})
+
+describe('vendorInvoiceReextractSchema', () => {
+  test('only permits replacement after explicit true confirmation', async () => {
+    expect(await validationErrors(vendorInvoiceReextractSchema, {})).toContain('confirm_replace is required')
+    expect(await validationErrors(vendorInvoiceReextractSchema, { confirm_replace: false })).toContain('confirm_replace must be true before replacing existing invoice data')
+    expect(await validationErrors(vendorInvoiceReextractSchema, { confirm_replace: true })).toBeNull()
   })
 })

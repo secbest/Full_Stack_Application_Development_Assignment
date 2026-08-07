@@ -1,13 +1,15 @@
 // Owner: Kwan Hua (AP Specialist)
 // Vendor Invoice List (screen 16): upload modal (PDF drag-drop), OCR confidence column,
 // color-coded confidence %, status filter tabs.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Eye, UploadCloud, FileText, X } from 'lucide-react'
+import { Building2, Eye, UploadCloud, FileText, Mail, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
-import { listVendorInvoices, uploadVendorInvoice } from '@/api/vendor'
+import { useAuth } from '@/hooks'
+import { getVendorInvoiceIntakeSettings, listVendorInvoices, uploadVendorInvoice } from '@/api/vendor'
+import { getGmailConnectUrl, getGmailIntakeStatus, importGmailInvoices } from '@/api/gmail'
 
 const STATUSES = ['pending_review', 'extraction_failed', 'approved', 'synced_to_xero', 'failed', 'rejected']
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
@@ -22,16 +24,22 @@ function ConfidenceCell({ confidence, isLowConfidence }) {
 export default function VendorInvoiceListPage() {
   const toast = useToast()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [statusCounts, setStatusCounts] = useState({})
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [intakeSettings, setIntakeSettings] = useState(null)
+  const [gmailStatus, setGmailStatus] = useState(undefined)
+  const [gmailBusy, setGmailBusy] = useState(false)
 
   async function fetchInvoices() {
     setLoading(true)
     try {
-      const { data } = await listVendorInvoices({ limit: 100, status: statusFilter || undefined })
+      const { data, status_counts: counts } = await listVendorInvoices({ limit: 100, status: statusFilter || undefined })
       setRows(data)
+      setStatusCounts(counts || {})
     } catch {
       toast.error('Failed to load vendor invoices.')
     } finally {
@@ -40,11 +48,29 @@ export default function VendorInvoiceListPage() {
   }
 
   useEffect(() => { fetchInvoices() }, [statusFilter])
+  useEffect(() => {
+    // This is supplementary information; a temporarily unavailable configuration
+    // endpoint must never stop staff from opening the AP queue.
+    getVendorInvoiceIntakeSettings().then(setIntakeSettings).catch(() => {})
+  }, [])
+  useEffect(() => { getGmailIntakeStatus().then(setGmailStatus).catch(() => setGmailStatus(false)) }, [])
 
-  const counts = useMemo(
-    () => STATUSES.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc }, {}),
-    [rows]
-  )
+  async function connectGmail() {
+    setGmailBusy(true)
+    try { window.location.href = await getGmailConnectUrl() }
+    catch (err) { toast.error(err.response?.data?.message || 'Could not start Gmail connection.') ; setGmailBusy(false) }
+  }
+
+  async function importFromGmail() {
+    setGmailBusy(true)
+    try {
+      const result = await importGmailInvoices()
+      const successful = result.imported.filter((row) => row.imported).length
+      toast.success(successful ? `${successful} Gmail message(s) imported into AP.` : 'No labelled PDF invoices are waiting in Gmail.')
+      await fetchInvoices()
+    } catch (err) { toast.error(err.response?.data?.message || 'Gmail import failed.') }
+    finally { setGmailBusy(false) }
+  }
 
   return (
     <div className="p-6 space-y-4 font-sans">
@@ -53,12 +79,51 @@ export default function VendorInvoiceListPage() {
           <Building2 className="w-5 h-5 text-muted-foreground" />
           <h1 className="text-2xl font-semibold text-foreground">Vendor Invoices</h1>
         </div>
-        <button
-          onClick={() => setUploadOpen(true)}
-          className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
-        >
-          <UploadCloud size={16} /> Upload Invoice
-        </button>
+        {user?.role === 'ap_specialist' && (
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800"
+          >
+            <UploadCloud size={16} /> Upload Invoice
+          </button>
+        )}
+      </div>
+
+      {intakeSettings && (
+        <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+          intakeSettings.configured
+            ? 'border-blue-200 bg-blue-50 text-blue-900'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          <Mail size={18} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold">Email invoice intake</div>
+            {intakeSettings.configured ? (
+              <p className="mt-0.5 text-xs">Forward vendor PDF invoices to <span className="font-mono font-semibold">{intakeSettings.forwarding_address}</span>. Each attachment enters this review queue automatically.</p>
+            ) : (
+              <p className="mt-0.5 text-xs">Automatic forwarding has not been configured yet. You can still upload a PDF manually.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className="flex items-start gap-3">
+          <Mail size={18} className="mt-0.5 shrink-0 text-rose-600" />
+          <div>
+            <div className="font-semibold text-slate-900">Gmail AP intake</div>
+            <p className="mt-0.5 text-xs text-slate-600">
+              {gmailStatus === undefined ? 'Checking Gmail connection…' : gmailStatus === false ? 'Gmail status could not load. Refresh the page and make sure you are signed in as AP or Managing Director.' : gmailStatus.is_connected ? `Connected to ${gmailStatus.gmail_address}. Label invoice emails “${gmailStatus.intake_label}”, then import them.` : 'Connect the invoice Gmail inbox to import labelled PDF invoices.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {gmailStatus && gmailStatus.is_connected ? (
+            <button onClick={importFromGmail} disabled={gmailBusy} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">{gmailBusy ? 'Importing…' : 'Import Gmail'}</button>
+          ) : gmailStatus && user?.role === 'managing_director' ? (
+            <button onClick={connectGmail} disabled={gmailBusy || !gmailStatus.configured} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">Connect Gmail</button>
+          ) : null}
+        </div>
       </div>
 
       <Card>
@@ -71,7 +136,7 @@ export default function VendorInvoiceListPage() {
             <button onClick={() => setStatusFilter('')} className={`h-8 px-3 rounded-full text-xs ${!statusFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All</button>
             {STATUSES.map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)} className={`h-8 px-3 rounded-full text-xs capitalize ${statusFilter === s ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                {s.replace(/_/g, ' ')} ({counts[s] ?? 0})
+                {s.replace(/_/g, ' ')} ({statusCounts[s] ?? 0})
               </button>
             ))}
           </div>
@@ -102,9 +167,11 @@ export default function VendorInvoiceListPage() {
                       <td className="px-4 py-2"><ConfidenceCell confidence={inv.extraction_confidence} isLowConfidence={inv.is_low_confidence} /></td>
                       <td className="px-4 py-2"><StatusBadge status={inv.status} /></td>
                       <td className="px-4 py-2">
-                        <button onClick={() => navigate(`/vendor-invoices/${inv.id}`)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all">
-                          <Eye size={12} /><span>Review</span>
-                        </button>
+                        {user?.role === 'ap_specialist' ? (
+                          <button onClick={() => navigate(`/vendor-invoices/${inv.id}`)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all">
+                            <Eye size={12} /><span>Review</span>
+                          </button>
+                        ) : <span className="text-xs text-slate-400">Read only</span>}
                       </td>
                     </tr>
                   ))}
@@ -119,13 +186,14 @@ export default function VendorInvoiceListPage() {
         <UploadModal
           onClose={() => setUploadOpen(false)}
           onUploaded={(invoice) => { setUploadOpen(false); navigate(`/vendor-invoices/${invoice.id}`) }}
+          onExtractionFailed={(invoice) => { setUploadOpen(false); navigate(`/vendor-invoices/${invoice.id}`) }}
         />
       )}
     </div>
   )
 }
 
-function UploadModal({ onClose, onUploaded }) {
+function UploadModal({ onClose, onUploaded, onExtractionFailed }) {
   const toast = useToast()
   const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
@@ -151,7 +219,16 @@ function UploadModal({ onClose, onUploaded }) {
       toast.success(`Uploaded - extracted total ${invoice.extracted_total ? `$${invoice.extracted_total}` : 'pending'}.`)
       onUploaded(invoice)
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Upload failed. Please retry.')
+      const response = err.response?.data
+      const savedInvoice = response?.code === 'OCR_EXTRACTION_FAILED' && response.data?.id
+        ? response.data
+        : null
+      if (savedInvoice) {
+        toast.warning('OCR failed, but the invoice was saved. Enter the details manually or retry extraction.')
+        onExtractionFailed(savedInvoice)
+      } else {
+        toast.error(response?.message || 'Upload failed. Please retry.')
+      }
     } finally {
       setBusy(false)
     }
