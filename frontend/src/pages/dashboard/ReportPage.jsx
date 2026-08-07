@@ -689,9 +689,13 @@ export default function ReportsScreen() {
     let cancelled = false;
     setInvoicesLoading(true);
     setInvoicesError("");
+    // .toISOString() converts these already-local (Singapore) midnight/end-of-day Date
+    // objects to their true UTC instant - reconstructing from toYMD()'s local Y-M-D string
+    // with a hardcoded "Z" suffix would instead read local midnight as UTC midnight, an
+    // 8-hour error that silently excludes anything created before 8am local time "today".
     fetchInvoices({
-      from_date: dateRange.startDate ? `${toYMD(dateRange.startDate)}T00:00:00.000Z` : undefined,
-      to_date: dateRange.endDate ? `${toYMD(dateRange.endDate)}T23:59:59.999Z` : undefined,
+      from_date: dateRange.startDate ? dateRange.startDate.toISOString() : undefined,
+      to_date: dateRange.endDate ? dateRange.endDate.toISOString() : undefined,
       limit: 100,
     })
       .then((res) => {
