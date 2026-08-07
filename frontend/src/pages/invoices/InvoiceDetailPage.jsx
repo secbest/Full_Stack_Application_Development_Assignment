@@ -10,7 +10,10 @@ import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
 import { getInvoice, rematchInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
 import { SURCHARGE_TYPES } from '@/validation/contractValidation'
-import { SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS } from '@/lib/contractLabels'
+import {
+  SERVICE_TYPE_LABELS, TRANSFER_TYPE_LABELS, TIME_OF_DAY_LABELS,
+  SURCHARGE_TYPE_LABELS, SURCHARGE_DEFAULT_AMOUNTS,
+} from '@/lib/contractLabels'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
 // Realistic ceilings for a manual adjustment - mirror backend/src/controllers/invoiceController.js.
@@ -33,6 +36,7 @@ export default function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const match = invoice?.matching_requirements
   const [adding, setAdding] = useState(false)
   const [adjustmentType, setAdjustmentType] = useState('')
   const [form, setForm] = useState({ description: '', quantity: '1', unit_price: '' })
@@ -119,7 +123,7 @@ export default function InvoiceDetailPage() {
     try {
       const result = await rematchInvoice(invoice.id)
       if (result.warning) toast.warning(`Invoice matched. ${result.warning.message}`)
-      else toast.success('Invoice matched successfully using the active pricing contract.')
+      else toast.success('Invoice matched successfully using the approved booking price.')
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'The invoice still could not be matched.')
@@ -193,13 +197,48 @@ export default function InvoiceDetailPage() {
       {invoice.status === 'unmatched' && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <p className="text-sm font-semibold text-amber-900">Automatic pricing needs a contract or matching rate</p>
+            <p className="text-sm font-semibold text-amber-900">
+              {match?.reason === 'quote_mismatch'
+                ? 'Completed service differs from the approved quotation'
+                : match?.reason === 'missing_rate'
+                  ? 'The active contract is missing this rate'
+                  : 'No active pricing contract covers this service'}
+            </p>
             <p className="mt-0.5 text-xs text-amber-800">
-              Create or update the client's pricing contract so it covers the booking's service date and memo combination, then select Retry Match. You can also price every charge manually below.
+              {match?.reason === 'quote_mismatch' ? (
+                <>
+                  Quoted: <strong>{SERVICE_TYPE_LABELS[match.quoted_service_type] || match.quoted_service_type}</strong>
+                  {' / '}<strong>{TRANSFER_TYPE_LABELS[match.quoted_transfer_type] || match.quoted_transfer_type}</strong>
+                  {' / '}<strong>{TIME_OF_DAY_LABELS[match.quoted_time_of_day] || match.quoted_time_of_day}</strong>.
+                  {' '}Completed: <strong>{SERVICE_TYPE_LABELS[match.service_type] || match.service_type}</strong>
+                  {' / '}<strong>{TRANSFER_TYPE_LABELS[match.transfer_type] || match.transfer_type}</strong>
+                  {' / '}<strong>{TIME_OF_DAY_LABELS[match.time_of_day] || match.time_of_day}</strong>.
+                  {' '}Verify the completed service, then price the actual service manually below.
+                </>
+              ) : match ? (
+                <>
+                  Required: <strong>{SERVICE_TYPE_LABELS[match.service_type] || match.service_type}</strong>
+                  {' / '}<strong>{TRANSFER_TYPE_LABELS[match.transfer_type] || match.transfer_type}</strong>
+                  {' / '}<strong>{TIME_OF_DAY_LABELS[match.time_of_day] || match.time_of_day}</strong>
+                  {' '}for service date <strong>{match.service_date}</strong>. Add that rate, then select Retry Match. You can also price every charge manually below.
+                </>
+              ) : (
+                <>Create or update the client's pricing contract so it covers the booking's service date and memo combination, then select Retry Match. You can also price every charge manually below.</>
+              )}
             </p>
           </div>
-          <button onClick={() => navigate('/pricing-contracts')} className="mt-3 shrink-0 rounded-md border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:mt-0">
-            View Pricing Contracts
+          <button
+            onClick={() => {
+              if (match?.reason === 'quote_mismatch') setAdding(true)
+              else navigate(invoice.contract_id
+                ? `/pricing-contracts/${invoice.contract_id}`
+                : `/pricing-contracts/new?client_id=${invoice.client_id}`)
+            }}
+            className="mt-3 shrink-0 rounded-md border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:mt-0"
+          >
+            {match?.reason === 'quote_mismatch'
+              ? 'Price Manually'
+              : (invoice.contract_id ? 'Open Contract Rates' : 'Create Pricing Contract')}
           </button>
         </div>
       )}
@@ -235,7 +274,11 @@ export default function InvoiceDetailPage() {
           <CardContent className="space-y-3 text-sm">
             <Row label="Client" value={invoice.client_name} />
             <Row label="Booking" value={invoice.booking_reference} />
-            <Row label="Contract" value={invoice.contract_name || '—'} />
+            <Row label="Pricing Source" value={invoice.pricing_source === 'one_off_quote'
+              ? 'One-off quotation'
+              : (invoice.pricing_source ? 'Client contract' : 'Not recorded')} />
+            <Row label="Contract" value={invoice.contract_name || '-'} />
+            {invoice.quoted_base_amount != null && <Row label="Quoted Base" value={money(invoice.quoted_base_amount)} />}
             <Row label="Memo ID" value={`#${invoice.memo_id}`} />
             <div className="border-t border-slate-100 pt-3" />
             <Row label="Subtotal" value={money(invoice.subtotal)} />

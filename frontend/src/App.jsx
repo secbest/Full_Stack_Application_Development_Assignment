@@ -25,6 +25,7 @@ import DashboardPage from './pages/dashboard/DashboardPage'
 import ReportPage from './pages/dashboard/ReportPage'
 import RevenueLeakagePage from './pages/dashboard/RevenueLeakagePage'
 import ManagementPage from './pages/dashboard/Management'
+import FleetTrackerPage from './pages/dashboard/FleetTrackerPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
 // AR Specialist (design Jasper; Wave 3 implemented by Kwan Hua)
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/reports" element={<ReportPage />} />
             <Route path="/management" element={<ManagementPage />} />
+            <Route path="/fleet-tracker" element={<FleetTrackerPage />} />
           </Route>
 
           {/* ── Revenue Leakage report (Kwan Hua): MD reads it, AR acts on it ─ */}

@@ -1,10 +1,39 @@
 const { Op } = require('sequelize')
-const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, SurchargeSchedule, Client, JobMilestone, XeroSyncLog } = require('../models')
+const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, SurchargeSchedule, Client, JobMilestone, XeroSyncLog, User } = require('../models')
 const { leakageService } = require('../services')
 const xeroService = require('../services/xeroService')
+const geocodingService = require('../services/geocodingService')
 const { success, internalError, round2 } = require('../utils')
 
 const BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'invoiced']
+
+// Same 5-minute window Accounts Management uses for "Currently Online" (see
+// userController.js's isOnline) - a field crew member with no active job is "available"
+// if they're logged in and active, otherwise "off duty".
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000
+function isOnline(lastActiveAt) {
+  if (!lastActiveAt) return false
+  return Date.now() - new Date(lastActiveAt).getTime() <= ONLINE_THRESHOLD_MS
+}
+
+const MILESTONE_SEQUENCE = ['activated', 'arrived_at_location', 'en_route', 'arrived_at_destination', 'job_completed']
+
+// ~200m of random offset at Singapore's latitude, so two crews simultaneously "en route"
+// near the same midpoint don't render as exactly overlapping pins.
+function jitter(value) {
+  return value + (Math.random() - 0.5) * 0.004
+}
+
+// Every crew member with no active job (available or off_duty) shares the exact same HQ
+// coordinate - without this they'd render as one pin stacked 6-deep instead of 6 visible
+// ones. Deterministic (golden-angle spacing by id, not Math.random()) so a stationary
+// crew member's pin doesn't drift to a new spot on every 30s poll - only real movement
+// (the en_route jitter above) should look "live".
+const HQ_SPREAD_DEGREES = 0.0015 // ~150m at Singapore's latitude
+function hqOffset(crewId) {
+  const angle = ((crewId * 137.5) % 360) * (Math.PI / 180)
+  return { lat: Math.sin(angle) * HQ_SPREAD_DEGREES, lng: Math.cos(angle) * HQ_SPREAD_DEGREES }
+}
 
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -554,4 +583,105 @@ async function leakageHistory(req, res) {
   }
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory }
+// Live Fleet Tracker: one row per field crew member, with a status derived from their
+// current job (if any) and a simulated position. Positions "jump" between pickup,
+// midpoint, and destination as milestones are tapped, rather than animating on a
+// fabricated timer - the pin only moves when a real JobMilestone event says it should.
+async function crewPositions(req, res) {
+  try {
+    const crew = await User.findAll({
+      where: { role: 'field_crew' },
+      attributes: ['id', 'name', 'last_active_at'],
+      order: [['name', 'ASC']],
+    })
+    const crewIds = crew.map((c) => c.id)
+
+    const activeBookings = crewIds.length
+      ? await Booking.findAll({
+          where: { assigned_crew_id: { [Op.in]: crewIds }, status: 'in_progress' },
+          attributes: ['id', 'assigned_crew_id', 'reference_number', 'pickup_location', 'destination'],
+        })
+      : []
+    const bookingByCrewId = new Map(activeBookings.map((b) => [b.assigned_crew_id, b]))
+
+    const milestoneRows = activeBookings.length
+      ? await JobMilestone.findAll({
+          where: { booking_id: { [Op.in]: activeBookings.map((b) => b.id) } },
+          attributes: ['booking_id', 'milestone_type'],
+        })
+      : []
+    const milestonesByBooking = new Map()
+    milestoneRows.forEach((m) => {
+      if (!milestonesByBooking.has(m.booking_id)) milestonesByBooking.set(m.booking_id, new Set())
+      milestonesByBooking.get(m.booking_id).add(m.milestone_type)
+    })
+
+    function latestStage(bookingId) {
+      const recorded = milestonesByBooking.get(bookingId) || new Set()
+      for (let i = MILESTONE_SEQUENCE.length - 1; i >= 0; i--) {
+        if (recorded.has(MILESTONE_SEQUENCE[i])) return MILESTONE_SEQUENCE[i]
+      }
+      return null
+    }
+
+    // 'arrived_at_location' = at pickup (on scene collecting the patient); 'en_route' =
+    // between pickup and destination; 'arrived_at_destination'/'job_completed' = at
+    // destination. 'activated' (or no milestone yet, which shouldn't happen once a
+    // booking is in_progress) means still heading to pickup.
+    async function computeJobPosition(booking) {
+      const stage = latestStage(booking.id)
+
+      if (stage === 'arrived_at_location') {
+        return { status: 'on_scene', position: await geocodingService.geocodeAddress(booking.pickup_location) }
+      }
+      if (stage === 'en_route') {
+        const [pickup, destination] = await Promise.all([
+          geocodingService.geocodeAddress(booking.pickup_location),
+          geocodingService.geocodeAddress(booking.destination),
+        ])
+        return {
+          status: 'en_route',
+          position: { lat: jitter((pickup.lat + destination.lat) / 2), lng: jitter((pickup.lng + destination.lng) / 2) },
+        }
+      }
+      if (stage === 'arrived_at_destination' || stage === 'job_completed') {
+        return { status: 'on_scene', position: await geocodingService.geocodeAddress(booking.destination) }
+      }
+      return { status: 'en_route', position: await geocodingService.geocodeAddress(booking.pickup_location) }
+    }
+
+    const now = new Date()
+    const results = await Promise.all(crew.map(async (member) => {
+      const booking = bookingByCrewId.get(member.id)
+
+      if (!booking) {
+        const hq = await geocodingService.geocodeAddress(geocodingService.HQ_ADDRESS)
+        const offset = hqOffset(member.id)
+        return {
+          id: member.id,
+          name: member.name,
+          status: isOnline(member.last_active_at) ? 'available' : 'off_duty',
+          position: { lat: hq.lat + offset.lat, lng: hq.lng + offset.lng },
+          current_job_reference: null,
+          last_updated: now,
+        }
+      }
+
+      const { status, position } = await computeJobPosition(booking)
+      return {
+        id: member.id,
+        name: member.name,
+        status,
+        position,
+        current_job_reference: booking.reference_number,
+        last_updated: now,
+      }
+    }))
+
+    return success(res, results)
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory, crewPositions }

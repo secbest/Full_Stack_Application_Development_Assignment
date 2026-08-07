@@ -63,11 +63,12 @@
 1. Camilla opens the intake submission detail view.
 2. She reviews all submitted fields - service type, requested date, location, and service tier.
 3. She verifies the service tier is appropriate for the described situation (UC-05).
-4. She clicks "Confirm Booking".
-5. The system creates a new `bookings` record linked to the intake submission with status `confirmed`, copying over the service tier, scheduled date, and location.
-6. The `intake_submissions` status updates to `confirmed`.
-7. The booking appears in the booking list (UC-07) and is available for crew assignment (UC-06).
-8. The customer's submitted contact email receives a booking confirmation notification.
+4. She selects an existing client contract or records a one-off agreed quotation, including transfer type and time category.
+5. She clicks "Confirm Booking".
+6. The system creates a new `bookings` record linked to the intake submission with status `confirmed`, copying the service details and freezing the approved base price for AR.
+7. The `intake_submissions` status updates to `confirmed`.
+8. The booking appears in the booking list (UC-07) and is available for crew assignment (UC-06).
+9. The customer's submitted contact email receives a booking confirmation notification.
 
 **Edge Cases / Alternative Flows:**
 - **The requested date is in the past:** The system warns Camilla before she confirms: "The requested service date has already passed. Please contact the customer to confirm a new date before creating the booking."

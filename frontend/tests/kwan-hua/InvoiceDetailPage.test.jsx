@@ -103,7 +103,7 @@ describe('InvoiceDetailPage - retry automatic matching', () => {
 
     renderDetail()
     await screen.findByRole('heading', { name: 'Invoice #9' })
-    expect(screen.getByText(/Automatic pricing needs a contract or matching rate/i)).toBeInTheDocument()
+    expect(screen.getByText(/No active pricing contract covers this service/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Retry Match/i }))
 
@@ -111,6 +111,51 @@ describe('InvoiceDetailPage - retry automatic matching', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Invoice matched successfully')
     expect(mock.history.post).toHaveLength(1)
     expect(mock.history.post[0].url).toBe('/invoices/9/rematch')
+  })
+
+  test('shows the exact missing rate combination and links to the active contract', async () => {
+    mock.onGet('/invoices/9').reply(200, {
+      success: true,
+      data: baseInvoice({
+        status: 'unmatched', contract_id: 7, contract_name: 'TTSH - FY2027',
+        subtotal: '0.00', total_amount: '0.00', line_items: [],
+        matching_requirements: {
+          reason: 'missing_rate', service_date: '2026-08-01', service_type: 'eas',
+          transfer_type: 'two_way_hospital', time_of_day: 'office_hours',
+        },
+      }),
+    })
+
+    renderDetail()
+
+    expect(await screen.findByText('The active contract is missing this rate')).toBeInTheDocument()
+    expect(screen.getByText(/Required:/i)).toHaveTextContent('EAS / Two-Way Hospital / Office Hours for service date 2026-08-01')
+    expect(screen.getByRole('button', { name: 'Open Contract Rates' })).toBeInTheDocument()
+  })
+
+  test('explains a quotation mismatch and offers manual pricing instead of a new contract', async () => {
+    mock.onGet('/invoices/9').reply(200, {
+      success: true,
+      data: baseInvoice({
+        status: 'unmatched', contract_id: null, contract_name: null,
+        pricing_source: 'one_off_quote', quoted_base_amount: '725.50',
+        subtotal: '0.00', total_amount: '0.00', line_items: [],
+        matching_requirements: {
+          reason: 'quote_mismatch', service_date: '2026-08-01',
+          quoted_service_type: 'eas', quoted_transfer_type: 'one_way_hospital', quoted_time_of_day: 'office_hours',
+          service_type: 'eas', transfer_type: 'two_way_hospital', time_of_day: 'office_hours',
+        },
+      }),
+    })
+
+    renderDetail()
+
+    expect(await screen.findByText('Completed service differs from the approved quotation')).toBeInTheDocument()
+    expect(screen.getByText(/Quoted:/i)).toHaveTextContent('Quoted: EAS / One-Way Hospital / Office Hours')
+    expect(screen.getByRole('button', { name: 'Price Manually' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create Pricing Contract' })).not.toBeInTheDocument()
+    expect(screen.getByText('One-off quotation')).toBeInTheDocument()
+    expect(screen.getByText('$725.50')).toBeInTheDocument()
   })
 
   test('uses the proper Xero product name in the locked invoice message', async () => {

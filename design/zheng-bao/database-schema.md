@@ -162,6 +162,13 @@ Stores confirmed service jobs. Created by Camilla when she approves an intake su
 | `service_type` | `DataTypes.ENUM('eas', 'mts', 'event_standby', 'workplace_standby')` | NOT NULL |
 | `service_tier` | `DataTypes.ENUM('basic', 'advanced', 'critical')` | NOT NULL - Camilla's confirmed tier, may differ from the intake submission |
 | `original_service_tier` | `DataTypes.ENUM('basic', 'advanced', 'critical')` | allowNull: true - populated only when Camilla adjusts the tier (UC-05 audit trail) |
+| `pricing_source` | `DataTypes.STRING(30)` | `contract` or `one_off_quote`; nullable only for legacy bookings |
+| `pricing_contract_id` | `DataTypes.INTEGER` | allowNull: true, Foreign Key to `pricing_contracts.id` |
+| `quoted_base_amount` | `DataTypes.DECIMAL(10,2)` | Frozen base price approved by Quotations |
+| `quoted_transfer_type` | `DataTypes.STRING(50)` | Transfer combination sold to the client |
+| `quoted_time_of_day` | `DataTypes.STRING(30)` | `office_hours`, `non_office_hours`, or `all_hours` |
+| `quoted_by` | `DataTypes.INTEGER` | allowNull: true, Foreign Key to the Quotations Specialist in `users.id` |
+| `quoted_at` | `DataTypes.DATE` | Time the price was frozen on confirmation |
 | `scheduled_date` | `DataTypes.DATEONLY` | NOT NULL |
 | `scheduled_time` | `DataTypes.STRING(10)` | NOT NULL - stored as `HH:MM` string |
 | `pickup_location` | `DataTypes.TEXT` | NOT NULL |

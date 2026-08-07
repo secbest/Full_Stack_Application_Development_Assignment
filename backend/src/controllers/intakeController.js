@@ -1,8 +1,10 @@
 const { Op } = require('sequelize')
-const { IntakeSubmission, Booking, Client, User } = require('../models')
+const { IntakeSubmission, Booking, Client, User, PricingRate } = require('../models')
 const { success, created, error, notFound } = require('../utils')
 const { intakeCreateSchema, intakeConfirmSchema, intakeRejectSchema } = require('../validators')
 const notificationService = require('../services/notificationService')
+const pricingService = require('../services/pricingService')
+const { findActiveContract } = require('../services/activeContractService')
 
 function buildReference(prefix, nextNumber) {
   return `${prefix}-${String(nextNumber).padStart(5, '0')}`
@@ -183,6 +185,46 @@ async function confirmIntake(req, res) {
       defaults: { name: clientName, contact_email: clientEmail, contact_phone: intake.contact_phone },
     })
 
+    const scheduledDate = body.scheduled_date || intake.preferred_date
+    let pricingContractId = null
+    let quotedBaseAmount = Number(body.quoted_base_amount)
+    if (body.pricing_source === 'contract') {
+      const contract = await findActiveContract(client.id, new Date(`${scheduledDate}T00:00:00.000Z`))
+      if (!contract) {
+        return error(
+          res,
+          'No active pricing contract covers this client and service date. Select one-off quotation and enter the agreed price, or ask AR to create the contract first.',
+          'NO_ACTIVE_CONTRACT',
+          422
+        )
+      }
+      const rates = await PricingRate.findAll({
+        where: {
+          contract_id: contract.id,
+          service_type: intake.service_type,
+          transfer_type: body.quoted_transfer_type,
+        },
+      })
+      const selectedRate = pricingService.selectBaseRate(
+        rates,
+        body.quoted_time_of_day === 'office_hours'
+      )
+      // all_hours is an explicit quotation choice, not a synonym for non-office hours.
+      const compatibleRate = body.quoted_time_of_day === 'all_hours'
+        ? rates.find((rate) => rate.time_of_day === 'all_hours')
+        : selectedRate
+      if (!compatibleRate || !['all_hours', body.quoted_time_of_day].includes(compatibleRate.time_of_day)) {
+        return error(
+          res,
+          'The active contract has no rate for the selected service, transfer, and time combination. Select one-off quotation or have AR add the contract rate.',
+          'NO_MATCHING_RATE',
+          422
+        )
+      }
+      pricingContractId = contract.id
+      quotedBaseAmount = Number(compatibleRate.base_amount)
+    }
+
     const nextBookingNumber = await nextReferenceNumber(Booking, 'BKG-2026')
     const booking = await Booking.create({
       reference_number: buildReference('BKG-2026', nextBookingNumber),
@@ -192,7 +234,14 @@ async function confirmIntake(req, res) {
       service_type: intake.service_type,
       service_tier: body.service_tier,
       original_service_tier: intake.service_tier && body.service_tier !== intake.service_tier ? intake.service_tier : null,
-      scheduled_date: body.scheduled_date || intake.preferred_date,
+      pricing_source: body.pricing_source,
+      pricing_contract_id: pricingContractId,
+      quoted_base_amount: quotedBaseAmount,
+      quoted_transfer_type: body.quoted_transfer_type,
+      quoted_time_of_day: body.quoted_time_of_day,
+      quoted_by: req.user.sub,
+      quoted_at: new Date(),
+      scheduled_date: scheduledDate,
       scheduled_time: body.scheduled_time || intake.preferred_time,
       pickup_location: body.pickup_location || intake.pickup_location,
       destination: body.destination || intake.destination,
@@ -209,6 +258,11 @@ async function confirmIntake(req, res) {
       status: booking.status,
       scheduled_date: booking.scheduled_date,
       scheduled_time: booking.scheduled_time,
+      pricing_source: booking.pricing_source,
+      pricing_contract_id: booking.pricing_contract_id,
+      quoted_base_amount: booking.quoted_base_amount,
+      quoted_transfer_type: booking.quoted_transfer_type,
+      quoted_time_of_day: booking.quoted_time_of_day,
     })
   } catch (err) {
     if (err.name === 'ValidationError') return error(res, err.errors.join(', '), 'VALIDATION_ERROR', 400)

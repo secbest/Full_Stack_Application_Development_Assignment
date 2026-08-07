@@ -77,3 +77,7 @@ export function getRevenueByServiceType(params) {
 export function getLeakageHistory(params) {
   return api.get('/dashboard/leakage-history', { params })
 }
+
+export function getCrewPositions() {
+  return api.get('/dashboard/crew-positions')
+}

@@ -13,6 +13,7 @@ import {
   TrendingDown,
   Users,
   Settings,
+  MapPin,
 } from 'lucide-react'
 
 // NAV_ROUTES drives both the sidebar nav in AppLayout and the route tree in App.jsx.
@@ -40,6 +41,13 @@ export const NAV_ROUTES = [
     label: 'Accounts Management',
     sub: 'Users & access',
     Icon: Users,
+    roles: ['managing_director'],
+  },
+  {
+    path: '/fleet-tracker',
+    label: 'Fleet Tracker',
+    sub: 'Live crew positions',
+    Icon: MapPin,
     roles: ['managing_director'],
   },
 

@@ -19,7 +19,11 @@ jest.mock('../../src/config', () => ({
 
 jest.mock('../../src/services', () => ({
   xeroService: { pushArInvoice: jest.fn(), MAX_SYNC_ATTEMPTS: 3 },
-  pricingService: { computeInvoiceLineItems: jest.fn() },
+  pricingService: {
+    computeInvoiceLineItems: jest.fn(),
+    quotationMatchesMemo: jest.fn(),
+    computeQuotedInvoiceLineItems: jest.fn(),
+  },
   gstService: {
     buildSnapshot: jest.fn(),
     calculateTotals: jest.fn((items, rate) => {
@@ -45,7 +49,7 @@ const { xeroService, pricingService, gstService } = require('../../src/services'
 const notificationService = require('../../src/services/notificationService')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  addLineItem, updateLineItem, deleteLineItem, rematchInvoice, batchApprove, retryXero, listInvoices,
+  getInvoiceById, addLineItem, updateLineItem, deleteLineItem, rematchInvoice, batchApprove, retryXero, listInvoices,
 } = require('../../src/controllers/invoiceController')
 
 function mockRes() {
@@ -85,6 +89,36 @@ beforeEach(() => {
   XeroSyncLog.findOne.mockResolvedValue(null)
   gstService.buildSnapshot.mockResolvedValue({
     gst_rate_id: 3, gst_rate_percent: 9, gst_effective_date: '2026-08-01', xero_tax_type: 'OUTPUT',
+  })
+})
+
+describe('getInvoiceById matching diagnostics', () => {
+  test('returns the exact rate combination needed by an unmatched invoice', async () => {
+    const invoice = makeInvoice({
+      id: 10, status: 'unmatched', memo_id: 5, booking_id: 8, client_id: 12, contract_id: 7,
+      Booking: { reference_number: 'BKG-10', scheduled_date: '2026-08-01' },
+      Client: { name: 'TTSH' },
+      PricingContract: { contract_name: 'TTSH 2026' },
+      ServiceMemo: { service_type: 'eas', transfer_type: 'two_way_hospital', is_office_hours: true },
+      approvedBy: null,
+      unpriced_surcharges: [],
+    })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    InvoiceLineItem.findAll.mockResolvedValue([])
+
+    const res = mockRes()
+    await getInvoiceById({ params: { id: 10 } }, res)
+
+    expect(payload(res).data.matching_requirements).toEqual({
+      reason: 'missing_rate',
+      service_date: '2026-08-01',
+      service_type: 'eas',
+      transfer_type: 'two_way_hospital',
+      time_of_day: 'office_hours',
+      quoted_service_type: undefined,
+      quoted_transfer_type: undefined,
+      quoted_time_of_day: undefined,
+    })
   })
 })
 
@@ -140,6 +174,41 @@ describe('rematchInvoice', () => {
       expect.anything()
     )
     expect(payload(res).data).toMatchObject({ invoice_id: 10, status: 'matched', contract_id: 7 })
+  })
+
+  test('rematches from the frozen one-off quotation without looking up a contract', async () => {
+    const invoice = makeInvoice({
+      id: 10, status: 'unmatched', memo_id: 5, booking_id: 8, client_id: 12,
+      contract_id: null, tax_amount: 0, subtotal: 0, total_amount: 0,
+    })
+    const memo = { id: 5, service_type: 'eas', transfer_type: 'one_way_hospital', is_office_hours: true }
+    const booking = {
+      id: 8, scheduled_date: '2026-08-01', service_type: 'eas',
+      pricing_source: 'one_off_quote', pricing_contract_id: null,
+      quoted_base_amount: 725.5, quoted_transfer_type: 'one_way_hospital', quoted_time_of_day: 'office_hours',
+    }
+    const generatedLine = {
+      description: 'One-Off Quote - EAS - One-Way Hospital Transfer (Office Hours)',
+      quantity: 1, unit_price: 725.5, amount: 725.5, is_manual_adjustment: false,
+    }
+    Invoice.findByPk.mockResolvedValue(invoice)
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    Booking.findByPk.mockResolvedValue(booking)
+    InvoiceLineItem.count.mockResolvedValue(0)
+    pricingService.quotationMatchesMemo.mockReturnValue(true)
+    pricingService.computeQuotedInvoiceLineItems.mockReturnValue({
+      matched: true, lineItems: [generatedLine], subtotal: 725.5, unpriced: [],
+    })
+    InvoiceLineItem.findAll.mockResolvedValue([{ id: 99, ...generatedLine }])
+
+    const res = mockRes()
+    await rematchInvoice({ params: { id: 10 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(PricingContract.findOne).not.toHaveBeenCalled()
+    expect(invoice.update).toHaveBeenCalledWith(expect.objectContaining({
+      contract_id: null, status: 'matched', subtotal: 725.5, tax_amount: 65.3, total_amount: 790.8,
+    }), expect.anything())
   })
 
   test('does not overwrite an invoice that has already left unmatched status', async () => {

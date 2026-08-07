@@ -26,6 +26,9 @@ const MemoSignature       = require('./MemoSignature')
 // Jasper - Field Operations follow-up (client feedback item 1: live job milestones)
 const JobMilestone        = require('./JobMilestone')
 
+// Jasper - Live Fleet Tracker (geocoding cache, no FK associations - standalone)
+const GeocodedLocation    = require('./GeocodedLocation')
+
 // Kwan Hua - Xero Foundation, OCR & AP Processing
 const XeroConnection      = require('./XeroConnection')
 const VendorInvoice       = require('./VendorInvoice')
@@ -50,6 +53,7 @@ User.hasMany(Notification,      { foreignKey: 'user_id' })
 User.hasMany(IntakeSubmission,  { foreignKey: 'reviewed_by',    as: 'reviewedSubmissions' })
 User.hasMany(Booking,           { foreignKey: 'created_by',     as: 'createdBookings' })
 User.hasMany(Booking,           { foreignKey: 'assigned_crew_id', as: 'assignedJobs' })
+User.hasMany(Booking,           { foreignKey: 'quoted_by',      as: 'quotedBookings' })
 User.hasMany(PricingContract,   { foreignKey: 'created_by',     as: 'createdContracts' })
 User.hasMany(Invoice,           { foreignKey: 'approved_by',    as: 'approvedInvoices' })
 User.hasMany(ServiceMemo,       { foreignKey: 'submitted_by',   as: 'submittedMemos' })
@@ -77,6 +81,8 @@ Booking.belongsTo(IntakeSubmission, { foreignKey: 'intake_submission_id' })
 Booking.belongsTo(Client,           { foreignKey: 'client_id' })
 Booking.belongsTo(User,             { foreignKey: 'created_by',      as: 'createdBy' })
 Booking.belongsTo(User,             { foreignKey: 'assigned_crew_id', as: 'assignedCrew' })
+Booking.belongsTo(User,             { foreignKey: 'quoted_by',       as: 'quotedBy' })
+Booking.belongsTo(PricingContract,  { foreignKey: 'pricing_contract_id', as: 'pricingContract' })
 Booking.hasOne(ServiceMemo,         { foreignKey: 'booking_id' })
 Booking.hasOne(Invoice,             { foreignKey: 'booking_id' })
 Booking.hasMany(JobMilestone,       { foreignKey: 'booking_id', onDelete: 'CASCADE' })
@@ -164,6 +170,9 @@ VendorInvoiceAudit.belongsTo(User, { foreignKey: 'user_id', as: 'actor' })
 // Polymorphic - no static belongsTo. Always query with both entity_type AND entity_id.
 // Scoped hasMany associations are declared on Invoice and VendorInvoice above.
 
+// ── GeocodedLocation ──────────────────────────────────────────────────────────
+// Standalone cache table keyed by address_text - no FK associations.
+
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
@@ -192,6 +201,9 @@ module.exports = {
 
   // Jasper - field ops follow-up
   JobMilestone,
+
+  // Jasper - Live Fleet Tracker
+  GeocodedLocation,
 
   // Kwan Hua
   XeroConnection,

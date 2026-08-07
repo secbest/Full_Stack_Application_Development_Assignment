@@ -199,12 +199,43 @@ function computeInvoiceLineItems(memo, rates, surchargeRows) {
   return { matched: true, baseRate, lineItems, subtotal, unpriced }
 }
 
+// A booking quotation is an immutable base-price handoff from Quotations to AR. It is
+// usable only when the field memo describes the same service combination that was sold.
+// A changed job is deliberately left for human review rather than silently billing the
+// customer using a quote for a different service.
+function quotationMatchesMemo(booking, memo) {
+  if (!booking || !memo || !booking.pricing_source || booking.quoted_base_amount === null
+    || booking.quoted_base_amount === undefined || !booking.quoted_transfer_type
+    || !booking.quoted_time_of_day) return false
+  const actualTime = memo.is_office_hours ? 'office_hours' : 'non_office_hours'
+  return booking.service_type === memo.service_type
+    && booking.quoted_transfer_type === memo.transfer_type
+    && (booking.quoted_time_of_day === 'all_hours' || booking.quoted_time_of_day === actualTime)
+}
+
+function computeQuotedInvoiceLineItems(booking, memo, surchargeRows = []) {
+  if (!quotationMatchesMemo(booking, memo)) {
+    return { matched: false, baseRate: null, lineItems: [], subtotal: 0, unpriced: [] }
+  }
+  const result = computeInvoiceLineItems(memo, [{
+    time_of_day: booking.quoted_time_of_day,
+    base_amount: Number(booking.quoted_base_amount),
+  }], surchargeRows)
+  if (result.lineItems[0]) {
+    const source = booking.pricing_source === 'one_off_quote' ? 'One-Off Quote' : 'Quoted Contract Rate'
+    result.lineItems[0].description = `${source} - ${result.lineItems[0].description}`
+  }
+  return result
+}
+
 module.exports = {
   round2,
   toSurchargeMap,
   selectBaseRate,
   buildSurchargeLineItems,
   computeInvoiceLineItems,
+  quotationMatchesMemo,
+  computeQuotedInvoiceLineItems,
   SERVICE_TYPE_LABELS,
   TRANSFER_TYPE_LABELS,
   SURCHARGE_TYPE_LABELS,

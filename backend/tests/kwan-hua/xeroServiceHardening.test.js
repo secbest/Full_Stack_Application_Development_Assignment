@@ -75,6 +75,7 @@ describe('OAuth CSRF state lifecycle', () => {
     const state = issueState()
     const { authUrl } = xeroService.getAuthorizationUrl()
     expect(authUrl).toContain('accounting.invoices')
+    expect(authUrl).toContain('accounting.settings.read')
     expect(authUrl).toContain('offline_access')
     expect(authUrl).not.toContain('accounting.transactions')
     expect(typeof state).toBe('string')
@@ -166,6 +167,83 @@ describe('pushArInvoice carries the invoice identity into Xero', () => {
 
     expect(result).toEqual({ ok: false, error: expect.stringMatching(/GST configuration is missing/) })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test('retries a rejected tenant tax code with the sole active equivalent revenue rate', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ Elements: [{ ValidationErrors: [{ Message: 'The TaxType code OUTPUTY24 does not exist or cannot be used for this type of transaction.' }] }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          TaxRates: [
+            { TaxType: 'TAX001', Status: 'ACTIVE', EffectiveTaxRate: 9, CanApplyToRevenue: true },
+            { TaxType: 'INPUTY24', Status: 'ACTIVE', EffectiveTaxRate: 9, CanApplyToRevenue: false },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ Invoices: [{ InvoiceID: 'xero-retried-1' }] }),
+      })
+
+    const result = await xeroService.pushArInvoice({
+      id: 11, client_name: 'Acme', subtotal: 100, gst_rate_percent: 9,
+      tax_amount: 9, total_amount: 109, xero_tax_type: 'OUTPUTY24', InvoiceLineItems: [],
+    }, connection())
+
+    expect(result).toEqual({ ok: true, xeroRecordId: 'xero-retried-1', resolvedTaxType: 'TAX001' })
+    expect(global.fetch).toHaveBeenCalledTimes(3)
+    expect(global.fetch.mock.calls[1][0]).toMatch(/TaxRates$/)
+    const retry = JSON.parse(global.fetch.mock.calls[2][1].body).Invoices[0]
+    expect(retry.LineItems[0].TaxType).toBe('TAX001')
+  })
+
+  test('does not replace a rejected 9% code with a different percentage', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ Elements: [{ ValidationErrors: [{ Message: 'The TaxType code OUTPUTY24 does not exist or cannot be used for this type of transaction.' }] }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          TaxRates: [{ TaxType: 'OUTPUT2', Status: 'ACTIVE', EffectiveTaxRate: 15, CanApplyToRevenue: true }],
+        }),
+      })
+
+    const result = await xeroService.pushArInvoice({
+      id: 12, client_name: 'Acme', subtotal: 100, gst_rate_percent: 9,
+      tax_amount: 9, total_amount: 109, xero_tax_type: 'OUTPUTY24', InvoiceLineItems: [],
+    }, connection())
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/no active 9% tax rate.*revenue/i)
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  test('asks for reconnection when the token cannot read tenant tax rates', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ Elements: [{ ValidationErrors: [{ Message: 'The TaxType code OUTPUTY24 does not exist or cannot be used for this type of transaction.' }] }] }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+
+    const result = await xeroService.pushArInvoice({
+      id: 13, client_name: 'Acme', subtotal: 100, gst_rate_percent: 9,
+      tax_amount: 9, total_amount: 109, xero_tax_type: 'OUTPUTY24', InvoiceLineItems: [],
+    }, connection())
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/Reconnect Xero.*read-only organisation-settings/i) })
   })
 })
 

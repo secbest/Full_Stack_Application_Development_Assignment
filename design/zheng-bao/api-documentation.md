@@ -193,6 +193,10 @@ Error responses always use the shape:
 ```json
 {
   "service_tier": "critical",
+  "pricing_source": "one_off_quote",
+  "quoted_transfer_type": "one_way_hospital",
+  "quoted_time_of_day": "office_hours",
+  "quoted_base_amount": 725.50,
   "scheduled_date": "2026-07-05",
   "scheduled_time": "14:30",
   "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
@@ -203,6 +207,9 @@ Error responses always use the shape:
 
 **Field notes:**
 - `service_tier` is required. If Camilla confirms without changing it, send the same value from the intake submission. The backend records the original value in `original_service_tier` when they differ.
+- `pricing_source` is required: `contract` resolves the active client contract rate, while `one_off_quote` freezes the explicitly agreed `quoted_base_amount`.
+- `quoted_transfer_type` and `quoted_time_of_day` are required and become the service combination AR checks against the completed memo.
+- `quoted_base_amount` is required and positive for `one_off_quote`; it is ignored for `contract` because the backend resolves the matching contract rate.
 - `scheduled_date` and `scheduled_time` default to `preferred_date` and `preferred_time` from the intake if omitted.
 - `pickup_location` and `destination` default to the intake values if omitted.
 - `notes` is optional.
@@ -241,6 +248,8 @@ Error responses always use the shape:
 | Status | Code | Condition |
 |--------|------|-----------|
 | `400` | `VALIDATION_ERROR` | `service_tier` is missing or invalid |
+| `422` | `NO_ACTIVE_CONTRACT` | Contract pricing was selected but no active client contract covers the service date |
+| `422` | `NO_MATCHING_RATE` | The active contract does not price the selected service, transfer, and time combination |
 | `400` | `PAST_DATE` | `scheduled_date` is before today |
 | `404` | `SUBMISSION_NOT_FOUND` | No intake submission with this id |
 | `409` | `ALREADY_ACTIONED` | Intake has already been confirmed or rejected |

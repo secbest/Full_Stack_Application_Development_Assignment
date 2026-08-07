@@ -107,7 +107,14 @@ non-destructive, idempotent constraint update:
 
 ```bash
 npm run db:fix-intake-tier-nullable
+npm run db:migrate:booking-quotations
 ```
+
+The booking-quotation migration adds the immutable pricing snapshot passed from Quotations to AR.
+When confirming an intake, Quotations now chooses an existing client contract or records a one-off
+agreed base price, plus the quoted transfer and time category. Memo approval automatically uses that
+frozen price when the completed service matches; a changed service combination is sent to AR for
+explicit review instead of silently applying the wrong quote.
 
 > **Upgrading an existing database:** `db:sync` runs `sequelize.sync({ alter: true })`, which adds new
 > columns but does **not** add values to existing PostgreSQL `ENUM` types. The Wave 3 fixes introduce
@@ -193,15 +200,17 @@ after **2 March 2026** are only granted the new set, while apps registered befor
 set until September 2027. The code requests the granular set by default:
 
 ```
-openid profile email accounting.invoices accounting.contacts offline_access
+openid profile email accounting.invoices accounting.contacts accounting.settings.read offline_access
 ```
 
 `accounting.invoices` is the granular replacement for the old `accounting.transactions` and covers
-both the ACCREC sales invoices and ACCPAY bills this platform creates. If your app predates the
+both the ACCREC sales invoices and ACCPAY bills this platform creates. `accounting.settings.read`
+lets the sync verify a rejected tax code against the connected organisation's active tax rates and
+safely retry with a single equivalent rate. If your app predates the
 cutoff and only has broad scopes, override it in `backend/.env`:
 
 ```
-XERO_SCOPES=openid profile email accounting.transactions accounting.contacts offline_access
+XERO_SCOPES=openid profile email accounting.transactions accounting.contacts accounting.settings.read offline_access
 ```
 
 This matters because Xero rejects the **entire** authorize request with `invalid_scope` when any
