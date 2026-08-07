@@ -119,13 +119,14 @@ export default function VendorInvoiceListPage() {
         <UploadModal
           onClose={() => setUploadOpen(false)}
           onUploaded={(invoice) => { setUploadOpen(false); navigate(`/vendor-invoices/${invoice.id}`) }}
+          onExtractionFailed={(invoice) => { setUploadOpen(false); navigate(`/vendor-invoices/${invoice.id}`) }}
         />
       )}
     </div>
   )
 }
 
-function UploadModal({ onClose, onUploaded }) {
+function UploadModal({ onClose, onUploaded, onExtractionFailed }) {
   const toast = useToast()
   const fileInputRef = useRef(null)
   const [file, setFile] = useState(null)
@@ -151,7 +152,16 @@ function UploadModal({ onClose, onUploaded }) {
       toast.success(`Uploaded - extracted total ${invoice.extracted_total ? `$${invoice.extracted_total}` : 'pending'}.`)
       onUploaded(invoice)
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Upload failed. Please retry.')
+      const response = err.response?.data
+      const savedInvoice = response?.code === 'OCR_EXTRACTION_FAILED' && response.data?.id
+        ? response.data
+        : null
+      if (savedInvoice) {
+        toast.warning('OCR failed, but the invoice was saved. Enter the details manually or retry extraction.')
+        onExtractionFailed(savedInvoice)
+      } else {
+        toast.error(response?.message || 'Upload failed. Please retry.')
+      }
     } finally {
       setBusy(false)
     }

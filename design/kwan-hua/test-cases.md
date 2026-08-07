@@ -114,7 +114,8 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-094 | Upload modal | Click "Upload & Extract" with no file selected | Error toast "Select a PDF file to upload.", no request sent | |
 | TC-095 | Upload modal | Submit a valid PDF with default rebate | Success toast with extracted total, modal closes, navigates to the new invoice's review page | |
 | TC-096 | Upload modal | Submit a valid PDF with a custom rebate % | Request payload includes the overridden `rebate_percentage` | |
-| TC-097 | Upload modal | Server returns an upload/OCR error | Error toast shows the server message, modal stays open for retry | |
+| TC-097 | Upload modal | Storage/upload fails before an invoice is saved | Error toast shows the server message, modal stays open for retry | |
+| TC-097A | Upload modal | OCR fails after the PDF and placeholder invoice are saved | Warning explains that the invoice was saved; modal closes and opens its manual review page | |
 | TC-098 | Vendor Invoice List page | Confidence column rendering | >=90% shown green, 80-89% amber, <80% or `is_low_confidence` shown red | |
 | TC-099 | Vendor Invoice List page | Click "Review" on a row | Navigates to `/vendor-invoices/:id` | |
 | TC-100 | AP Invoice Review page | Load for a `pending_review` invoice | PDF panel + editable fields + rebate summary + line items all rendered, fields editable | |

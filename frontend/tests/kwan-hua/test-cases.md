@@ -6,3 +6,5 @@ _List all test cases below before submission. Include what is being tested and t
 |---|-----------|---------------|-----------------|
 | 1 | VendorInvoiceReviewPage.test.jsx | Add a manual line to an `extraction_failed` invoice | POSTs the new line, refreshes the invoice and shows it back in pending review |
 | 2 | VendorInvoiceReviewPage.test.jsx | Delete an invoice line | Shows the in-app confirmation, DELETEs the line and refreshes recalculated approval state |
+| 3 | VendorInvoiceListPage.test.jsx | OCR fails after the PDF has been saved | Shows a recovery warning and navigates directly to the saved invoice review page |
+| 4 | VendorInvoiceListPage.test.jsx | Upload fails before an invoice is saved | Shows the server error and keeps the upload modal open for retry |
