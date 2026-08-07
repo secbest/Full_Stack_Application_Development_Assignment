@@ -69,6 +69,7 @@ describe('xeroService.getAuthorizationUrl (UC-01)', () => {
     expect(scope).toContain('accounting.invoices')
     expect(scope).not.toContain('accounting.transactions')
     expect(scope).toContain('accounting.contacts')
+    expect(scope).toContain('accounting.settings.read')
     expect(scope).toContain('offline_access') // required for a refresh token
     expect(url.searchParams.get('state')).toBe(state)
     expect(state).toHaveLength(32) // 16 bytes as hex

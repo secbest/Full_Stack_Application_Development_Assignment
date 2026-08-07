@@ -12,10 +12,12 @@ jest.mock('../../src/models', () => ({
   Booking: { findOne: jest.fn(), create: jest.fn() },
   Client: { findOrCreate: jest.fn() },
   User: { findAll: jest.fn() },
+  PricingContract: { findOne: jest.fn() },
+  PricingRate: { findAll: jest.fn() },
 }))
 jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }))
 
-const { IntakeSubmission, Booking, Client, User } = require('../../src/models')
+const { IntakeSubmission, Booking, Client, User, PricingContract, PricingRate } = require('../../src/models')
 const {
   createIntake,
   listIntakes,
@@ -44,6 +46,16 @@ function validBody(overrides = {}) {
     preferred_time: '10:00',
     pickup_location: 'Changi General Hospital',
     destination: 'Singapore General Hospital',
+    ...overrides,
+  }
+}
+function confirmBody(overrides = {}) {
+  return {
+    service_tier: 'advanced',
+    pricing_source: 'one_off_quote',
+    quoted_transfer_type: 'one_way_hospital',
+    quoted_time_of_day: 'office_hours',
+    quoted_base_amount: 650,
     ...overrides,
   }
 }
@@ -218,10 +230,17 @@ describe('confirmIntake (Intake Detail -> Booking Created)', () => {
     Booking.create.mockResolvedValue({ id: 1, reference_number: 'BKG-2026-00001', intake_submission_id: 41, status: 'confirmed' })
 
     const res = mockRes()
-    await confirmIntake({ params: { id: 41 }, body: { service_tier: 'advanced' }, user: { sub: 3 } }, res)
+    await confirmIntake({ params: { id: 41 }, body: confirmBody(), user: { sub: 3 } }, res)
 
     expect(Client.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({ where: { contact_email: 'john.tan@cgh.com.sg' } }))
-    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ client_id: 7 }))
+    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({
+      client_id: 7,
+      pricing_source: 'one_off_quote',
+      quoted_base_amount: 650,
+      quoted_transfer_type: 'one_way_hospital',
+      quoted_time_of_day: 'office_hours',
+      quoted_by: 3,
+    }))
     expect(intake.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'confirmed', reviewed_by: 3 }))
     expect(res.status).toHaveBeenCalledWith(201)
   })
@@ -232,7 +251,7 @@ describe('confirmIntake (Intake Detail -> Booking Created)', () => {
     Booking.create.mockResolvedValue({ id: 1, reference_number: 'BKG-2026-00001', status: 'confirmed' })
 
     const res = mockRes()
-    await confirmIntake({ params: { id: 41 }, body: { service_tier: 'critical' }, user: { sub: 3 } }, res)
+    await confirmIntake({ params: { id: 41 }, body: confirmBody({ service_tier: 'critical' }), user: { sub: 3 } }, res)
 
     expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ original_service_tier: null, service_tier: 'critical' }))
   })
@@ -245,9 +264,46 @@ describe('confirmIntake (Intake Detail -> Booking Created)', () => {
     Booking.create.mockResolvedValue({ id: 1, reference_number: 'BKG-2026-00001', status: 'confirmed' })
 
     const res = mockRes()
-    await confirmIntake({ params: { id: 41 }, body: { service_tier: 'critical' }, user: { sub: 3 } }, res)
+    await confirmIntake({ params: { id: 41 }, body: confirmBody({ service_tier: 'critical' }), user: { sub: 3 } }, res)
 
     expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ original_service_tier: 'basic', service_tier: 'critical' }))
+  })
+
+  test('resolves and freezes the applicable client contract rate', async () => {
+    IntakeSubmission.findByPk.mockResolvedValue(pendingIntake())
+    Client.findOrCreate.mockResolvedValue([{ id: 7 }, false])
+    PricingContract.findOne.mockResolvedValue({ id: 22 })
+    PricingRate.findAll.mockResolvedValue([{ time_of_day: 'all_hours', base_amount: '875.50' }])
+    Booking.create.mockResolvedValue({ id: 1, reference_number: 'BKG-2026-00001', status: 'confirmed' })
+
+    const res = mockRes()
+    await confirmIntake({
+      params: { id: 41 },
+      body: confirmBody({ pricing_source: 'contract', quoted_time_of_day: 'office_hours', quoted_base_amount: undefined }),
+      user: { sub: 3 },
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({
+      pricing_source: 'contract', pricing_contract_id: 22, quoted_base_amount: 875.5,
+    }))
+  })
+
+  test('rejects contract pricing when no active client contract covers the service date', async () => {
+    IntakeSubmission.findByPk.mockResolvedValue(pendingIntake())
+    Client.findOrCreate.mockResolvedValue([{ id: 7 }, false])
+    PricingContract.findOne.mockResolvedValue(null)
+
+    const res = mockRes()
+    await confirmIntake({
+      params: { id: 41 },
+      body: confirmBody({ pricing_source: 'contract', quoted_base_amount: undefined }),
+      user: { sub: 3 },
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(422)
+    expect(payload(res)).toMatchObject({ code: 'NO_ACTIVE_CONTRACT' })
+    expect(Booking.create).not.toHaveBeenCalled()
   })
 })
 

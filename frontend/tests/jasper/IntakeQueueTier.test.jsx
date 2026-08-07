@@ -57,9 +57,19 @@ describe('IntakeQueuePage - quotations owns service-tier selection', () => {
     await screen.findByText('To be assessed')
     await user.click(screen.getByRole('button', { name: /^Review$/i }))
     fireEvent.change(screen.getByLabelText(/Service Tier/i), { target: { value: 'Advanced' } })
+    fireEvent.change(screen.getByLabelText(/Pricing Source/i), { target: { value: 'one_off_quote' } })
+    fireEvent.change(screen.getByLabelText(/Transfer Type/i), { target: { value: 'one_way_hospital' } })
+    fireEvent.change(screen.getByLabelText(/Time Category/i), { target: { value: 'office_hours' } })
+    fireEvent.change(screen.getByLabelText(/Agreed Base Price/i), { target: { value: '650.50' } })
     await user.click(screen.getByRole('button', { name: /Confirm Booking/i }))
 
     await waitFor(() => expect(mock.history.post).toHaveLength(1))
-    expect(JSON.parse(mock.history.post[0].data)).toMatchObject({ service_tier: 'advanced' })
+    expect(JSON.parse(mock.history.post[0].data)).toMatchObject({
+      service_tier: 'advanced',
+      pricing_source: 'one_off_quote',
+      quoted_transfer_type: 'one_way_hospital',
+      quoted_time_of_day: 'office_hours',
+      quoted_base_amount: 650.5,
+    })
   })
 })

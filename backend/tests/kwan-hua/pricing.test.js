@@ -1,4 +1,7 @@
-const { computeInvoiceLineItems, selectBaseRate, toSurchargeMap } = require('../../src/services/pricingService')
+const {
+  computeInvoiceLineItems, computeQuotedInvoiceLineItems, quotationMatchesMemo,
+  selectBaseRate, toSurchargeMap,
+} = require('../../src/services/pricingService')
 
 // Full published surcharge schedule as { type: amount } rows.
 const SURCHARGE_ROWS = [
@@ -234,5 +237,37 @@ describe('pricingService.toSurchargeMap', () => {
   test('reduces rows to a type->amount number map', () => {
     const map = toSurchargeMap([{ surcharge_type: 'suction', amount: '50.00' }])
     expect(map.suction).toBe(50)
+  })
+})
+
+describe('booking quotation handoff', () => {
+  const booking = {
+    service_type: 'eas',
+    pricing_source: 'one_off_quote',
+    quoted_base_amount: '725.50',
+    quoted_transfer_type: 'one_way_hospital',
+    quoted_time_of_day: 'office_hours',
+  }
+
+  test('uses the frozen booking quotation when the completed service matches', () => {
+    const memo = baseMemo()
+    expect(quotationMatchesMemo(booking, memo)).toBe(true)
+
+    const result = computeQuotedInvoiceLineItems(booking, memo)
+    expect(result).toMatchObject({ matched: true, subtotal: 725.5 })
+    expect(result.lineItems[0]).toMatchObject({ unit_price: 725.5, amount: 725.5 })
+    expect(result.lineItems[0].description).toContain('One-Off Quote')
+  })
+
+  test('refuses to apply a quotation to a different completed transfer', () => {
+    const memo = baseMemo({ transfer_type: 'two_way_hospital' })
+    expect(quotationMatchesMemo(booking, memo)).toBe(false)
+    expect(computeQuotedInvoiceLineItems(booking, memo).matched).toBe(false)
+  })
+
+  test('allows an all-hours quotation in either time category', () => {
+    const allHours = { ...booking, quoted_time_of_day: 'all_hours' }
+    expect(quotationMatchesMemo(allHours, baseMemo({ is_office_hours: true }))).toBe(true)
+    expect(quotationMatchesMemo(allHours, baseMemo({ is_office_hours: false }))).toBe(true)
   })
 })

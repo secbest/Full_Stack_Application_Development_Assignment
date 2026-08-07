@@ -30,6 +30,7 @@ const SEED_STEPS = [
   // Seeds the legal GST periods before any invoice seed calculates its totals.
   'migrate-gst.js',
   'migrate-ap-controls.js',
+  'migrate-booking-quotations.js',
   'seed-users.js',
   'seed-clients.js',
   'seed-intakes.js',

@@ -129,9 +129,14 @@ async function getInvoiceById(req, res) {
   try {
     const invoice = await Invoice.findByPk(req.params.id, {
       include: [
-        { model: Booking, attributes: ['id', 'reference_number'] },
+        { model: Booking, attributes: [
+          'id', 'reference_number', 'scheduled_date', 'service_type', 'pricing_source',
+          'pricing_contract_id', 'quoted_base_amount', 'quoted_transfer_type',
+          'quoted_time_of_day', 'quoted_by', 'quoted_at',
+        ] },
         { model: Client, attributes: ['id', 'name'] },
         { model: PricingContract, attributes: ['id', 'contract_name'] },
+        { model: ServiceMemo, attributes: ['id', 'service_type', 'transfer_type', 'is_office_hours'] },
         { model: User, as: 'approvedBy', attributes: ['id', 'name'] },
         { model: InvoiceLineItem },
       ],
@@ -148,6 +153,21 @@ async function getInvoiceById(req, res) {
       client_name: invoice.Client ? invoice.Client.name : null,
       contract_id: invoice.contract_id,
       contract_name: invoice.PricingContract ? invoice.PricingContract.contract_name : null,
+      pricing_source: invoice.Booking?.pricing_source || (invoice.contract_id ? 'legacy_contract' : null),
+      quoted_base_amount: invoice.Booking?.quoted_base_amount || null,
+      matching_requirements: invoice.ServiceMemo && invoice.Booking ? {
+        reason: invoice.Booking.pricing_source
+          && !pricingService.quotationMatchesMemo(invoice.Booking, invoice.ServiceMemo)
+          ? 'quote_mismatch'
+          : (invoice.contract_id ? 'missing_rate' : 'missing_contract'),
+        service_date: invoice.Booking.scheduled_date,
+        service_type: invoice.ServiceMemo.service_type,
+        transfer_type: invoice.ServiceMemo.transfer_type,
+        time_of_day: invoice.ServiceMemo.is_office_hours ? 'office_hours' : 'non_office_hours',
+        quoted_service_type: invoice.Booking.service_type,
+        quoted_transfer_type: invoice.Booking.quoted_transfer_type,
+        quoted_time_of_day: invoice.Booking.quoted_time_of_day,
+      } : null,
       subtotal: invoice.subtotal,
       gst_rate_percent: invoice.gst_rate_percent,
       gst_effective_date: invoice.gst_effective_date,
@@ -459,37 +479,58 @@ async function rematchInvoice(req, res) {
         }
       }
 
-      const serviceDate = new Date(booking.scheduled_date)
-      const contract = await findActiveContract(invoice.client_id, serviceDate, { transaction: t })
-      if (!contract) {
-        return {
-          error: {
-            message: 'No active pricing contract covers this client and service date yet.',
-            code: 'NO_ACTIVE_CONTRACT',
-            status: 422,
-          },
+      let contractId = null
+      let result
+      if (booking.pricing_source) {
+        if (!pricingService.quotationMatchesMemo(booking, memo)) {
+          return {
+            error: {
+              message: 'The completed service still does not match the combination approved by Quotations. Verify it and price the invoice manually.',
+              code: 'QUOTATION_MISMATCH',
+              status: 422,
+            },
+          }
         }
-      }
-
-      const [rates, surcharges] = await Promise.all([
-        PricingRate.findAll({
-          where: {
-            contract_id: contract.id,
-            service_type: memo.service_type,
-            transfer_type: memo.transfer_type,
-          },
-          transaction: t,
-        }),
-        SurchargeSchedule.findAll({ where: { contract_id: contract.id }, transaction: t }),
-      ])
-      const result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
-      if (!result.matched) {
-        return {
-          error: {
-            message: "The active contract still has no rate for this memo's service, transfer and time combination.",
-            code: 'NO_MATCHING_RATE',
-            status: 422,
-          },
+        contractId = booking.pricing_contract_id || null
+        const surcharges = contractId
+          ? await SurchargeSchedule.findAll({ where: { contract_id: contractId }, transaction: t })
+          : []
+        result = pricingService.computeQuotedInvoiceLineItems(booking, memo, surcharges)
+      } else {
+        // Legacy bookings created before Quotations captured an immutable price retain
+        // the original contract-rematch path.
+        const serviceDate = new Date(booking.scheduled_date)
+        const contract = await findActiveContract(invoice.client_id, serviceDate, { transaction: t })
+        if (!contract) {
+          return {
+            error: {
+              message: 'No active pricing contract covers this client and service date yet.',
+              code: 'NO_ACTIVE_CONTRACT',
+              status: 422,
+            },
+          }
+        }
+        contractId = contract.id
+        const [rates, surcharges] = await Promise.all([
+          PricingRate.findAll({
+            where: {
+              contract_id: contract.id,
+              service_type: memo.service_type,
+              transfer_type: memo.transfer_type,
+            },
+            transaction: t,
+          }),
+          SurchargeSchedule.findAll({ where: { contract_id: contract.id }, transaction: t }),
+        ])
+        result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
+        if (!result.matched) {
+          return {
+            error: {
+              message: "The active contract still has no rate for this memo's service, transfer and time combination.",
+              code: 'NO_MATCHING_RATE',
+              status: 422,
+            },
+          }
         }
       }
 
@@ -511,7 +552,7 @@ async function rematchInvoice(req, res) {
         { transaction: t }
       )
       await invoice.update({
-        contract_id: contract.id,
+        contract_id: contractId,
         ...gstSnapshot,
         ...totals,
         status: 'matched',

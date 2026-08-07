@@ -18,6 +18,17 @@ const serviceTierLabels = {
   critical: 'Critical',
 };
 
+const transferTypeOptions = [
+  ['one_way_hospital', 'One-Way Hospital Transfer'],
+  ['two_way_hospital', 'Two-Way Hospital Transfer'],
+  ['covid_19', 'COVID-19 Transport'],
+  ['imh_psychiatric', 'IMH / Psychiatric Transfer'],
+  ['airport_no_tarmac', 'Airport Transfer (No Tarmac)'],
+  ['airport_with_tarmac', 'Airport Transfer (With Tarmac)'],
+  ['sg_jb_ground', 'SG-JB Ground Transfer'],
+  ['air_evacuation', 'Air Evacuation'],
+]
+
 function formatServiceType(type) {
   return serviceTypeLabels[type] || type
 }
@@ -61,6 +72,10 @@ export default function IntakeQueuePage() {
   const [selectedIntake, setSelectedIntake] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
   const [actionTier, setActionTier] = useState('')
+  const [pricingSource, setPricingSource] = useState('')
+  const [quotedTransferType, setQuotedTransferType] = useState('')
+  const [quotedTimeOfDay, setQuotedTimeOfDay] = useState('')
+  const [quotedBaseAmount, setQuotedBaseAmount] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
   const [rejectionReason, setRejectionReason] = useState('')
   const [loading, setLoading] = useState(true)
@@ -92,6 +107,7 @@ export default function IntakeQueuePage() {
         email: item.contact_email,
         phone: item.contact_phone,
         serviceType: formatServiceType(item.service_type),
+        serviceTypeCode: item.service_type,
         tier: formatServiceTier(item.service_tier),
         status: item.status === 'pending' ? 'Pending' : item.status === 'confirmed' ? 'Confirmed' : 'Rejected',
         preferredDate: formatDate(item.preferred_date),
@@ -117,9 +133,22 @@ export default function IntakeQueuePage() {
       setToast({ type: 'error', message: 'Select a service tier before confirming the booking.' })
       return
     }
+    if (!pricingSource || !quotedTransferType || !quotedTimeOfDay) {
+      setToast({ type: 'error', message: 'Complete the pricing source, transfer type, and time category before confirming.' })
+      return
+    }
+    const amount = Number(quotedBaseAmount)
+    if (pricingSource === 'one_off_quote' && (!(amount > 0) || amount > 50000)) {
+      setToast({ type: 'error', message: 'Enter an agreed base price between $0.01 and $50,000.' })
+      return
+    }
     try {
       const body = {
         service_tier: actionTier.toLowerCase(),
+        pricing_source: pricingSource,
+        quoted_transfer_type: quotedTransferType,
+        quoted_time_of_day: quotedTimeOfDay,
+        quoted_base_amount: pricingSource === 'one_off_quote' ? amount : null,
         notes: internalNotes.trim() || null,
       }
       await api.post(`/intake/${intake.id}/confirm`, body)
@@ -128,6 +157,10 @@ export default function IntakeQueuePage() {
       setSelectedIntake(null)
       setShowDetails(false)
       setActionTier('')
+      setPricingSource('')
+      setQuotedTransferType('')
+      setQuotedTimeOfDay('')
+      setQuotedBaseAmount('')
       setInternalNotes('')
     } catch (err) {
       setToast({ type: 'error', message: err.response?.data?.message || 'Failed to confirm booking.' })
@@ -145,6 +178,10 @@ export default function IntakeQueuePage() {
       setRejectionReason('')
       setShowDetails(false)
       setActionTier('')
+      setPricingSource('')
+      setQuotedTransferType('')
+      setQuotedTimeOfDay('')
+      setQuotedBaseAmount('')
       setInternalNotes('')
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'Failed to reject submission.'
@@ -292,7 +329,7 @@ export default function IntakeQueuePage() {
                         filteredIntakes.map((it) => (
                           <tr
                             key={it.ref}
-                            onClick={() => { setSelectedIntake(it); setShowDetails(true); }}
+                            onClick={() => { setSelectedIntake(it); setShowDetails(true); setActionTier(''); setPricingSource(''); setQuotedTransferType(''); setQuotedTimeOfDay(''); setQuotedBaseAmount(''); setInternalNotes(''); setRejectionReason(''); }}
                             className="h-12 cursor-pointer odd:bg-white even:bg-slate-50 hover:bg-slate-100"
                           >
                             <td className="px-4 py-2 align-middle"><span className="text-xs font-semibold text-slate-900 tracking-wide font-mono">{it.ref}</span></td>
@@ -309,7 +346,7 @@ export default function IntakeQueuePage() {
                             <td className="px-4 py-2 align-middle"><span className="text-xs text-slate-600">1h 12m</span></td>
                             <td className="px-4 py-2 align-middle">
                               <div className="flex items-center gap-2">
-                                <button onClick={(e) => { e.stopPropagation(); setSelectedIntake(it); setShowDetails(true); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
+                                <button onClick={(e) => { e.stopPropagation(); setSelectedIntake(it); setShowDetails(true); setActionTier(''); setPricingSource(''); setQuotedTransferType(''); setQuotedTimeOfDay(''); setQuotedBaseAmount(''); setInternalNotes(''); setRejectionReason(''); }} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium cursor-pointer whitespace-nowrap transition-all">
                                   <Eye size={12} />
                                   <span>Review</span>
                                 </button>
@@ -337,13 +374,13 @@ export default function IntakeQueuePage() {
 
       {showDetails && selectedIntake ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+          <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white shadow-2xl overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
               <div>
                 <div className="text-lg font-semibold text-slate-900">Review Submission</div>
                 <div className="text-sm text-slate-500">{selectedIntake.ref} · {selectedIntake.status}</div>
               </div>
-              <button onClick={() => { setShowDetails(false); setSelectedIntake(null); setActionTier(''); setInternalNotes(''); setRejectionReason('') }} className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100">
+              <button onClick={() => { setShowDetails(false); setSelectedIntake(null); setActionTier(''); setPricingSource(''); setQuotedTransferType(''); setQuotedTimeOfDay(''); setQuotedBaseAmount(''); setInternalNotes(''); setRejectionReason('') }} className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100">
                 <X size={16} />
               </button>
             </div>
@@ -425,6 +462,37 @@ export default function IntakeQueuePage() {
                     <option value="Critical">Critical</option>
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="pricing_source" className="text-xs font-medium uppercase text-slate-500">Pricing Source <span className="text-red-500">*</span></label>
+                  <select id="pricing_source" value={pricingSource} onChange={(e) => { setPricingSource(e.target.value); setQuotedBaseAmount(''); }} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none">
+                    <option value="" disabled>Select pricing source</option>
+                    <option value="contract">Existing client contract</option>
+                    <option value="one_off_quote">One-off agreed quotation</option>
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">The agreed base price is frozen on this booking for AR invoicing.</p>
+                </div>
+                <div>
+                  <label htmlFor="quoted_transfer_type" className="text-xs font-medium uppercase text-slate-500">Transfer Type <span className="text-red-500">*</span></label>
+                  <select id="quoted_transfer_type" value={quotedTransferType} onChange={(e) => setQuotedTransferType(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none">
+                    <option value="" disabled>Select transfer type</option>
+                    {transferTypeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="quoted_time_of_day" className="text-xs font-medium uppercase text-slate-500">Time Category <span className="text-red-500">*</span></label>
+                  <select id="quoted_time_of_day" value={quotedTimeOfDay} onChange={(e) => setQuotedTimeOfDay(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none">
+                    <option value="" disabled>Select time category</option>
+                    <option value="office_hours">Office Hours</option>
+                    <option value="non_office_hours">Non-Office Hours</option>
+                    <option value="all_hours">All Hours</option>
+                  </select>
+                </div>
+                {pricingSource === 'one_off_quote' ? (
+                  <div>
+                    <label htmlFor="quoted_base_amount" className="text-xs font-medium uppercase text-slate-500">Agreed Base Price (SGD) <span className="text-red-500">*</span></label>
+                    <input id="quoted_base_amount" type="number" min="0.01" max="50000" step="0.01" value={quotedBaseAmount} onChange={(e) => setQuotedBaseAmount(e.target.value)} placeholder="0.00" className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" />
+                  </div>
+                ) : null}
                 <div>
                   <label className="text-xs font-medium uppercase text-slate-500">Internal Notes</label>
                   <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" rows={4} />

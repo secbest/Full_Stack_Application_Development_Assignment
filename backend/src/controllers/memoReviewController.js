@@ -118,6 +118,71 @@ async function approveMemo(req, res) {
       }
       throw gstErr
     }
+
+    // New bookings carry the price approved by Quotations. Consume that immutable
+    // snapshot before the legacy contract lookup so AR does not have to re-enter the
+    // same amount. The memo must still match the sold service combination.
+    if (booking.pricing_source) {
+      if (!pricingService.quotationMatchesMemo(booking, memo)) {
+        const { unpriced } = pricingService.computeInvoiceLineItems(memo, [], [])
+        const invoice = await sequelize.transaction(async (t) => {
+          await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
+          return Invoice.create({
+            memo_id: memo.id,
+            booking_id: memo.booking_id,
+            client_id: clientId,
+            contract_id: booking.pricing_contract_id || null,
+            ...gstSnapshot,
+            subtotal: 0, tax_amount: 0, total_amount: 0,
+            status: 'unmatched',
+            unpriced_surcharges: unpriced,
+          }, { transaction: t })
+        })
+        return success(res, {
+          memo_id: memo.id,
+          memo_status: 'reviewed',
+          invoice: approvalInvoicePayload(invoice),
+          warning: {
+            code: 'QUOTATION_MISMATCH',
+            message: `Invoice #${invoice.id} needs review because the completed service does not match the service combination approved by Quotations. Verify the completed service and price the invoice manually.`,
+          },
+        })
+      }
+
+      const quotedSurcharges = booking.pricing_contract_id
+        ? await SurchargeSchedule.findAll({ where: { contract_id: booking.pricing_contract_id } })
+        : []
+      const quotedResult = pricingService.computeQuotedInvoiceLineItems(booking, memo, quotedSurcharges)
+      const totals = gstService.calculateTotals(quotedResult.lineItems, gstSnapshot.gst_rate_percent)
+      const invoice = await sequelize.transaction(async (t) => {
+        await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
+        const inv = await Invoice.create({
+          memo_id: memo.id,
+          booking_id: memo.booking_id,
+          client_id: clientId,
+          contract_id: booking.pricing_contract_id || null,
+          ...gstSnapshot,
+          ...totals,
+          status: 'matched',
+          unpriced_surcharges: quotedResult.unpriced,
+        }, { transaction: t })
+        await InvoiceLineItem.bulkCreate(
+          quotedResult.lineItems.map((lineItem) => ({ ...lineItem, invoice_id: inv.id })),
+          { transaction: t }
+        )
+        return inv
+      })
+      const lineItems = await InvoiceLineItem.findAll({ where: { invoice_id: invoice.id }, order: [['id', 'ASC']] })
+      return success(res, {
+        memo_id: memo.id,
+        memo_status: 'reviewed',
+        invoice: approvalInvoicePayload(invoice, lineItems),
+        warning: quotedResult.unpriced.length > 0 ? {
+          code: 'UNPRICED_SURCHARGES',
+          message: `${quotedResult.unpriced.length} recorded charge${quotedResult.unpriced.length === 1 ? '' : 's'} still need manual pricing before approval.`,
+        } : null,
+      })
+    }
     const contract = clientId ? await findActiveContract(clientId, booking ? new Date(booking.scheduled_date) : new Date()) : null
 
     // No active contract -> approval still succeeds, but the created invoice needs

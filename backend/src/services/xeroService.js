@@ -12,6 +12,7 @@ const XERO_AUTH_BASE = 'https://login.xero.com/identity/connect/authorize'
 const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
 const XERO_CONNECTIONS_URL = 'https://api.xero.com/connections'
 const XERO_BILLS_URL = 'https://api.xero.com/api.xro/2.0/Invoices'
+const XERO_TAX_RATES_URL = 'https://api.xero.com/api.xro/2.0/TaxRates'
 // Scopes requested at authorize time.
 //
 // Xero replaced its broad scopes with granular ones: apps registered after 2 March 2026 are
@@ -27,7 +28,12 @@ const XERO_BILLS_URL = 'https://api.xero.com/api.xro/2.0/Invoices'
 //
 // Overridable via XERO_SCOPES for an app still on the legacy broad scopes, which would need
 // 'openid profile email accounting.transactions accounting.contacts offline_access'.
-const DEFAULT_SCOPES = 'openid profile email accounting.invoices accounting.contacts offline_access'
+// accounting.settings.read is required only when a tenant rejects the frozen tax code.
+// In that case we read the tenant's active rates and retry with an equivalent rate that
+// has the same percentage and is valid for the transaction's account type. Xero explicitly
+// recommends using the rates present in the connected organisation instead of assuming
+// that a country-default TaxType exists in every tenant.
+const DEFAULT_SCOPES = 'openid profile email accounting.invoices accounting.contacts accounting.settings.read offline_access'
 const SCOPES = process.env.XERO_SCOPES || DEFAULT_SCOPES
 
 // attempt_count >= this disables the retry button in the sync status panel (UC-08).
@@ -219,6 +225,118 @@ function withAccountCode(lineItems, accountCode) {
   return lineItems.map((li) => ({ ...li, AccountCode: accountCode }))
 }
 
+function readXeroValidationMessage(json, status) {
+  return json?.Elements?.[0]?.ValidationErrors?.[0]?.Message
+    || json?.Invoices?.[0]?.ValidationErrors?.[0]?.Message
+    || json?.Message
+    || `Xero returned ${status}`
+}
+
+function isTaxTypeValidationError(message) {
+  return /TaxType code .*(?:does not exist|cannot be used)/i.test(String(message || ''))
+}
+
+function xeroBoolean(value) {
+  return value === true || String(value).toLowerCase() === 'true'
+}
+
+// Selects only a tax rate that is materially equivalent to EFAR's frozen GST snapshot.
+// It never silently changes the percentage just to make a Xero request pass.
+function findEquivalentTaxType(taxRates, preferredTaxType, ratePercent, appliesTo) {
+  const expectedRate = Number(ratePercent)
+  const capability = appliesTo === 'expenses' ? 'CanApplyToExpenses' : 'CanApplyToRevenue'
+  const compatible = (taxRates || []).filter((rate) => {
+    const actualRate = Number(rate.EffectiveTaxRate ?? rate.DisplayTaxRate)
+    return String(rate.Status || '').toUpperCase() === 'ACTIVE'
+      && Number.isFinite(actualRate)
+      && Math.abs(actualRate - expectedRate) < 0.0001
+      && xeroBoolean(rate[capability])
+  })
+
+  const preferred = compatible.find((rate) => rate.TaxType === preferredTaxType)
+  if (preferred) return { taxType: preferred.TaxType, matchedPreferred: true }
+  if (compatible.length === 1) return { taxType: compatible[0].TaxType, matchedPreferred: false }
+
+  if (compatible.length === 0) {
+    return {
+      error: `The connected Xero organisation has no active ${expectedRate}% tax rate that can be used for ${appliesTo}. Verify that the correct Singapore organisation is connected and that its GST rates are configured.`,
+    }
+  }
+  return {
+    error: `The connected Xero organisation has multiple active ${expectedRate}% tax rates for ${appliesTo}. Configure an explicit Xero tax-rate mapping before retrying so the wrong GST category is not selected.`,
+  }
+}
+
+async function fetchTenantTaxRates(accessToken, tenantId) {
+  const resp = await fetch(XERO_TAX_RATES_URL, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Xero-tenant-id': tenantId,
+      Accept: 'application/json',
+    },
+  })
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('Xero could not verify this organisation\'s tax rates. Reconnect Xero to grant the read-only organisation-settings permission, then retry the sync.')
+    }
+    throw new Error(`Xero tax-rate lookup failed: ${readXeroValidationMessage(json, resp.status)}`)
+  }
+  return Array.isArray(json.TaxRates) ? json.TaxRates : []
+}
+
+async function postXeroInvoice(accessToken, tenantId, payload) {
+  const resp = await fetch(XERO_BILLS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Xero-tenant-id': tenantId,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const json = await resp.json().catch(() => ({}))
+  const validationMessage = readXeroValidationMessage(json, resp.status)
+  if (!resp.ok || json?.Invoices?.[0]?.ValidationErrors?.length) {
+    return { ok: false, error: validationMessage, json }
+  }
+  return { ok: true, json }
+}
+
+// Xero tenants can have custom, deleted, or country-specific tax types. When the stored
+// code is rejected, retry once with the tenant's sole active equivalent. This is narrowly
+// constrained by percentage and account applicability; ambiguous mappings remain blocked.
+async function retryWithTenantTaxType({ accessToken, tenantId, payload, preferredTaxType, ratePercent, appliesTo }) {
+  const taxRates = await fetchTenantTaxRates(accessToken, tenantId)
+  const equivalent = findEquivalentTaxType(taxRates, preferredTaxType, ratePercent, appliesTo)
+  if (equivalent.error) return { ok: false, error: equivalent.error }
+  if (equivalent.matchedPreferred) {
+    return {
+      ok: false,
+      error: `Xero lists tax type ${preferredTaxType} as active for ${appliesTo}, but still rejected it. Check the line-item account code and the connected organisation's tax settings.`,
+    }
+  }
+
+  const retryPayload = {
+    ...payload,
+    Invoices: payload.Invoices.map((invoice) => ({
+      ...invoice,
+      LineItems: invoice.LineItems.map((item) => ({
+        ...item,
+        TaxType: item.TaxType === 'NONE' ? 'NONE' : equivalent.taxType,
+      })),
+    })),
+  }
+  const retried = await postXeroInvoice(accessToken, tenantId, retryPayload)
+  if (!retried.ok) return retried
+  return {
+    ok: true,
+    xeroRecordId: retried.json?.Invoices?.[0]?.InvoiceID || null,
+    resolvedTaxType: equivalent.taxType,
+  }
+}
+
 // Resolves the connected tenant id + organisation name after token exchange.
 //
 // Returns `availableOrgs` alongside the chosen one. Where the authorising login has access
@@ -353,24 +471,19 @@ async function pushBill(invoice, connection) {
       }],
     }
 
-    const resp = await fetch(XERO_BILLS_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Xero-tenant-id': connection.xero_tenant_id,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-    const json = await resp.json().catch(() => ({}))
-    if (!resp.ok) {
-      const msg = json?.Elements?.[0]?.ValidationErrors?.[0]?.Message || json?.Message || `Xero returned ${resp.status}`
-      return { ok: false, error: msg }
+    const posted = await postXeroInvoice(accessToken, connection.xero_tenant_id, payload)
+    if (!posted.ok && isTaxTypeValidationError(posted.error)) {
+      return await retryWithTenantTaxType({
+        accessToken,
+        tenantId: connection.xero_tenant_id,
+        payload,
+        preferredTaxType: invoice.xero_tax_type,
+        ratePercent: gstRate,
+        appliesTo: 'expenses',
+      })
     }
-    const validationMessage = json?.Invoices?.[0]?.ValidationErrors?.[0]?.Message
-    if (validationMessage) return { ok: false, error: validationMessage }
-    return { ok: true, xeroRecordId: json?.Invoices?.[0]?.InvoiceID || null }
+    if (!posted.ok) return { ok: false, error: posted.error }
+    return { ok: true, xeroRecordId: posted.json?.Invoices?.[0]?.InvoiceID || null }
   } catch (err) {
     return { ok: false, error: err.message }
   }
@@ -442,22 +555,19 @@ async function pushArInvoice(invoice, connection) {
         Status: 'DRAFT',
       }],
     }
-    const resp = await fetch(XERO_BILLS_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Xero-tenant-id': connection.xero_tenant_id,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-    const json = await resp.json().catch(() => ({}))
-    if (!resp.ok) {
-      const msg = json?.Elements?.[0]?.ValidationErrors?.[0]?.Message || json?.Message || `Xero returned ${resp.status}`
-      return { ok: false, error: msg }
+    const posted = await postXeroInvoice(accessToken, connection.xero_tenant_id, payload)
+    if (!posted.ok && isTaxTypeValidationError(posted.error)) {
+      return await retryWithTenantTaxType({
+        accessToken,
+        tenantId: connection.xero_tenant_id,
+        payload,
+        preferredTaxType: invoice.xero_tax_type,
+        ratePercent: gstRate,
+        appliesTo: 'revenue',
+      })
     }
-    return { ok: true, xeroRecordId: json?.Invoices?.[0]?.InvoiceID || null }
+    if (!posted.ok) return { ok: false, error: posted.error }
+    return { ok: true, xeroRecordId: posted.json?.Invoices?.[0]?.InvoiceID || null }
   } catch (err) {
     return { ok: false, error: err.message }
   }
@@ -477,6 +587,7 @@ module.exports = {
   exchangeCodeForTokens,
   refreshTokens,
   fetchOrganisation,
+  findEquivalentTaxType,
   pushBill,
   pushArInvoice,
 }

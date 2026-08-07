@@ -13,6 +13,23 @@ const SERVICE_TYPE_LABELS = {
   workplace_standby: 'Workplace Standby',
 }
 
+const TRANSFER_TYPE_LABELS = {
+  one_way_hospital: 'One-Way Hospital Transfer',
+  two_way_hospital: 'Two-Way Hospital Transfer',
+  covid_19: 'COVID-19 Transport',
+  imh_psychiatric: 'IMH / Psychiatric Transfer',
+  airport_no_tarmac: 'Airport Transfer (No Tarmac)',
+  airport_with_tarmac: 'Airport Transfer (With Tarmac)',
+  sg_jb_ground: 'SG-JB Ground Transfer',
+  air_evacuation: 'Air Evacuation',
+}
+
+const TIME_OF_DAY_LABELS = {
+  office_hours: 'Office Hours',
+  non_office_hours: 'Non-Office Hours',
+  all_hours: 'All Hours',
+}
+
 // Backend stores status as a lowercase code. A naive "capitalize first letter, replace
 // underscore with space" (the previous approach) turns in_progress into "In progress"
 // (lowercase p) - which matches neither the "In Progress" filter buttons below nor the
@@ -176,6 +193,10 @@ export default function BookingListPage() {
         tier: booking.service_tier.charAt(0).toUpperCase() + booking.service_tier.slice(1),
         status: BOOKING_STATUS_LABELS[booking.status] || booking.status,
         tierNote: booking.original_service_tier ? `Adjusted from: ${booking.original_service_tier}` : '',
+        pricingSource: booking.pricing_source,
+        quotedBaseAmount: booking.quoted_base_amount,
+        quotedTransferType: booking.quoted_transfer_type,
+        quotedTimeOfDay: booking.quoted_time_of_day,
         scheduled: booking.scheduled_date && booking.scheduled_time ? `${booking.scheduled_date}, ${booking.scheduled_time}` : '',
         pickup: booking.pickup_location || '',
         destination: booking.destination || '',
@@ -553,6 +574,23 @@ export default function BookingListPage() {
                         <div className="text-xs font-medium uppercase text-slate-500">Service Tier</div>
                         <div className="text-sm text-slate-900">{selectedBooking.tier}</div>
                         <div className="text-xs text-slate-400">{selectedBooking.tierNote}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium uppercase text-slate-500">Approved Pricing</div>
+                        {selectedBooking.pricingSource ? (
+                          <div className="text-sm text-slate-900">
+                            {selectedBooking.pricingSource === 'one_off_quote' ? 'One-off quotation' : 'Client contract'}
+                            {' - '}${Number(selectedBooking.quotedBaseAmount || 0).toFixed(2)}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-400">Legacy booking - not recorded</div>
+                        )}
+                        {selectedBooking.pricingSource ? (
+                          <div className="text-xs text-slate-400">
+                            {TRANSFER_TYPE_LABELS[selectedBooking.quotedTransferType] || selectedBooking.quotedTransferType}
+                            {' / '}{TIME_OF_DAY_LABELS[selectedBooking.quotedTimeOfDay] || selectedBooking.quotedTimeOfDay}
+                          </div>
+                        ) : null}
                       </div>
                       <div>
                         <div className="text-xs font-medium uppercase text-slate-500">Scheduled</div>

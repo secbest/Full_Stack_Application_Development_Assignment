@@ -3,7 +3,7 @@
 // sticky save footer. One component for both /pricing-contracts/new and
 // /pricing-contracts/:id/edit - see the "Deviations from the Figma mockup" note below.
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useFormik } from 'formik'
 import { ArrowLeft, AlertTriangle, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -30,6 +30,8 @@ export default function ContractFormPage() {
   const { id } = useParams()
   const isEditing = !!id
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedClientId = isEditing ? '' : searchParams.get('client_id') || ''
   const toast = useToast()
 
   const [loading, setLoading] = useState(isEditing)
@@ -40,7 +42,7 @@ export default function ContractFormPage() {
   const [surcharges, setSurcharges] = useState(isEditing ? [] : defaultSurcharges())
 
   const formik = useFormik({
-    initialValues: { client_id: '', contract_name: '', effective_from: '', effective_to: '' },
+    initialValues: { client_id: requestedClientId, contract_name: '', effective_from: '', effective_to: '' },
     validationSchema: isEditing ? editContractSchema : createContractSchema,
     enableReinitialize: true,
     onSubmit: async (values, { setSubmitting }) => {

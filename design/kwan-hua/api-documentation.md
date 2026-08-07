@@ -82,7 +82,7 @@ Authorization: Bearer <token>
 **Success response `200 OK`:**
 ```json
 {
-  "auth_url": "https://login.xero.com/identity/connect/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Flocalhost%3A5000%2Fapi%2Fxero%2Fcallback&scope=openid+profile+email+accounting.transactions+accounting.contacts+offline_access&state=random-csrf-state-token"
+  "auth_url": "https://login.xero.com/identity/connect/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Flocalhost%3A5000%2Fapi%2Fxero%2Fcallback&scope=openid+profile+email+accounting.invoices+accounting.contacts+accounting.settings.read+offline_access&state=random-csrf-state-token"
 }
 ```
 

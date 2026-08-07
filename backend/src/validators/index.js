@@ -129,6 +129,27 @@ const intakeConfirmSchema = Yup.object({
   service_tier: Yup.string()
     .oneOf(['basic', 'advanced', 'critical'], 'Service tier is invalid')
     .required('Service tier is required'),
+  pricing_source: Yup.string()
+    .oneOf(['contract', 'one_off_quote'], 'Pricing source must be contract or one_off_quote')
+    .required('Pricing source is required'),
+  quoted_transfer_type: Yup.string()
+    .oneOf([
+      'one_way_hospital', 'two_way_hospital', 'covid_19', 'imh_psychiatric',
+      'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation',
+    ], 'Quoted transfer type is invalid')
+    .required('Quoted transfer type is required'),
+  quoted_time_of_day: Yup.string()
+    .oneOf(['office_hours', 'non_office_hours', 'all_hours'], 'Quoted time of day is invalid')
+    .required('Quoted time of day is required'),
+  quoted_base_amount: Yup.number()
+    .typeError('Quoted base amount must be a number')
+    .positive('Quoted base amount must be greater than zero')
+    .max(50000, 'Quoted base amount cannot exceed 50000')
+    .when('pricing_source', {
+      is: 'one_off_quote',
+      then: (schema) => schema.required('Quoted base amount is required for one-off pricing'),
+      otherwise: (schema) => schema.nullable().strip(),
+    }),
   scheduled_date: Yup.string().matches(/^\d{4}-\d{2}-\d{2}$/, 'Scheduled date must be in YYYY-MM-DD format').nullable(),
   scheduled_time: Yup.string().matches(/^\d{2}:\d{2}$/, 'Scheduled time must be in HH:MM format').nullable(),
   pickup_location: Yup.string().trim().nullable(),

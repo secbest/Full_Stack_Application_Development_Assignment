@@ -17,7 +17,11 @@ jest.mock('../../src/config', () => ({
 }))
 
 jest.mock('../../src/services', () => ({
-  pricingService: { computeInvoiceLineItems: jest.fn() },
+  pricingService: {
+    computeInvoiceLineItems: jest.fn(),
+    quotationMatchesMemo: jest.fn(),
+    computeQuotedInvoiceLineItems: jest.fn(),
+  },
   gstService: { buildSnapshot: jest.fn(), calculateTotals: jest.fn() },
 }))
 
@@ -199,6 +203,48 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     )
     expect(payload(res).data.invoice.line_items).toHaveLength(1)
     expect(memo.status).toBe('reviewed')
+  })
+
+  test('automatically invoices the frozen one-off price approved by Quotations', async () => {
+    const memo = makeMemo({
+      Booking: {
+        client_id: 6,
+        scheduled_date: '2026-06-10',
+        service_type: 'eas',
+        pricing_source: 'one_off_quote',
+        pricing_contract_id: null,
+        quoted_base_amount: 725.5,
+        quoted_transfer_type: 'one_way_hospital',
+        quoted_time_of_day: 'office_hours',
+      },
+    })
+    const line = {
+      description: 'One-Off Quote - EAS - One-Way Hospital Transfer (Office Hours)',
+      quantity: 1, unit_price: 725.5, amount: 725.5, is_manual_adjustment: false,
+    }
+    ServiceMemo.findByPk.mockResolvedValue(memo)
+    Invoice.findOne.mockResolvedValue(null)
+    pricingService.quotationMatchesMemo.mockReturnValue(true)
+    pricingService.computeQuotedInvoiceLineItems.mockReturnValue({
+      matched: true, lineItems: [line], subtotal: 725.5, unpriced: [],
+    })
+    Invoice.create.mockResolvedValue({
+      id: 45, status: 'matched', subtotal: 725.5, tax_amount: 65.3, total_amount: 790.8,
+    })
+    InvoiceLineItem.findAll.mockResolvedValue([{ id: 5, ...line }])
+
+    const res = mockRes()
+    await approveMemo({ params: { id: 1 }, user: { sub: 2 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(PricingContract.findOne).not.toHaveBeenCalled()
+    expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
+      contract_id: null, status: 'matched', subtotal: 725.5, tax_amount: 65.3, total_amount: 790.8,
+    }), expect.anything())
+    expect(InvoiceLineItem.bulkCreate).toHaveBeenCalledWith(
+      [expect.objectContaining({ invoice_id: 45, unit_price: 725.5 })],
+      expect.anything()
+    )
   })
 })
 
