@@ -163,6 +163,7 @@ async function getBookingById(req, res) {
       client: booking.Client ? { id: booking.Client.id, name: booking.Client.name } : null,
       service_type: booking.service_type,
       service_tier: booking.service_tier,
+      quoted_transfer_type: booking.quoted_transfer_type,
       scheduled_date: booking.scheduled_date,
       scheduled_time: booking.scheduled_time,
       pickup_location: booking.pickup_location,
