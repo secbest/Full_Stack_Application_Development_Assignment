@@ -21,6 +21,7 @@ jest.mock('../../src/services', () => ({
     isSimulation: jest.fn(),
     pushBill: jest.fn(),
     pushArInvoice: jest.fn(),
+    listExpenseAccounts: jest.fn(),
     computeRetryAvailable: jest.fn(() => false),
     describeMode: jest.fn(() => ({ simulated: true, label: 'SIMULATION', detail: 'test' })),
     MAX_SYNC_ATTEMPTS: 3,
@@ -40,7 +41,7 @@ jest.mock('../../src/services/vendorInvoiceAuditService', () => ({ record: jest.
 const { XeroConnection, VendorInvoice, Invoice, User, XeroSyncLog } = require('../../src/models')
 const { xeroService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
-const { retrySync, listSyncLogs } = require('../../src/controllers/xeroController')
+const { retrySync, listSyncLogs, expenseAccounts } = require('../../src/controllers/xeroController')
 
 function mockRes() {
   const res = {}
@@ -64,6 +65,31 @@ beforeEach(() => {
   // no token-expiry math needs mocking for these tests.
   xeroService.isSimulation.mockReturnValue(true)
   XeroConnection.findOne.mockResolvedValue({ id: 1, is_connected: true, xero_tenant_id: 'demo-tenant', access_token: 'demo-token' })
+})
+
+describe('expenseAccounts', () => {
+  test('returns the active bill-coding accounts from the connected Xero organisation', async () => {
+    const accounts = [{ code: '400', name: 'Purchases', type: 'DIRECTCOSTS', tax_type: 'INPUT' }]
+    xeroService.listExpenseAccounts.mockResolvedValue(accounts)
+    const res = mockRes()
+
+    await expenseAccounts({}, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(payload(res).data).toEqual({ accounts, simulated: true })
+    expect(xeroService.listExpenseAccounts).toHaveBeenCalledWith(expect.objectContaining({ xero_tenant_id: 'demo-tenant' }))
+  })
+
+  test('returns 503 without attempting lookup when Xero is disconnected', async () => {
+    XeroConnection.findOne.mockResolvedValue(null)
+    const res = mockRes()
+
+    await expenseAccounts({}, res)
+
+    expect(res.status).toHaveBeenCalledWith(503)
+    expect(payload(res).code).toBe('XERO_NOT_CONNECTED')
+    expect(xeroService.listExpenseAccounts).not.toHaveBeenCalled()
+  })
 })
 
 describe('retrySync (UC-08) - shared guards', () => {

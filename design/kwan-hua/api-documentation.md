@@ -18,6 +18,7 @@ Authorization: Bearer <token>
 | 2 | GET | `/api/xero/connect` | UC-01 | Yes |
 | 3 | GET | `/api/xero/callback` | UC-01 | No |
 | 4 | DELETE | `/api/xero/disconnect` | UC-01 | Yes |
+| 4A | GET | `/api/xero/expense-accounts` | UC-06, UC-07 | Yes |
 | 5 | POST | `/api/vendor-invoices` | UC-03, UC-04, UC-05 | Yes |
 | 6 | GET | `/api/vendor-invoices` | UC-06 | Yes |
 | 7 | GET | `/api/vendor-invoices/:id` | UC-06 | Yes |
@@ -151,6 +152,38 @@ Redirects to `/settings/xero?connected=true`
 
 ---
 
+## 4A. GET `/api/xero/expense-accounts`
+
+**Purpose:** Returns the connected organisation's active `EXPENSE`, `DIRECTCOSTS`, and `OVERHEADS` accounts for AP bill coding. The AP review screen uses this response as a selector instead of accepting an unchecked account-code string. Tokens remain on the server and are refreshed before the lookup.
+
+**Auth required:** Yes - roles: `ap_specialist`, `managing_director`
+
+**Success response `200 OK`:**
+```json
+{
+  "accounts": [
+    {
+      "code": "400",
+      "name": "Medical Supplies",
+      "type": "EXPENSE",
+      "tax_type": "INPUTY24"
+    }
+  ],
+  "simulated": false
+}
+```
+
+**Error responses:**
+
+| Status | Code | Message |
+|--------|------|---------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not permitted to view AP coding accounts |
+| 502 | `XERO_ACCOUNT_LOOKUP_FAILED` | Xero rejected or could not complete the account lookup |
+| 503 | `XERO_NOT_CONNECTED` | Xero is not connected or its token could not be refreshed |
+
+---
+
 ## 5. POST `/api/vendor-invoices`
 
 **Purpose:** Accepts a vendor PDF upload from Chloe (UC-03), forwards it to Cloudinary, creates the `vendor_invoices` record, synchronously runs Gemini OCR (UC-04), calculates the rebate (UC-05), and returns the fully populated invoice record ready for the review interface (UC-06). The response is the single source of truth Chloe's UI uses to pre-fill the review form.
@@ -254,9 +287,19 @@ Redirects to `/settings/xero?connected=true`
     "limit": 20,
     "total": 1,
     "total_pages": 1
+  },
+  "status_counts": {
+    "pending_review": 1,
+    "extraction_failed": 0,
+    "approved": 0,
+    "rejected": 2,
+    "synced_to_xero": 8,
+    "failed": 1
   }
 }
 ```
+
+`status_counts` respects the vendor/date filters but deliberately ignores the selected status filter. This keeps every queue badge accurate while the table displays one selected status.
 
 **Error responses:**
 
@@ -388,7 +431,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 9. POST `/api/vendor-invoices/:id/approve`
 
-**Purpose:** Chloe approves the reviewed invoice (UC-06 step 4). The server performs a duplicate check before approval, updates the status to `approved`, then immediately attempts to sync the bill to Xero (UC-07). The response reflects the final status after the sync attempt so the UI can render "Synced" or "Sync Failed" without a separate poll.
+**Purpose:** Chloe approves the reviewed invoice (UC-06 step 4). The server performs a duplicate check before approval, updates the status to `approved`, then immediately attempts to sync the bill to Xero (UC-07). Before posting, it verifies that the stored account code is still an active expense-family account and resolves an exact supplier to a stable Xero `ContactID`; a missing supplier is created once with a deterministic external contact number. Ambiguous or archived matches are blocked for review. The response reflects the final status after the sync attempt so the UI can render "Synced" or "Sync Failed" without a separate poll.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -427,7 +470,7 @@ Redirects to `/settings/xero?connected=true`
     "id": 15,
     "status": "failed",
     "attempt_count": 1,
-    "error_message": "ContactNotFound: The contact 'Esso Petroleum Singapore Pte Ltd' does not exist in Xero.",
+    "error_message": "Xero has multiple active contacts named \"Esso Petroleum Singapore Pte Ltd\". Add the supplier tax number or merge the duplicates before retrying.",
     "synced_at": null
   }
 }

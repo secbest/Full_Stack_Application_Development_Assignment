@@ -157,6 +157,26 @@ async function disconnect(req, res) {
   }
 }
 
+// GET /api/xero/expense-accounts - exposes only active accounts suitable for
+// supplier bills. The access token remains server-side and is refreshed first.
+async function expenseAccounts(req, res) {
+  try {
+    const conn = await getFreshConnection()
+    if (!conn) {
+      return error(
+        res,
+        'Xero is not connected. Ask the Managing Director to connect Xero before selecting an expense account.',
+        'XERO_NOT_CONNECTED',
+        503
+      )
+    }
+    const accounts = await xeroService.listExpenseAccounts(conn)
+    return success(res, { accounts, simulated: xeroService.isSimulation() })
+  } catch (err) {
+    return error(res, err.message, 'XERO_ACCOUNT_LOOKUP_FAILED', 502)
+  }
+}
+
 // Resolves a human-readable reference for a sync log's polymorphic entity.
 async function resolveEntityReference(log) {
   if (log.entity_type === 'vendor_invoice') {
@@ -400,4 +420,4 @@ async function retrySync(req, res) {
   }
 }
 
-module.exports = { getActiveConnection, ensureFreshConnection, getFreshConnection, status, connect, callback, disconnect, listSyncLogs, retrySync }
+module.exports = { getActiveConnection, ensureFreshConnection, getFreshConnection, status, connect, callback, disconnect, expenseAccounts, listSyncLogs, retrySync }

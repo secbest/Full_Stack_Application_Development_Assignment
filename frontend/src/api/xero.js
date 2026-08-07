@@ -16,6 +16,11 @@ export async function disconnectXero() {
   return res.data.data
 }
 
+export async function getXeroExpenseAccounts() {
+  const res = await api.get('/xero/expense-accounts')
+  return res.data.data // { accounts: [...], simulated }
+}
+
 export async function listSyncLogs(params) {
   const res = await api.get('/xero/sync-logs', { params })
   return res.data.data // { data: [...], pagination, xero_connected }

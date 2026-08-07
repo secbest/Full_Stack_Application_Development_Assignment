@@ -1,7 +1,7 @@
 // Owner: Kwan Hua (AP Specialist)
 // Vendor Invoice List (screen 16): upload modal (PDF drag-drop), OCR confidence column,
 // color-coded confidence %, status filter tabs.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Eye, UploadCloud, FileText, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -25,13 +25,15 @@ export default function VendorInvoiceListPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [statusCounts, setStatusCounts] = useState({})
   const [uploadOpen, setUploadOpen] = useState(false)
 
   async function fetchInvoices() {
     setLoading(true)
     try {
-      const { data } = await listVendorInvoices({ limit: 100, status: statusFilter || undefined })
+      const { data, status_counts: counts } = await listVendorInvoices({ limit: 100, status: statusFilter || undefined })
       setRows(data)
+      setStatusCounts(counts || {})
     } catch {
       toast.error('Failed to load vendor invoices.')
     } finally {
@@ -40,11 +42,6 @@ export default function VendorInvoiceListPage() {
   }
 
   useEffect(() => { fetchInvoices() }, [statusFilter])
-
-  const counts = useMemo(
-    () => STATUSES.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc }, {}),
-    [rows]
-  )
 
   return (
     <div className="p-6 space-y-4 font-sans">
@@ -71,7 +68,7 @@ export default function VendorInvoiceListPage() {
             <button onClick={() => setStatusFilter('')} className={`h-8 px-3 rounded-full text-xs ${!statusFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All</button>
             {STATUSES.map((s) => (
               <button key={s} onClick={() => setStatusFilter(s)} className={`h-8 px-3 rounded-full text-xs capitalize ${statusFilter === s ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                {s.replace(/_/g, ' ')} ({counts[s] ?? 0})
+                {s.replace(/_/g, ' ')} ({statusCounts[s] ?? 0})
               </button>
             ))}
           </div>

@@ -13,6 +13,9 @@ const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
 const XERO_CONNECTIONS_URL = 'https://api.xero.com/connections'
 const XERO_BILLS_URL = 'https://api.xero.com/api.xro/2.0/Invoices'
 const XERO_TAX_RATES_URL = 'https://api.xero.com/api.xro/2.0/TaxRates'
+const XERO_ACCOUNTS_URL = 'https://api.xero.com/api.xro/2.0/Accounts'
+const XERO_CONTACTS_URL = 'https://api.xero.com/api.xro/2.0/Contacts'
+const EXPENSE_ACCOUNT_TYPES = new Set(['EXPENSE', 'DIRECTCOSTS', 'OVERHEADS'])
 // Scopes requested at authorize time.
 //
 // Xero replaced its broad scopes with granular ones: apps registered after 2 March 2026 are
@@ -23,8 +26,8 @@ const XERO_TAX_RATES_URL = 'https://api.xero.com/api.xro/2.0/TaxRates'
 // a broken authorize link rather than a scope problem.
 //
 // accounting.invoices is the granular replacement covering the ACCREC sales invoices and
-// ACCPAY bills this platform creates; accounting.contacts is needed because both pushes
-// identify the client/vendor by Contact name. offline_access yields the refresh token.
+// ACCPAY bills this platform creates; accounting.contacts is needed to resolve suppliers
+// to stable ContactIDs. offline_access yields the refresh token.
 //
 // Overridable via XERO_SCOPES for an app still on the legacy broad scopes, which would need
 // 'openid profile email accounting.transactions accounting.contacts offline_access'.
@@ -228,8 +231,156 @@ function withAccountCode(lineItems, accountCode) {
 function readXeroValidationMessage(json, status) {
   return json?.Elements?.[0]?.ValidationErrors?.[0]?.Message
     || json?.Invoices?.[0]?.ValidationErrors?.[0]?.Message
+    || json?.Contacts?.[0]?.ValidationErrors?.[0]?.Message
     || json?.Message
     || `Xero returned ${status}`
+}
+
+function simulatedExpenseAccounts() {
+  return [{
+    code: String(process.env.XERO_PURCHASE_ACCOUNT_CODE || '400'),
+    name: 'Configured Purchase Account (simulation)',
+    type: 'EXPENSE',
+    tax_type: 'NRINPUT',
+  }]
+}
+
+function mapExpenseAccounts(accounts) {
+  return (accounts || [])
+    .filter((account) => String(account.Status || '').toUpperCase() === 'ACTIVE'
+      && account.Code
+      && EXPENSE_ACCOUNT_TYPES.has(String(account.Type || '').toUpperCase()))
+    .map((account) => ({
+      code: String(account.Code),
+      name: account.Name,
+      type: account.Type,
+      tax_type: account.TaxType || null,
+    }))
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+}
+
+async function fetchExpenseAccounts(accessToken, tenantId) {
+  const resp = await fetch(XERO_ACCOUNTS_URL, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Xero-tenant-id': tenantId,
+      Accept: 'application/json',
+    },
+  })
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('Xero could not read this organisation\'s chart of accounts. Reconnect Xero with organisation-settings access.')
+    }
+    throw new Error(`Xero account lookup failed: ${readXeroValidationMessage(json, resp.status)}`)
+  }
+  return mapExpenseAccounts(json.Accounts)
+}
+
+async function listExpenseAccounts(connection) {
+  if (isSimulation()) return simulatedExpenseAccounts()
+  if (!connection) throw new Error('Xero is not connected.')
+  return fetchExpenseAccounts(decryptToken(connection.access_token), connection.xero_tenant_id)
+}
+
+function normaliseContactValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en')
+}
+
+function cleanXeroContactName(value) {
+  const name = String(value || '').trim().replace(/\s+/g, ' ')
+  if (!name) throw new Error('Vendor name is required before resolving a Xero supplier contact.')
+  if (/[<>]/.test(name)) throw new Error('Vendor name cannot contain angle brackets when creating a Xero contact.')
+  return name.slice(0, 255)
+}
+
+async function searchXeroContacts(accessToken, tenantId, name) {
+  const url = new URL(XERO_CONTACTS_URL)
+  url.searchParams.set('searchTerm', name)
+  url.searchParams.set('includeArchived', 'true')
+  url.searchParams.set('summaryOnly', 'true')
+  url.searchParams.set('page', '1')
+  url.searchParams.set('pageSize', '100')
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Xero-tenant-id': tenantId,
+      Accept: 'application/json',
+    },
+  })
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('Xero could not resolve the supplier contact. Reconnect Xero with contacts access.')
+    }
+    throw new Error(`Xero contact lookup failed: ${readXeroValidationMessage(json, resp.status)}`)
+  }
+  return Array.isArray(json.Contacts) ? json.Contacts : []
+}
+
+function selectExactContact(contacts, name, taxNumber) {
+  const normalisedName = normaliseContactValue(name)
+  const exact = (contacts || []).filter((contact) => normaliseContactValue(contact.Name) === normalisedName)
+  const active = exact.filter((contact) => String(contact.ContactStatus || 'ACTIVE').toUpperCase() === 'ACTIVE')
+  const normalisedTax = normaliseContactValue(taxNumber)
+  if (normalisedTax) {
+    const taxMatches = active.filter((contact) => normaliseContactValue(contact.TaxNumber) === normalisedTax)
+    if (taxMatches.length === 1) return { contact: taxMatches[0] }
+    if (taxMatches.length > 1) return { error: `Xero has multiple active contacts named "${name}" with the same tax number. Merge the duplicates before retrying.` }
+  }
+  if (active.length === 1) return { contact: active[0] }
+  if (active.length > 1) return { error: `Xero has multiple active contacts named "${name}". Add the supplier tax number or merge the duplicates before retrying.` }
+  if (exact.length) return { error: `The matching Xero contact "${name}" is archived. Restore it or rename the vendor before retrying.` }
+  return { contact: null }
+}
+
+async function createXeroContact(accessToken, tenantId, name, taxNumber) {
+  const externalKey = crypto.createHash('sha256')
+    .update(`${normaliseContactValue(name)}|${normaliseContactValue(taxNumber)}`)
+    .digest('hex')
+    .slice(0, 20)
+    .toUpperCase()
+  const contact = {
+    Name: name,
+    ContactNumber: `EFAR-AP-${externalKey}`,
+    ...(String(taxNumber || '').trim() ? { TaxNumber: String(taxNumber).trim() } : {}),
+  }
+  const resp = await fetch(XERO_CONTACTS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Xero-tenant-id': tenantId,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ Contacts: [contact] }),
+  })
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok || json?.Contacts?.[0]?.ValidationErrors?.length) {
+    throw new Error(`Xero contact creation failed: ${readXeroValidationMessage(json, resp.status)}`)
+  }
+  const created = json?.Contacts?.[0]
+  if (!created?.ContactID) throw new Error('Xero created the supplier contact but did not return its ContactID.')
+  return created
+}
+
+async function resolveOrCreateSupplierContact(accessToken, tenantId, vendorName, taxNumber) {
+  const name = cleanXeroContactName(vendorName)
+  const contacts = await searchXeroContacts(accessToken, tenantId, name)
+  const match = selectExactContact(contacts, name, taxNumber)
+  if (match.error) throw new Error(match.error)
+  if (match.contact?.ContactID) return { contactId: match.contact.ContactID, created: false }
+
+  try {
+    const created = await createXeroContact(accessToken, tenantId, name, taxNumber)
+    return { contactId: created.ContactID, created: true }
+  } catch (createError) {
+    // A concurrent bill may have created the deterministic contact after our first
+    // lookup. Re-read once before surfacing the creation error.
+    const retryMatch = selectExactContact(await searchXeroContacts(accessToken, tenantId, name), name, taxNumber)
+    if (retryMatch.contact?.ContactID) return { contactId: retryMatch.contact.ContactID, created: false }
+    throw createError
+  }
 }
 
 function isTaxTypeValidationError(message) {
@@ -456,10 +607,26 @@ async function pushBill(invoice, connection) {
     if (isSimulation()) return { ok: true, xeroRecordId: crypto.randomUUID() }
 
     const accessToken = decryptToken(connection.access_token)
+    const expenseAccounts = await fetchExpenseAccounts(accessToken, connection.xero_tenant_id)
+    const selectedAccount = expenseAccounts.find(
+      (account) => account.code === String(invoice.xero_account_code)
+    )
+    if (!selectedAccount) {
+      return {
+        ok: false,
+        error: `Xero expense account code ${invoice.xero_account_code} is not an active expense, direct-cost, or overhead account in the connected organisation. Select an account from the live Xero list and retry.`,
+      }
+    }
+    const supplier = await resolveOrCreateSupplierContact(
+      accessToken,
+      connection.xero_tenant_id,
+      invoice.vendor_name,
+      invoice.supplier_gst_registration_no
+    )
     const payload = {
       Invoices: [{
         Type: 'ACCPAY',
-        Contact: { Name: invoice.vendor_name },
+        Contact: { ContactID: supplier.contactId },
         InvoiceNumber: invoice.invoice_number,
         Date: invoice.invoice_date || undefined,
         DueDate: invoice.due_date,
@@ -588,6 +755,10 @@ module.exports = {
   refreshTokens,
   fetchOrganisation,
   findEquivalentTaxType,
+  listExpenseAccounts,
+  mapExpenseAccounts,
+  selectExactContact,
+  resolveOrCreateSupplierContact,
   pushBill,
   pushArInvoice,
 }

@@ -14,6 +14,7 @@ const { vendorInvoiceUploadSchema } = require('../validators')
 const { success, created, error, notFound, round2 } = require('../utils')
 
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const VENDOR_INVOICE_STATUSES = ['pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed']
 
 // Rebate Calculation (UC-05): rebate_amount = extracted_total * (rebate_percentage / 100),
 // verified_total = extracted_total - rebate_amount. Deferred (returns nulls) if extracted_total is missing.
@@ -256,22 +257,31 @@ async function listVendorInvoices(req, res) {
       return error(res, '`date_from` must be before or equal to `date_to`', 'INVALID_DATE_RANGE', 400)
     }
 
-    const where = {}
-    if (statusFilter) where.status = statusFilter
-    if (vendor_name) where.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
+    const baseWhere = {}
+    if (vendor_name) baseWhere.vendor_name = { [Op.iLike]: `%${vendor_name}%` }
     if (date_from || date_to) {
-      where.invoice_date = {}
-      if (date_from) where.invoice_date[Op.gte] = date_from
-      if (date_to) where.invoice_date[Op.lte] = date_to
+      baseWhere.invoice_date = {}
+      if (date_from) baseWhere.invoice_date[Op.gte] = date_from
+      if (date_to) baseWhere.invoice_date[Op.lte] = date_to
     }
+    const where = statusFilter ? { ...baseWhere, status: statusFilter } : baseWhere
 
     const offset = (page - 1) * limit
-    const { rows, count } = await VendorInvoice.findAndCountAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset,
-    })
+    const [{ rows, count }, groupedCounts] = await Promise.all([
+      VendorInvoice.findAndCountAll({
+        where,
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+      }),
+      // Counts intentionally omit only the status filter. Vendor/date search filters
+      // still apply, but selecting one status must not make every other badge read zero.
+      VendorInvoice.count({ where: baseWhere, group: ['status'] }),
+    ])
+    const statusCounts = Object.fromEntries(VENDOR_INVOICE_STATUSES.map((status) => [status, 0]))
+    for (const row of groupedCounts || []) {
+      if (row.status in statusCounts) statusCounts[row.status] = Number(row.count)
+    }
 
     return success(res, {
       data: rows.map((v) => ({
@@ -295,6 +305,7 @@ async function listVendorInvoices(req, res) {
         created_at: v.createdAt,
       })),
       pagination: { page, limit, total: count, total_pages: Math.ceil(count / limit) || 1 },
+      status_counts: statusCounts,
     })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)

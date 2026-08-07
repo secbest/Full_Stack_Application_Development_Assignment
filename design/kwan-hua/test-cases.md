@@ -1,7 +1,7 @@
 # Test Cases - Kwan Hua
 
 **Feature Area:** Xero Foundation, OCR & AP Processing
-**Scope:** Derived from `use-cases.md` (UC-01 to UC-08) and `api-documentation.md` (endpoints 1-14) in this folder. Covers the Xero OAuth2 connection, vendor invoice upload/OCR/rebate, AP review/approve/reject, and the shared Xero sync-log/retry panel.
+**Scope:** Derived from `use-cases.md` (UC-01 to UC-08) and `api-documentation.md` (endpoints 1-15) in this folder. Covers the Xero OAuth2 connection, vendor invoice upload/OCR/rebate, AP review/approve/reject, and the shared Xero sync-log/retry panel.
 
 Fill in **Pass/Fail** manually after running each test. `Fail` entries should link to a bug note or commit that fixes them.
 
@@ -29,6 +29,8 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-016 | Token auto-refresh (UC-02) | Access token within expiry window before any Xero-calling endpoint | Token refreshed transparently; original request retried and succeeds with no user-facing error | |
 | TC-017 | Token auto-refresh (UC-02) | Refresh token itself expired (>60 days inactive) | Operation aborted, affected sync marked `failed`, admin notified to re-authenticate via UC-01 | |
 | TC-018 | Token auto-refresh (UC-02) | Xero token endpoint unreachable | Retries up to 3x with exponential backoff, then operation queued and admin notified of connectivity issue | |
+| TC-018A | `GET /api/xero/expense-accounts` | Xero connected with active expense, direct-cost and overhead accounts | 200 with only those active account types, sorted by code | |
+| TC-018B | `GET /api/xero/expense-accounts` | Xero disconnected | 503 `XERO_NOT_CONNECTED`; no chart lookup attempted | |
 | TC-019 | `POST /api/vendor-invoices` | Valid PDF upload, no `rebate_percentage` supplied | 201, status `pending_review`, `rebate_amount`/`verified_total` computed at default 1% | |
 | TC-020 | `POST /api/vendor-invoices` | Valid PDF with a custom `rebate_percentage` | Rebate calculated at the overridden rate, not the 1% default | |
 | TC-021 | `POST /api/vendor-invoices` | Upload a non-PDF file (e.g. JPEG) | 400 `INVALID_FILE_TYPE`, no `vendor_invoices` record created | |
@@ -40,7 +42,7 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-027 | `POST /api/vendor-invoices` | Call as any non-`ap_specialist` role | 403 `FORBIDDEN` | |
 | TC-028 | `POST /api/vendor-invoices` | Missing/invalid JWT | 401 `UNAUTHORIZED` | |
 | TC-029 | `GET /api/vendor-invoices` | No query params | 200, page 1, default `limit=20`, `pagination` block correct | |
-| TC-030 | `GET /api/vendor-invoices` | `status=pending_review` | Only rows with that status returned | |
+| TC-030 | `GET /api/vendor-invoices` | `status=pending_review` | Only pending rows returned; `status_counts` still contains accurate counts for all statuses under the vendor/date filters | |
 | TC-031 | `GET /api/vendor-invoices` | `vendor_name=esso` (partial, case-insensitive) | Only matching vendor rows returned | |
 | TC-032 | `GET /api/vendor-invoices` | `date_from` after `date_to` | 400 `INVALID_DATE_RANGE` | |
 | TC-033 | `GET /api/vendor-invoices` | Call as a role outside ap/md | 403 `FORBIDDEN` | |
@@ -52,8 +54,9 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-039 | `PATCH /api/vendor-invoices/:id` | `extracted_total` set to 0 or negative | 400 `INVALID_TOTAL` | |
 | TC-040 | `PATCH /api/vendor-invoices/:id` | Edit that would make `verified_total` negative | 400 `NEGATIVE_VERIFIED_TOTAL` | |
 | TC-041 | `PATCH /api/vendor-invoices/:id` | Unknown id | 404 `NOT_FOUND` | |
-| TC-042 | `POST /api/vendor-invoices/:id/approve` | Happy path, Xero reachable and contact recognised | 200, status `synced_to_xero`, `xero_bill_id` set, `sync_log.status: success` | |
-| TC-043 | `POST /api/vendor-invoices/:id/approve` | Xero rejects the bill (e.g. `ContactNotFound`) | 200 with status `failed`, `sync_log.error_message` populated | |
+| TC-042 | `POST /api/vendor-invoices/:id/approve` | Happy path, account is active and supplier has one exact Xero match | Bill payload uses the matching `ContactID`; 200, status `synced_to_xero`, `xero_bill_id` set | |
+| TC-042A | `POST /api/vendor-invoices/:id/approve` | Exact supplier is missing in Xero | Supplier is created with a deterministic `ContactNumber`; bill uses returned `ContactID` | |
+| TC-043 | `POST /api/vendor-invoices/:id/approve` | Account is inactive/wrong type, or supplier contact is ambiguous/archived | 200 with status `failed`, actionable `sync_log.error_message`; no bill is posted | |
 | TC-044 | `POST /api/vendor-invoices/:id/approve` | Duplicate `vendor_name` + `invoice_number` already approved/synced | 409 `DUPLICATE_INVOICE` | |
 | TC-045 | `POST /api/vendor-invoices/:id/approve` | Invoice not in `pending_review` | 409 `INVALID_STATUS` | |
 | TC-046 | `POST /api/vendor-invoices/:id/approve` | `extracted_total` not set | 409 `MISSING_TOTAL` | |
@@ -107,8 +110,8 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-085 | Xero Connection page | `token_expiry` is in the past | Red "Access token has expired" warning banner shown | |
 | TC-086 | Xero Connection page | `token_expiry` within next 24 hours | Amber "Token expires within 24 hours" warning banner shown | |
 | TC-087 | Xero Connection page | Click "View Sync Status" | Navigates to `/xero/sync-status` | |
-| TC-088 | Vendor Invoice List page | Load page | Table populated from `GET /api/vendor-invoices`; status filter pill counts match the data | |
-| TC-089 | Vendor Invoice List page | Click a status filter pill (e.g. "pending review") | Table refetches and shows only rows with that status | |
+| TC-088 | Vendor Invoice List page | Load page | Table populated from `GET /api/vendor-invoices`; status filter pill counts match `status_counts` | |
+| TC-089 | Vendor Invoice List page | Click a status filter pill (e.g. "pending review") | Table shows only that status while every other pill retains its server-supplied count | |
 | TC-090 | Vendor Invoice List page | No vendor invoices exist | "No vendor invoices. Upload a PDF to get started." message shown | |
 | TC-091 | Vendor Invoice List page | Click "Upload Invoice" | Upload modal opens | |
 | TC-092 | Upload modal | Drag-and-drop a valid PDF into the dropzone | File accepted; filename and size shown | |
@@ -124,6 +127,8 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-101 | AP Invoice Review page | Load for a non-editable status (`approved`/`synced_to_xero`/`rejected`) | Fields render disabled/read-only, no "Save Changes" button | |
 | TC-102 | AP Invoice Review page | Edit `Extracted Total` and click "Save Changes" | Success toast "Changes saved. Rebate recalculated.", rebate/verified total refresh | |
 | TC-103 | AP Invoice Review page | Save header changes that the server rejects (e.g. negative total) | Error toast with the server's message, invoice left unchanged | |
+| TC-103A | AP Invoice Review page | Load Xero expense accounts and change the selected account | Selector contains only server-supplied active expense-family accounts; save sends the selected code | |
+| TC-103B | AP Invoice Review page | Xero account lookup fails or the stored code is no longer active | Selector is disabled with an actionable error/warning; invalid current code is not silently replaced | |
 | TC-104 | AP Invoice Review page | Click "Approve & Sync" when Xero push succeeds | Success toast "Approved and synced to Xero.", status badge -> `synced_to_xero`, Xero bill ID banner shown | |
 | TC-105 | AP Invoice Review page | Click "Approve & Sync" when the Xero push fails | Error toast with the sync failure reason, status badge -> `failed` | |
 | TC-106 | AP Invoice Review page | Click "Reject" then "Confirm Reject" with no reason entered | Inline error "Enter a reason for rejecting this invoice.", modal stays open | |

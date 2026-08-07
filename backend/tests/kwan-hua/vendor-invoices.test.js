@@ -1,5 +1,5 @@
 jest.mock('../../src/models', () => ({
-  VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn() },
+  VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), count: jest.fn(), create: jest.fn() },
   VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn(), findAll: jest.fn() },
   User: {},
   VendorInvoiceAudit: {},
@@ -40,7 +40,7 @@ const { VendorInvoice, VendorInvoiceItem, XeroSyncLog } = require('../../src/mod
 const { xeroService, apInvoiceService, ocrService, vendorInvoiceAuditService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
 const {
-  calculateRebate, uploadVendorInvoice, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
+  calculateRebate, uploadVendorInvoice, listVendorInvoices, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
   reextractVendorInvoice,
 } = require('../../src/controllers/vendorInvoiceController')
 
@@ -296,6 +296,36 @@ describe('rejectVendorInvoice (UC-06)', () => {
     expect(invoice.status).toBe('rejected')
     expect(invoice.rejection_reason).toBe('Bad scan')
     expect(res.status).toHaveBeenCalledWith(200)
+  })
+})
+
+describe('listVendorInvoices status counts', () => {
+  test('returns queue-wide counts even when one status is selected', async () => {
+    VendorInvoice.findAndCountAll.mockResolvedValue({
+      rows: [makeVendorInvoice({ id: 2, status: 'pending_review' })],
+      count: 1,
+    })
+    VendorInvoice.count.mockResolvedValue([
+      { status: 'pending_review', count: '3' },
+      { status: 'failed', count: '2' },
+      { status: 'synced_to_xero', count: '8' },
+    ])
+    const res = mockRes()
+
+    await listVendorInvoices({
+      query: { status: 'pending_review', vendor_name: null, date_from: null, date_to: null, page: 1, limit: 20 },
+    }, res)
+
+    expect(VendorInvoice.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'pending_review' },
+    }))
+    expect(VendorInvoice.count).toHaveBeenCalledWith({ where: {}, group: ['status'] })
+    expect(payload(res).data.status_counts).toMatchObject({
+      pending_review: 3,
+      failed: 2,
+      synced_to_xero: 8,
+      rejected: 0,
+    })
   })
 })
 

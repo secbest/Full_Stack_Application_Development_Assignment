@@ -18,6 +18,7 @@ import {
   updateVendorInvoiceItem,
   deleteVendorInvoiceItem,
 } from '@/api/vendor'
+import { getXeroExpenseAccounts } from '@/api/xero'
 
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
@@ -41,6 +42,9 @@ export default function VendorInvoiceReviewPage() {
   const [confirmingReextract, setConfirmingReextract] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false)
+  const [expenseAccounts, setExpenseAccounts] = useState([])
+  const [expenseAccountsLoading, setExpenseAccountsLoading] = useState(true)
+  const [expenseAccountsError, setExpenseAccountsError] = useState('')
 
   async function load() {
     setLoading(true)
@@ -70,10 +74,32 @@ export default function VendorInvoiceReviewPage() {
     }
   }
 
-  useEffect(() => { load() }, [id])
+  async function loadExpenseAccounts() {
+    setExpenseAccountsLoading(true)
+    try {
+      const data = await getXeroExpenseAccounts()
+      setExpenseAccounts(data.accounts || [])
+      setExpenseAccountsError('')
+    } catch (err) {
+      setExpenseAccounts([])
+      setExpenseAccountsError(err.response?.data?.message || 'Unable to load expense accounts from Xero.')
+    } finally {
+      setExpenseAccountsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    loadExpenseAccounts()
+  }, [id])
 
   const editable = invoice && EDITABLE_STATUSES.includes(invoice.status)
   const approvalValidation = invoice?.approval_validation || { can_approve: false, issues: [] }
+  const xeroAccountValid = Boolean(
+    form?.xero_account_code
+    && expenseAccounts.some((account) => account.code === String(form.xero_account_code))
+  )
+  const xeroAccountIssue = !expenseAccountsLoading && (!xeroAccountValid || Boolean(expenseAccountsError))
 
   function changeField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -254,8 +280,8 @@ export default function VendorInvoiceReviewPage() {
           {invoice.status === 'pending_review' && (
             <button
               onClick={handleApprove}
-              disabled={busy || isDirty || !approvalValidation.can_approve || (approvalValidation.requires_low_confidence_confirmation && !confirmedLowConfidence)}
-              title={isDirty ? 'Save your changes before approving.' : !approvalValidation.can_approve ? 'Resolve the validation issues first.' : undefined}
+              disabled={busy || isDirty || !approvalValidation.can_approve || !xeroAccountValid || (approvalValidation.requires_low_confidence_confirmation && !confirmedLowConfidence)}
+              title={isDirty ? 'Save your changes before approving.' : (!approvalValidation.can_approve || !xeroAccountValid) ? 'Resolve the validation issues first.' : undefined}
               className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40"
             >
               <UploadCloud size={16} /> Approve &amp; Sync
@@ -282,11 +308,14 @@ export default function VendorInvoiceReviewPage() {
           )}
         </div>
       )}
-      {invoice.status === 'pending_review' && (!approvalValidation.can_approve || isDirty) && (
+      {invoice.status === 'pending_review' && (!approvalValidation.can_approve || isDirty || xeroAccountIssue) && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <div className="font-semibold">Approval is blocked</div>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             {isDirty && <li>Save the current changes before approving.</li>}
+            {xeroAccountIssue && (
+              <li>{expenseAccountsError || 'Select an active Xero expense account before approving.'}</li>
+            )}
             {(approvalValidation.issues || []).map((validationIssue) => (
               <li key={validationIssue.code}>{validationIssue.message}</li>
             ))}
@@ -339,7 +368,14 @@ export default function VendorInvoiceReviewPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Currency" value={form.currency_code} editable={editable} onChange={(v) => changeField('currency_code', v.toUpperCase())} />
-                <Field label="Xero Expense Account" value={form.xero_account_code} editable={editable} onChange={(v) => changeField('xero_account_code', v)} />
+                <XeroAccountField
+                  value={form.xero_account_code}
+                  accounts={expenseAccounts}
+                  editable={editable}
+                  loading={expenseAccountsLoading}
+                  error={expenseAccountsError}
+                  onChange={(v) => changeField('xero_account_code', v)}
+                />
               </div>
               <SelectField
                 label="GST Treatment"
@@ -549,6 +585,34 @@ function SelectField({ label, value, onChange, editable, options }) {
       >
         {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}
       </select>
+    </label>
+  )
+}
+
+function XeroAccountField({ value, onChange, accounts, editable, loading, error }) {
+  const accountExists = accounts.some((account) => account.code === String(value || ''))
+  const unavailableCurrent = value && !accountExists
+  return (
+    <label className="block">
+      <span className="text-xs uppercase text-slate-500">Xero Expense Account</span>
+      <select
+        value={value || ''}
+        disabled={!editable || loading || Boolean(error)}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full h-9 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
+      >
+        <option value="">{loading ? 'Loading Xero accounts...' : 'Select an expense account'}</option>
+        {unavailableCurrent && <option value={value}>{value} - current code (not active in Xero)</option>}
+        {accounts.map((account) => (
+          <option key={account.code} value={account.code}>
+            {account.code} - {account.name} ({account.type})
+          </option>
+        ))}
+      </select>
+      {error && <span className="mt-1 block text-xs text-rose-600">{error}</span>}
+      {!error && !loading && unavailableCurrent && (
+        <span className="mt-1 block text-xs text-amber-700">Select an active Xero expense account before approval.</span>
+      )}
     </label>
   )
 }

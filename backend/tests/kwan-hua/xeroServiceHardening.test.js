@@ -261,6 +261,7 @@ describe('pushBill sends the approved AP accounting result', () => {
       invoice_date: '2026-07-01',
       due_date: '2026-07-31',
       currency_code: 'SGD',
+      supplier_gst_registration_no: 'M2-1234567-8',
       xero_account_code: '400',
       xero_tax_type: 'INPUTY24',
       gst_rate_percent: 9,
@@ -279,17 +280,30 @@ describe('pushBill sends the approved AP accounting result', () => {
     return { xero_tenant_id: 'tenant-1', access_token: xeroService.encryptToken('access-token') }
   }
 
+  function response(json, { ok = true, status = 200 } = {}) {
+    return { ok, status, json: async () => json }
+  }
+
+  function activeAccounts(accounts = [{ Code: '400', Name: 'Medical Supplies', Type: 'EXPENSE', Status: 'ACTIVE', TaxType: 'INPUTY24' }]) {
+    return response({ Accounts: accounts })
+  }
+
+  function existingContact(contacts = [{ ContactID: 'contact-1', Name: 'Medical Supplier', TaxNumber: 'M2-1234567-8', ContactStatus: 'ACTIVE' }]) {
+    return response({ Contacts: contacts })
+  }
+
   test('sends exclusive GST lines, due date, account code and a negative rebate line', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ Invoices: [{ InvoiceID: 'bill-uuid-1' }] }),
-    })
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(activeAccounts())
+      .mockResolvedValueOnce(existingContact())
+      .mockResolvedValueOnce(response({ Invoices: [{ InvoiceID: 'bill-uuid-1' }] }))
     global.fetch = fetchMock
 
     await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({ ok: true, xeroRecordId: 'bill-uuid-1' })
-    const sent = JSON.parse(fetchMock.mock.calls[0][1].body).Invoices[0]
+    const sent = JSON.parse(fetchMock.mock.calls[2][1].body).Invoices[0]
     expect(sent).toMatchObject({
       Type: 'ACCPAY',
+      Contact: { ContactID: 'contact-1' },
       DueDate: '2026-07-31',
       CurrencyCode: 'SGD',
       LineAmountTypes: 'Exclusive',
@@ -308,16 +322,76 @@ describe('pushBill sends the approved AP accounting result', () => {
   })
 
   test('treats a Xero validation error inside an HTTP 200 response as a failed sync', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(activeAccounts())
+      .mockResolvedValueOnce(existingContact())
+      .mockResolvedValueOnce(response({
         Invoices: [{ ValidationErrors: [{ Message: 'Account code is not valid.' }] }],
-      }),
-    })
+      }))
 
     await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({
       ok: false,
       error: 'Account code is not valid.',
     })
+  })
+
+  test('rejects an inactive or non-expense account before resolving a contact or posting a bill', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce(activeAccounts([
+      { Code: '200', Name: 'Sales', Type: 'REVENUE', Status: 'ACTIVE' },
+      { Code: '400', Name: 'Old Expenses', Type: 'EXPENSE', Status: 'ARCHIVED' },
+    ]))
+
+    await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/not an active expense/i),
+    })
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('creates a missing supplier once, then posts using the returned ContactID', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(activeAccounts())
+      .mockResolvedValueOnce(existingContact([]))
+      .mockResolvedValueOnce(response({ Contacts: [{ ContactID: 'contact-new', Name: 'Medical Supplier' }] }))
+      .mockResolvedValueOnce(response({ Invoices: [{ InvoiceID: 'bill-new' }] }))
+
+    await expect(xeroService.pushBill(bill(), connection())).resolves.toEqual({ ok: true, xeroRecordId: 'bill-new' })
+    const contactRequest = JSON.parse(global.fetch.mock.calls[2][1].body).Contacts[0]
+    expect(contactRequest).toMatchObject({
+      Name: 'Medical Supplier',
+      TaxNumber: 'M2-1234567-8',
+      ContactNumber: expect.stringMatching(/^EFAR-AP-[A-F0-9]{20}$/),
+    })
+    const invoiceRequest = JSON.parse(global.fetch.mock.calls[3][1].body).Invoices[0]
+    expect(invoiceRequest.Contact).toEqual({ ContactID: 'contact-new' })
+  })
+
+  test('blocks ambiguous duplicate supplier contacts instead of choosing one', async () => {
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce(activeAccounts())
+      .mockResolvedValueOnce(existingContact([
+        { ContactID: 'contact-1', Name: 'Medical Supplier', ContactStatus: 'ACTIVE' },
+        { ContactID: 'contact-2', Name: ' medical  supplier ', ContactStatus: 'ACTIVE' },
+      ]))
+
+    await expect(xeroService.pushBill(bill({ supplier_gst_registration_no: null }), connection())).resolves.toEqual({
+      ok: false,
+      error: expect.stringMatching(/multiple active contacts/i),
+    })
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  test('lists only active Xero expense-family accounts', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce(activeAccounts([
+      { Code: '410', Name: 'Overheads', Type: 'OVERHEADS', Status: 'ACTIVE', TaxType: 'INPUT' },
+      { Code: '400', Name: 'Purchases', Type: 'DIRECTCOSTS', Status: 'ACTIVE', TaxType: 'INPUT' },
+      { Code: '200', Name: 'Sales', Type: 'REVENUE', Status: 'ACTIVE' },
+      { Code: '420', Name: 'Old Expense', Type: 'EXPENSE', Status: 'ARCHIVED' },
+    ]))
+
+    await expect(xeroService.listExpenseAccounts(connection())).resolves.toEqual([
+      { code: '400', name: 'Purchases', type: 'DIRECTCOSTS', tax_type: 'INPUT' },
+      { code: '410', name: 'Overheads', type: 'OVERHEADS', tax_type: 'INPUT' },
+    ])
   })
 })
