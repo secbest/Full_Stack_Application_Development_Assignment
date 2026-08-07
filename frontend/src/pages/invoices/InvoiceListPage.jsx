@@ -65,7 +65,15 @@ export default function InvoiceListPage() {
       const result = await batchApprove(ids)
       const synced = result.queued_for_xero.length
       const skipped = result.skipped.length
-      toast.success(`Approved ${result.approved.length}, synced ${synced} to Xero${skipped ? `, skipped ${skipped}` : ''}.`)
+      const summary = `Approved ${result.approved.length}, synced ${synced} to Xero${skipped ? `, skipped ${skipped}` : ''}.`
+      if (skipped > 0) {
+        // A silent "skipped 2" leaves the user guessing. The commonest reason is a missing
+        // base charge, which is a real under-billing risk, so the reason is named.
+        const reasons = [...new Set(Object.values(result.skipped_reasons || {}))]
+        toast.error(`${summary} ${reasons.join(' ')}`.trim())
+      } else {
+        toast.success(summary)
+      }
       setSelected(new Set())
       await fetchInvoices()
     } catch (err) {

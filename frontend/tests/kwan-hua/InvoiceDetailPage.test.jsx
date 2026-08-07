@@ -53,10 +53,25 @@ function baseInvoice(overrides = {}) {
     xero_invoice_id: null,
     unpriced_surcharges: [],
     line_items: [
-      { id: 1, description: 'EAS - Office Hours', quantity: '1', unit_price: '850.00', amount: '850.00', is_manual_adjustment: false },
+      { id: 1, description: 'EAS - Office Hours', quantity: '1', unit_price: '850.00', amount: '850.00', is_manual_adjustment: false, line_type: 'base' },
     ],
     ...overrides,
   }
+}
+
+// An invoice whose surcharges are priced but whose transport charge is missing - the
+// shape that reached Xero billed $21.80 for a job quoted at $190.
+function invoiceWithoutBase(overrides = {}) {
+  return baseInvoice({
+    status: 'adjusted',
+    subtotal: '20.00',
+    tax_amount: '1.80',
+    total_amount: '21.80',
+    line_items: [
+      { id: 1, description: 'Disposables Charge (minimum)', quantity: '1', unit_price: '20.00', amount: '20.00', is_manual_adjustment: false, line_type: 'surcharge' },
+    ],
+    ...overrides,
+  })
 }
 
 describe('InvoiceDetailPage - retry automatic matching', () => {
@@ -246,6 +261,10 @@ describe('InvoiceDetailPage - add line item (POST /invoices/:id/line-items)', ()
     expect(mock.history.post).toHaveLength(1)
     expect(JSON.parse(mock.history.post[0].data)).toEqual({
       description: 'Extra mileage surcharge', quantity: 1, unit_price: 40,
+      // An unlabelled line is always an adjustment. It must never default to `base`:
+      // that is the row the approval guard looks for, and inventing one would let an
+      // invoice missing its transport charge sail through approval.
+      line_type: 'adjustment',
     })
   })
 
@@ -296,6 +315,54 @@ describe('InvoiceDetailPage - add line item (POST /invoices/:id/line-items)', ()
 
     expect(screen.getByDisplayValue('Extra mileage surcharge')).toBeInTheDocument()
     expect(mock.history.post).toHaveLength(1)
+  })
+})
+
+// Regression cover for a real under-billing: invoices reached Xero billed $21.80 for jobs
+// quoted at $50-$190 because the transport charge was never added and nothing stopped the
+// approval.
+describe('InvoiceDetailPage - missing base transport charge', () => {
+  test('warns, and disables Approve, when the invoice has surcharges but no base', async () => {
+    mock.onGet('/invoices/9').reply(200, { success: true, data: invoiceWithoutBase() })
+    renderDetail()
+
+    expect(await screen.findByText(/no base transport charge on this invoice/i)).toBeInTheDocument()
+    expect(screen.getByText(/bill the customer for the extras only/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve & sync/i })).toBeDisabled()
+  })
+
+  test('does not warn, and allows Approve, once a base line is present', async () => {
+    mock.onGet('/invoices/9').reply(200, { success: true, data: baseInvoice() })
+    renderDetail()
+
+    await screen.findByText('EAS - Office Hours')
+    expect(screen.queryByText(/no base transport charge/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve & sync/i })).toBeEnabled()
+  })
+
+  test('sends line_type base when the charge is declared as the transport charge', async () => {
+    mock.onGet('/invoices/9').reply(200, { success: true, data: invoiceWithoutBase() })
+    mock.onPost('/invoices/9/line-items').reply(201, { success: true, data: {} })
+    renderDetail()
+    const user = userEvent.setup()
+
+    await screen.findByText(/no base transport charge/i)
+    await user.click(screen.getByRole('button', { name: /add adjustment/i }))
+    await user.click(screen.getByRole('checkbox', { name: /base transport charge/i }))
+    await user.type(screen.getByLabelText(/description/i), 'EAS one-way (manually priced)')
+    await user.type(screen.getByLabelText(/unit price/i), '190')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    await waitFor(() => expect(mock.history.post).toHaveLength(1))
+    expect(JSON.parse(mock.history.post[0].data).line_type).toBe('base')
+  })
+
+  test('marks the base row distinctly in the line items table', async () => {
+    mock.onGet('/invoices/9').reply(200, { success: true, data: baseInvoice() })
+    renderDetail()
+
+    // The row whose absence under-bills the customer has to be identifiable at a glance.
+    expect(await screen.findByText('Base')).toBeInTheDocument()
   })
 })
 

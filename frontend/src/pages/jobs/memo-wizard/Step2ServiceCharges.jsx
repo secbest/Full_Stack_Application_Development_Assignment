@@ -48,7 +48,13 @@ export default function Step2ServiceCharges({ booking, initialValues, onNext, on
       // IntakeQueuePage's "Transfer Type" field) - defaulting from it saves a tap and
       // keeps the memo consistent with what was quoted. Still changeable on the spot.
       transfer_type: initialValues.transfer_type || booking?.quoted_transfer_type || '',
-      is_office_hours: initialValues.is_office_hours ?? true,
+      // Default from the time category Quotations quoted, for the same reason as the two
+      // fields above. Hardcoding `true` here meant a job sold as non-office-hours arrived
+      // at AR claiming office hours, which fails quotationMatchesMemo and drops the whole
+      // invoice into manual pricing over a toggle nobody had touched. The crew still
+      // records reality - this only changes which way the toggle starts.
+      is_office_hours: initialValues.is_office_hours
+        ?? (booking?.quoted_time_of_day === 'non_office_hours' ? false : true),
       oxygen_litres_used: initialValues.oxygen_litres_used ?? 0,
       has_inconvenience_fee: initialValues.has_inconvenience_fee ?? false,
       disposables_used: initialValues.disposables_used ?? false,

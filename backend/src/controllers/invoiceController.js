@@ -189,6 +189,9 @@ async function getInvoiceById(req, res) {
         unit_price: li.unit_price,
         amount: li.amount,
         is_manual_adjustment: li.is_manual_adjustment,
+        // base / surcharge / adjustment - the UI blocks approval and warns when no base
+        // line is present, mirroring the guard in batchApprove.
+        line_type: li.line_type,
         was_manually_edited: li.was_manually_edited,
         engine_unit_price: li.engine_unit_price,
         engine_amount: li.engine_amount,
@@ -208,11 +211,33 @@ async function addLineItem(req, res) {
       return error(res, 'Invoice is in `approved` or `synced_to_xero` status - edits not permitted.', 'INVOICE_LOCKED', 409)
     }
 
-    const { description, quantity, unit_price } = req.body
+    const { description, quantity, unit_price, line_type } = req.body
     const qty = Number(quantity)
     const price = Number(unit_price)
     if (!description || !description.trim() || !(qty > 0) || !(price > 0)) {
       return error(res, '`description` is required and `quantity`/`unit_price` must be positive numbers.', 'VALIDATION_ERROR', 400)
+    }
+
+    // A hand-added line is an `adjustment` unless the AR Specialist states it is the
+    // transport charge. Pricing the base by hand is a legitimate recovery path when no
+    // contract rate exists - it just has to be declared, because the approval guard below
+    // refuses any invoice with no base line at all.
+    const lineType = line_type === 'base' ? 'base' : 'adjustment'
+    if (line_type !== undefined && !['base', 'adjustment'].includes(line_type)) {
+      return error(res, '`line_type` must be `base` or `adjustment`.', 'VALIDATION_ERROR', 400)
+    }
+    if (lineType === 'base') {
+      const existingBase = await InvoiceLineItem.count({
+        where: { invoice_id: invoice.id, line_type: 'base' },
+      })
+      if (existingBase > 0) {
+        return error(
+          res,
+          'This invoice already has a base transport charge. Edit or remove it before adding another.',
+          'BASE_ALREADY_PRESENT',
+          409
+        )
+      }
     }
     if (qty > MAX_LINE_ITEM_QUANTITY) {
       return error(res, `\`quantity\` cannot exceed ${MAX_LINE_ITEM_QUANTITY}.`, 'VALIDATION_ERROR', 400)
@@ -228,6 +253,7 @@ async function addLineItem(req, res) {
       unit_price: round2(price),
       amount: round2(qty * price),
       is_manual_adjustment: true,
+      line_type: lineType,
     })
 
     // Adding a manual adjustment moves a matched OR unmatched invoice to 'adjusted' -
@@ -453,10 +479,13 @@ async function rematchInvoice(req, res) {
         }
       }
 
-      const [memo, booking, existingLineCount] = await Promise.all([
+      const [memo, booking, manualLineCount] = await Promise.all([
         ServiceMemo.findByPk(invoice.memo_id, { transaction: t }),
         Booking.findByPk(invoice.booking_id, { transaction: t }),
-        InvoiceLineItem.count({ where: { invoice_id: invoice.id }, transaction: t }),
+        InvoiceLineItem.count({
+          where: { invoice_id: invoice.id, is_manual_adjustment: true },
+          transaction: t,
+        }),
       ])
       if (!memo || !booking) {
         return {
@@ -467,13 +496,16 @@ async function rematchInvoice(req, res) {
           },
         }
       }
-      // An unmatched invoice normally has no line items. Refuse to replace unexpected
-      // rows rather than silently deleting pricing work that may have been written by a
-      // previous version or an administrator.
-      if (existingLineCount > 0) {
+      // An unmatched invoice now carries the surcharge lines the engine could price
+      // without a base rate, so "has any line items" is no longer a reason to refuse -
+      // those rows are the engine's own output and are safe to regenerate below.
+      //
+      // A MANUAL adjustment is different: it is a human's pricing decision, and silently
+      // deleting it to rerun the engine would discard work the engine cannot reproduce.
+      if (manualLineCount > 0) {
         return {
           error: {
-            message: 'This unmatched invoice already has line items. Remove or reconcile them before retrying automatic matching.',
+            message: 'This invoice has manual adjustments. Remove them before retrying automatic matching, or keep pricing it by hand.',
             code: 'INVOICE_HAS_LINE_ITEMS',
             status: 409,
           },
@@ -548,6 +580,14 @@ async function rematchInvoice(req, res) {
       }
       const totals = gstService.calculateTotals(result.lineItems, gstSnapshot.gst_rate_percent)
 
+      // Clear the engine's previous output before writing the new run. Without this the
+      // surcharge lines created at approval time would be duplicated by the rematch,
+      // silently doubling every surcharge on the invoice. Manual adjustments are excluded
+      // above, so nothing a human priced is inside this delete.
+      await InvoiceLineItem.destroy({
+        where: { invoice_id: invoice.id, is_manual_adjustment: false },
+        transaction: t,
+      })
       await InvoiceLineItem.bulkCreate(
         result.lineItems.map((li) => ({ ...li, invoice_id: invoice.id })),
         { transaction: t }
@@ -613,19 +653,40 @@ async function batchApprove(req, res) {
     const skipped = []
     const queued_for_xero = []
 
+    // Reasons an invoice in the batch was not approved, so the caller can tell "wrong
+    // status" apart from "would have billed the customer for surcharges only".
+    const skipped_reasons = {}
+
     for (const id of invoice_ids) {
       const invoice = await Invoice.findByPk(id)
       if (!invoice || !['matched', 'adjusted'].includes(invoice.status)) {
         skipped.push(id)
+        skipped_reasons[id] = invoice
+          ? `Status is \`${invoice.status}\` - only \`matched\` or \`adjusted\` invoices can be approved.`
+          : 'No invoice with this id.'
         continue
       }
+
+      // An invoice with no base line is missing the transport charge - the bulk of the
+      // money. This is reachable because adding any manual adjustment moves an `unmatched`
+      // invoice to `adjusted`, which used to be enough to approve and push it. Invoices
+      // did reach Xero billed $20 for a job quoted at $190 this way.
+      const baseCount = await InvoiceLineItem.count({
+        where: { invoice_id: invoice.id, line_type: 'base' },
+      })
+      if (baseCount === 0) {
+        skipped.push(id)
+        skipped_reasons[id] = 'No base transport charge on this invoice. Add it (or retry matching) before approving - approving now would bill the customer for surcharges only.'
+        continue
+      }
+
       await invoice.update({ status: 'approved', approved_by: req.user.sub, approved_at: new Date() })
       approved.push(id)
       const result = await syncInvoiceToXero(invoice, conn)
       if (result.ok) queued_for_xero.push(id)
     }
 
-    return success(res, { approved, skipped, queued_for_xero })
+    return success(res, { approved, skipped, skipped_reasons, queued_for_xero })
   } catch (err) {
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }

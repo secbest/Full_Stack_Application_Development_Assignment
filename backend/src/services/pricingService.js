@@ -88,6 +88,7 @@ function buildSurchargeLineItems(memo, s) {
       unit_price: round2(unitPrice),
       amount: round2(quantity * unitPrice),
       is_manual_adjustment: false,
+      line_type: 'surcharge',
     })
 
   // Records a chargeable item the contract cannot price. `detail` carries the recorded
@@ -191,6 +192,9 @@ function computeInvoiceLineItems(memo, rates, surchargeRows) {
     unit_price: round2(baseAmount),
     amount: round2(baseAmount),
     is_manual_adjustment: false,
+    // The transport charge. The approval guard requires exactly this row to exist before
+    // an invoice can be pushed to Xero.
+    line_type: 'base',
   }]
 
   lineItems.push(...surchargeItems)

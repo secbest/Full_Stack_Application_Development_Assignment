@@ -40,6 +40,14 @@ export default function InvoiceDetailPage() {
   const [adding, setAdding] = useState(false)
   const [adjustmentType, setAdjustmentType] = useState('')
   const [form, setForm] = useState({ description: '', quantity: '1', unit_price: '' })
+  // Marks the next added line as the base transport charge rather than an extra. Pricing
+  // the base by hand is the recovery path when no contract rate covers the job.
+  const [asBase, setAsBase] = useState(false)
+
+  // The transport charge - the bulk of the money. An invoice can carry engine-priced
+  // surcharges while this is still missing, and approving in that state bills the customer
+  // for extras only, so both this screen and the API refuse it.
+  const hasBase = invoice?.line_items?.some((li) => li.line_type === 'base')
 
   async function load() {
     setLoading(true)
@@ -86,10 +94,16 @@ export default function InvoiceDetailPage() {
     }
     setBusy(true)
     try {
-      await addLineItem(invoice.id, { description: form.description.trim(), quantity, unit_price })
-      toast.success('Manual adjustment added.')
+      await addLineItem(invoice.id, {
+        description: form.description.trim(),
+        quantity,
+        unit_price,
+        line_type: asBase ? 'base' : 'adjustment',
+      })
+      toast.success(asBase ? 'Base transport charge added.' : 'Manual adjustment added.')
       setForm({ description: '', quantity: '1', unit_price: '' })
       setAdjustmentType('')
+      setAsBase(false)
       setAdding(false)
       await load()
     } catch (err) {
@@ -138,7 +152,10 @@ export default function InvoiceDetailPage() {
       const result = await batchApprove([invoice.id])
       if (result.queued_for_xero.includes(invoice.id)) toast.success('Invoice approved and synced to Xero.')
       else if (result.approved.includes(invoice.id)) toast.error('Approved, but the Xero sync failed. Retry from the invoice.')
-      else toast.error('Invoice could not be approved in its current status.')
+      // The server explains WHY it refused - "wrong status" and "no base charge" need
+      // different fixes, and a single generic message sends the user looking in the
+      // wrong place.
+      else toast.error(result.skipped_reasons?.[invoice.id] || 'Invoice could not be approved in its current status.')
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Approval failed.')
@@ -182,7 +199,12 @@ export default function InvoiceDetailPage() {
             </button>
           )}
           {['matched', 'adjusted'].includes(invoice.status) && (
-            <button onClick={handleApprove} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
+            <button
+              onClick={handleApprove}
+              disabled={busy || !hasBase}
+              title={hasBase ? undefined : 'Add the base transport charge before approving.'}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40"
+            >
               <UploadCloud size={16} /> Approve &amp; Sync
             </button>
           )}
@@ -240,6 +262,23 @@ export default function InvoiceDetailPage() {
               ? 'Price Manually'
               : (invoice.contract_id ? 'Open Contract Rates' : 'Create Pricing Contract')}
           </button>
+        </div>
+      )}
+
+      {/* The single most expensive thing that can be wrong with an invoice: it looks
+          priced (it has surcharge lines and a non-zero total) but the transport charge
+          that is most of the money was never added. Invoices reached Xero billed $21.80
+          for a job quoted at $190 exactly this way. */}
+      {!hasBase && !LOCKED.includes(invoice.status) && (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">No base transport charge on this invoice</p>
+          <p className="mt-0.5 text-xs text-rose-800">
+            {invoice.line_items.length > 0
+              ? 'The recorded surcharges are priced, but the transport charge itself is missing - approving now would bill the customer for the extras only.'
+              : 'Nothing has been priced on this invoice yet.'}
+            {' '}Add it below using <strong>Add Adjustment</strong> with “This is the base transport charge” ticked
+            {invoice.status === 'unmatched' ? ', or fix the contract rate and select Retry Match.' : '.'}
+          </p>
         </div>
       )}
 
@@ -332,6 +371,15 @@ export default function InvoiceDetailPage() {
                   <NumberStepper value={form.unit_price} onChange={(v) => setForm({ ...form, unit_price: v })} min={0} max={MAX_UNIT_PRICE} step={1} bigStep={10} decimals={2} placeholder="0.00" ariaLabel="Unit price" className="mt-1 w-full h-9" />
                 </label>
                 <button onClick={handleAdd} disabled={busy} className="h-9 px-4 rounded-md bg-slate-900 text-white text-sm hover:bg-slate-800 disabled:opacity-40">Add</button>
+
+                {/* Only offered while the invoice has no base. Once one exists the API
+                    rejects a second, so showing the option would be a dead end. */}
+                {!hasBase && (
+                  <label className="col-span-full flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input type="checkbox" checked={asBase} onChange={(e) => setAsBase(e.target.checked)} className="h-3.5 w-3.5" />
+                    This is the base transport charge (not an extra) - required before the invoice can be approved
+                  </label>
+                )}
               </div>
             )}
 
@@ -385,7 +433,15 @@ export default function InvoiceDetailPage() {
  * had actually typed - a false attribution on the one screen whose job is to be auditable.
  */
 function SourceBadge({ item }) {
-  const variant = item.is_manual_adjustment
+  // The base charge is called out regardless of who priced it: it is the row whose absence
+  // silently under-bills the customer, so it must be identifiable at a glance.
+  const variant = item.line_type === 'base'
+    ? {
+        label: item.is_manual_adjustment ? 'Base · manual' : 'Base',
+        className: 'bg-slate-800 text-white',
+        title: 'The transport charge. An invoice cannot be approved without one.',
+      }
+    : item.is_manual_adjustment
     ? { label: 'Manual', className: 'bg-amber-100 text-amber-700', title: 'Added by hand by the AR Specialist' }
     : item.was_manually_edited
       ? { label: 'Auto · edited', className: 'bg-orange-100 text-orange-800', title: 'Generated by the pricing engine, then overridden by hand' }

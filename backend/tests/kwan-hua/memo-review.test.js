@@ -21,6 +21,10 @@ jest.mock('../../src/services', () => ({
     computeInvoiceLineItems: jest.fn(),
     quotationMatchesMemo: jest.fn(),
     computeQuotedInvoiceLineItems: jest.fn(),
+    // Used by the no-base-price paths, which now price the crew's recorded surcharges
+    // instead of creating an empty invoice.
+    buildSurchargeLineItems: jest.fn(() => ({ items: [], unpriced: [] })),
+    toSurchargeMap: jest.fn(() => ({})),
   },
   gstService: { buildSnapshot: jest.fn(), calculateTotals: jest.fn() },
 }))
@@ -113,10 +117,11 @@ describe('approveMemo (UC-03 -> UC-04)', () => {
     ServiceMemo.findByPk.mockResolvedValue(memo)
     Invoice.findOne.mockResolvedValue(null)
     PricingContract.findOne.mockResolvedValue(null)
-    // With no contract the engine is still consulted, with empty rates/surcharges, purely to
-    // enumerate what the memo recorded that now needs pricing by hand.
-    pricingService.computeInvoiceLineItems.mockReturnValue({
-      matched: false, lineItems: [], subtotal: 0,
+    // No contract fixes no BASE rate, but surcharges still resolve from the global
+    // published card, so the schedule lookup happens on this path too.
+    SurchargeSchedule.findAll.mockResolvedValue([])
+    pricingService.buildSurchargeLineItems.mockReturnValue({
+      items: [],
       unpriced: [{ surcharge_type: 'resuscitation', label: 'Resuscitation', detail: 'performed' }],
     })
     Invoice.create.mockResolvedValue({ id: 42, status: 'unmatched', subtotal: 0, tax_amount: 0, total_amount: 0, unpriced_surcharges: [] })

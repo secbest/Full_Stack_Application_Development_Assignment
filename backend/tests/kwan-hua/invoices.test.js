@@ -1,6 +1,8 @@
 jest.mock('../../src/models', () => ({
   Invoice: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
-  InvoiceLineItem: { findAll: jest.fn(), create: jest.fn(), findOne: jest.fn(), count: jest.fn(), bulkCreate: jest.fn() },
+  // destroy: rematch clears the engine's previous line items before regenerating them,
+  // so an unmatched invoice carrying auto-priced surcharges is not doubled up.
+  InvoiceLineItem: { findAll: jest.fn(), create: jest.fn(), findOne: jest.fn(), count: jest.fn(), bulkCreate: jest.fn(), destroy: jest.fn() },
   Booking: { update: jest.fn(), findByPk: jest.fn() },
   Client: { findByPk: jest.fn() },
   ServiceMemo: { update: jest.fn(), findByPk: jest.fn() },
@@ -336,6 +338,12 @@ describe('deleteLineItem (UC-05)', () => {
 })
 
 describe('batchApprove (UC-06)', () => {
+  // Approval now requires a base transport charge, so every invoice in these fixtures is
+  // given one. The guard itself is exercised in its own describe below.
+  beforeEach(() => {
+    InvoiceLineItem.count.mockResolvedValue(1)
+  })
+
   test('rejects an empty/non-array invoice_ids', async () => {
     const res = mockRes()
     await batchApprove({ body: { invoice_ids: [] }, user: { sub: 1 } }, res)
@@ -383,6 +391,114 @@ describe('batchApprove (UC-06)', () => {
     expect(invoice.status).toBe('failed')
     expect(payload(res).data.queued_for_xero).toEqual([])
     expect(notificationService.create).toHaveBeenCalled()
+  })
+})
+
+// Regression cover for a real under-billing: three invoices reached Xero billed $21.80 for
+// jobs quoted at $50-$190. An invoice whose base could not be priced is created
+// `unmatched`; adding any manual adjustment moves it to `adjusted`, which used to be
+// enough to approve and push it with the transport charge silently absent.
+describe('batchApprove - base transport charge guard', () => {
+  test('refuses an invoice that has no base line and explains why', async () => {
+    xeroController.getFreshConnection.mockResolvedValue({ xero_tenant_id: 'demo', access_token: 'demo' })
+    const invoice = makeInvoice({ id: 9, status: 'adjusted' })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    InvoiceLineItem.count.mockResolvedValue(0) // surcharges/adjustments only, no base
+
+    const res = mockRes()
+    await batchApprove({ body: { invoice_ids: [9] }, user: { sub: 1 } }, res)
+
+    expect(payload(res).data.approved).toEqual([])
+    expect(payload(res).data.skipped).toEqual([9])
+    expect(payload(res).data.skipped_reasons[9]).toMatch(/no base transport charge/i)
+    // The invoice must not be mutated, and nothing may reach Xero.
+    expect(invoice.status).toBe('adjusted')
+    expect(xeroService.pushArInvoice).not.toHaveBeenCalled()
+  })
+
+  test('approves normally once a base line exists', async () => {
+    xeroController.getFreshConnection.mockResolvedValue({ xero_tenant_id: 'demo', access_token: 'demo' })
+    const invoice = makeInvoice({ id: 10, status: 'adjusted' })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    Client.findByPk.mockResolvedValue({ name: 'TTSH' })
+    InvoiceLineItem.findAll.mockResolvedValue([])
+    InvoiceLineItem.count.mockResolvedValue(1)
+    xeroService.pushArInvoice.mockResolvedValue({ ok: true, xeroRecordId: 'INV-XR-9' })
+
+    const res = mockRes()
+    await batchApprove({ body: { invoice_ids: [10] }, user: { sub: 1 } }, res)
+
+    expect(payload(res).data.approved).toEqual([10])
+    expect(payload(res).data.queued_for_xero).toEqual([10])
+  })
+
+  test('counts only base rows, not any line item', async () => {
+    xeroController.getFreshConnection.mockResolvedValue({ xero_tenant_id: 'demo', access_token: 'demo' })
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ id: 11, status: 'adjusted' }))
+    InvoiceLineItem.count.mockResolvedValue(0)
+
+    const res = mockRes()
+    await batchApprove({ body: { invoice_ids: [11] }, user: { sub: 1 } }, res)
+
+    // A guard that counted all line items would have passed here - the invoice has
+    // surcharge rows. It must query line_type: 'base' specifically.
+    expect(InvoiceLineItem.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ line_type: 'base' }) })
+    )
+  })
+})
+
+describe('addLineItem - base transport charge', () => {
+  test('tags a hand-priced base charge as line_type base', async () => {
+    const invoice = makeInvoice({ id: 12, status: 'unmatched' })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    InvoiceLineItem.count.mockResolvedValue(0)
+    InvoiceLineItem.create.mockResolvedValue({ id: 5 })
+    InvoiceLineItem.findAll.mockResolvedValue([])
+
+    const res = mockRes()
+    await addLineItem({
+      params: { invoiceId: 12 },
+      body: { description: 'EAS one-way (manually priced)', quantity: 1, unit_price: 190, line_type: 'base' },
+    }, res)
+
+    // Pricing the base by hand is a legitimate recovery path when no contract rate covers
+    // the job - it just has to be declared so the approval guard can see it.
+    expect(InvoiceLineItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({ line_type: 'base', is_manual_adjustment: true })
+    )
+  })
+
+  test('defaults an unlabelled line to an adjustment, never a base', async () => {
+    const invoice = makeInvoice({ id: 13, status: 'matched' })
+    Invoice.findByPk.mockResolvedValue(invoice)
+    InvoiceLineItem.create.mockResolvedValue({ id: 6 })
+    InvoiceLineItem.findAll.mockResolvedValue([])
+
+    const res = mockRes()
+    await addLineItem({
+      params: { invoiceId: 13 },
+      body: { description: 'Hospital admin fee', quantity: 1, unit_price: 25 },
+    }, res)
+
+    expect(InvoiceLineItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({ line_type: 'adjustment' })
+    )
+  })
+
+  test('refuses a second base charge', async () => {
+    Invoice.findByPk.mockResolvedValue(makeInvoice({ id: 14, status: 'adjusted' }))
+    InvoiceLineItem.count.mockResolvedValue(1)
+
+    const res = mockRes()
+    await addLineItem({
+      params: { invoiceId: 14 },
+      body: { description: 'Another base', quantity: 1, unit_price: 100, line_type: 'base' },
+    }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('BASE_ALREADY_PRESENT')
+    expect(InvoiceLineItem.create).not.toHaveBeenCalled()
   })
 })
 

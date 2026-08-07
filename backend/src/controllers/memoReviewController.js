@@ -13,6 +13,57 @@ const { success, error, notFound } = require('../utils')
 
 const HOURS = 1000 * 60 * 60
 
+/**
+ * Creates the invoice for a memo whose BASE price could not be determined - a quotation
+ * mismatch, no active contract, or no matching rate row.
+ *
+ * Such an invoice used to be created completely empty, with every charge the crew
+ * recorded dumped into `unpriced_surcharges` for the AR Specialist to re-key by hand.
+ * That is wrong twice over: the surcharges are published rates that can be priced
+ * perfectly well without knowing the base, and an invoice showing none of the crew's
+ * recorded work does not tally against the memo it came from.
+ *
+ * So the surcharges are priced and written as line items here. Only the base is left
+ * for a human, which is the part that genuinely needs a decision. The invoice still
+ * stays `unmatched`, because a surcharge-only subtotal is NOT a billable total - it is
+ * missing the transport charge that is the bulk of the money.
+ */
+async function createUnpricedBaseInvoice({ memo, clientId, contractId, gstSnapshot, reviewerId }) {
+  const surchargeRows = await resolveSurchargeRows(contractId)
+  const { items, unpriced } = pricingService.buildSurchargeLineItems(
+    memo,
+    pricingService.toSurchargeMap(surchargeRows)
+  )
+  const totals = gstService.calculateTotals(items, gstSnapshot.gst_rate_percent)
+
+  const invoice = await sequelize.transaction(async (t) => {
+    await memo.update({ status: 'reviewed', reviewed_by: reviewerId }, { transaction: t })
+    const inv = await Invoice.create({
+      memo_id: memo.id,
+      booking_id: memo.booking_id,
+      client_id: clientId,
+      contract_id: contractId || null,
+      ...gstSnapshot,
+      ...totals,
+      status: 'unmatched',
+      unpriced_surcharges: unpriced,
+    }, { transaction: t })
+    if (items.length > 0) {
+      await InvoiceLineItem.bulkCreate(
+        items.map((li) => ({ ...li, invoice_id: inv.id })),
+        { transaction: t }
+      )
+    }
+    return inv
+  })
+
+  const lineItems = await InvoiceLineItem.findAll({
+    where: { invoice_id: invoice.id },
+    order: [['id', 'ASC']],
+  })
+  return { invoice, lineItems }
+}
+
 function approvalInvoicePayload(invoice, lineItems = []) {
   return {
     id: invoice.id,
@@ -125,27 +176,23 @@ async function approveMemo(req, res) {
     // same amount. The memo must still match the sold service combination.
     if (booking.pricing_source) {
       if (!pricingService.quotationMatchesMemo(booking, memo)) {
-        const { unpriced } = pricingService.computeInvoiceLineItems(memo, [], [])
-        const invoice = await sequelize.transaction(async (t) => {
-          await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
-          return Invoice.create({
-            memo_id: memo.id,
-            booking_id: memo.booking_id,
-            client_id: clientId,
-            contract_id: booking.pricing_contract_id || null,
-            ...gstSnapshot,
-            subtotal: 0, tax_amount: 0, total_amount: 0,
-            status: 'unmatched',
-            unpriced_surcharges: unpriced,
-          }, { transaction: t })
+        // Only the BASE is in dispute here - the quote was sold for a different service
+        // combination than the crew delivered. The surcharges they recorded are not in
+        // dispute and are priced normally.
+        const { invoice, lineItems } = await createUnpricedBaseInvoice({
+          memo,
+          clientId,
+          contractId: booking.pricing_contract_id || null,
+          gstSnapshot,
+          reviewerId: req.user.sub,
         })
         return success(res, {
           memo_id: memo.id,
           memo_status: 'reviewed',
-          invoice: approvalInvoicePayload(invoice),
+          invoice: approvalInvoicePayload(invoice, lineItems),
           warning: {
             code: 'QUOTATION_MISMATCH',
-            message: `Invoice #${invoice.id} needs review because the completed service does not match the service combination approved by Quotations. Verify the completed service and price the invoice manually.`,
+            message: `Invoice #${invoice.id} needs review because the completed service does not match the service combination approved by Quotations. The recorded surcharges have been priced; add the base charge for the service actually delivered before approving.`,
           },
         })
       }
@@ -193,29 +240,22 @@ async function approveMemo(req, res) {
     // frontend report a successful approval as a failure and discarded the new invoice
     // id that the AR Specialist needed in order to recover.
     if (!contract) {
-      // No contract means nothing could be priced, so everything chargeable on the memo is
-      // recorded as unpriced - that list is what Sarah works through to price it by hand.
-      const { unpriced } = pricingService.computeInvoiceLineItems(memo, [], [])
-      const invoice = await sequelize.transaction(async (t) => {
-        await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
-        return Invoice.create({
-          memo_id: memo.id,
-          booking_id: memo.booking_id,
-          client_id: clientId,
-          contract_id: null,
-          ...gstSnapshot,
-          subtotal: 0, tax_amount: 0, total_amount: 0,
-          status: 'unmatched',
-          unpriced_surcharges: unpriced,
-        }, { transaction: t })
+      // No contract fixes no BASE rate, but the surcharges are published rates and are
+      // still priced from the global card - only the transport charge needs a human.
+      const { invoice, lineItems } = await createUnpricedBaseInvoice({
+        memo,
+        clientId,
+        contractId: null,
+        gstSnapshot,
+        reviewerId: req.user.sub,
       })
       return success(res, {
         memo_id: memo.id,
         memo_status: 'reviewed',
-        invoice: approvalInvoicePayload(invoice),
+        invoice: approvalInvoicePayload(invoice, lineItems),
         warning: {
           code: 'NO_ACTIVE_CONTRACT',
-          message: `Invoice #${invoice.id} needs pricing because no active contract covers this client's service date. Create or activate the contract, then retry matching from the invoice; alternatively, price every charge manually.`,
+          message: `Invoice #${invoice.id} needs the base charge because no active contract covers this client's service date. Recorded surcharges have been priced. Create or activate the contract, then retry matching from the invoice; alternatively, price the base manually.`,
         },
       })
     }
@@ -233,26 +273,22 @@ async function approveMemo(req, res) {
     // actionable unmatched invoice was created, so return it as a warning-bearing
     // success for the same reason as the no-contract branch above.
     if (!result.matched) {
-      const invoice = await sequelize.transaction(async (t) => {
-        await memo.update({ status: 'reviewed', reviewed_by: req.user.sub }, { transaction: t })
-        return Invoice.create({
-          memo_id: memo.id,
-          booking_id: memo.booking_id,
-          client_id: clientId,
-          contract_id: contract.id,
-          ...gstSnapshot,
-          subtotal: 0, tax_amount: 0, total_amount: 0,
-          status: 'unmatched',
-          unpriced_surcharges: result.unpriced,
-        }, { transaction: t })
+      // The contract exists but has no rate row for this combination. Its surcharge
+      // schedule is still usable, so the recorded charges are priced as normal.
+      const { invoice, lineItems } = await createUnpricedBaseInvoice({
+        memo,
+        clientId,
+        contractId: contract.id,
+        gstSnapshot,
+        reviewerId: req.user.sub,
       })
       return success(res, {
         memo_id: memo.id,
         memo_status: 'reviewed',
-        invoice: approvalInvoicePayload(invoice),
+        invoice: approvalInvoicePayload(invoice, lineItems),
         warning: {
           code: 'NO_MATCHING_RATE',
-          message: `Invoice #${invoice.id} needs pricing because the active contract has no rate for this service, transfer and time combination. Add the rate, then retry matching from the invoice; alternatively, price every charge manually.`,
+          message: `Invoice #${invoice.id} needs the base charge because the active contract has no rate for this service, transfer and time combination. Recorded surcharges have been priced. Add the rate, then retry matching from the invoice; alternatively, price the base manually.`,
         },
       })
     }
