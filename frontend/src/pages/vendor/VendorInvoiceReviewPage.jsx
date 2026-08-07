@@ -21,7 +21,8 @@ import {
 import { getXeroExpenseAccounts } from '@/api/xero'
 
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
-const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const EDITABLE_STATUSES = ['pending_review', 'extraction_failed', 'failed']
+const REJECTABLE_STATUSES = ['pending_review', 'extraction_failed']
 const EMPTY_LINE_ITEM = { description: '', quantity: '1', unit_price: '' }
 
 export default function VendorInvoiceReviewPage() {
@@ -94,6 +95,7 @@ export default function VendorInvoiceReviewPage() {
   }, [id])
 
   const editable = invoice && EDITABLE_STATUSES.includes(invoice.status)
+  const canReject = invoice && REJECTABLE_STATUSES.includes(invoice.status)
   const approvalValidation = invoice?.approval_validation || { can_approve: false, issues: [] }
   const xeroAccountValid = Boolean(
     form?.xero_account_code
@@ -110,7 +112,9 @@ export default function VendorInvoiceReviewPage() {
     setBusy(true)
     try {
       await updateVendorInvoice(invoice.id, form)
-      toast.success('Changes saved. Rebate recalculated.')
+      toast.success(invoice.status === 'failed'
+        ? 'Changes saved. Retry the Xero sync from Sync Status.'
+        : 'Changes saved. Rebate recalculated.')
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save changes.')
@@ -214,7 +218,9 @@ export default function VendorInvoiceReviewPage() {
       await createVendorInvoiceItem(invoice.id, newItemForm)
       toast.success(invoice.status === 'extraction_failed'
         ? 'Line item added. The invoice is ready for review.'
-        : 'Line item added.')
+        : invoice.status === 'failed'
+          ? 'Line item added. Retry the Xero sync from Sync Status.'
+          : 'Line item added.')
       setAddingItem(false)
       setNewItemForm(EMPTY_LINE_ITEM)
       await load()
@@ -287,7 +293,7 @@ export default function VendorInvoiceReviewPage() {
               <UploadCloud size={16} /> Approve &amp; Sync
             </button>
           )}
-          {editable && (
+          {canReject && (
             <button onClick={() => setRejecting(true)} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-500 disabled:opacity-40">
               <XCircle size={16} /> Reject
             </button>
@@ -327,6 +333,14 @@ export default function VendorInvoiceReviewPage() {
           <span className="flex items-center gap-2"><AlertTriangle size={14} /> Gemini could not extract data from this PDF. Enter fields manually or retry extraction.</span>
           <button onClick={requestReextract} disabled={busy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-500 disabled:opacity-40">
             <RefreshCw size={12} /> Retry Extraction
+          </button>
+        </div>
+      )}
+      {invoice.status === 'failed' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> Xero rejected this approved bill. Correct the invoice fields or lines here, save, then retry the failed sync.</span>
+          <button onClick={() => navigate('/xero/sync-status')} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-500">
+            Open Sync Status
           </button>
         </div>
       )}
@@ -452,7 +466,7 @@ export default function VendorInvoiceReviewPage() {
                   </thead>
                   <tbody>
                     {invoice.items.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">No line items. Add one manually or retry extraction.</td></tr>
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">{invoice.status === 'extraction_failed' ? 'No line items. Add one manually or retry extraction.' : invoice.status === 'failed' ? 'No line items. Add one manually before retrying sync.' : 'No line items. Add one manually before approving.'}</td></tr>
                     ) : invoice.items.map((item) => (
                       <tr key={item.id} className="border-b border-slate-100 last:border-0">
                         {editingItemId === item.id ? (

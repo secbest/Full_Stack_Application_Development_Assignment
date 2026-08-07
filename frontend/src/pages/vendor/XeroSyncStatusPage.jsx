@@ -1,9 +1,9 @@
 // Owner: Kwan Hua (Xero Foundation)
 // Xero Sync Status (screen 14/19, shared AP + AR): stat cards, retry logic,
 // max-retry warning (3 attempts).
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { History, RefreshCw, AlertTriangle, ArrowLeft, ChevronDown } from 'lucide-react'
+import { History, RefreshCw, AlertTriangle, ArrowLeft, ChevronDown, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
@@ -21,18 +21,24 @@ export default function XeroSyncStatusPage() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [entityFilter, setEntityFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, total_pages: 1 })
+  const [statusCounts, setStatusCounts] = useState({ pending: 0, success: 0, failed: 0 })
   const [retryingId, setRetryingId] = useState(null)
 
   async function load() {
     setLoading(true)
     try {
-      const { data, xero_connected } = await listSyncLogs({
-        limit: 100,
+      const { data, xero_connected, pagination: nextPagination, status_counts } = await listSyncLogs({
+        limit: 50,
+        page,
         status: statusFilter || undefined,
         entity_type: entityFilter || undefined,
       })
       setRows(data)
       setXeroConnected(xero_connected)
+      setPagination(nextPagination || { page, limit: 50, total: data.length, total_pages: 1 })
+      setStatusCounts(status_counts || { pending: 0, success: 0, failed: 0 })
     } catch {
       toast.error('Failed to load Xero sync logs.')
     } finally {
@@ -40,12 +46,17 @@ export default function XeroSyncStatusPage() {
     }
   }
 
-  useEffect(() => { load() }, [statusFilter, entityFilter])
+  useEffect(() => { load() }, [statusFilter, entityFilter, page])
 
-  const counts = useMemo(
-    () => STATUS_FILTERS.reduce((acc, s) => { acc[s] = rows.filter((r) => r.status === s).length; return acc }, {}),
-    [rows]
-  )
+  function chooseStatusFilter(status) {
+    setStatusFilter(status)
+    setPage(1)
+  }
+
+  function chooseEntityFilter(entityType) {
+    setEntityFilter(entityType)
+    setPage(1)
+  }
 
   async function handleRetry(id) {
     setRetryingId(id)
@@ -79,9 +90,9 @@ export default function XeroSyncStatusPage() {
       )}
 
       <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Pending" value={counts.pending} color="#F59E0B" />
-        <StatCard label="Success" value={counts.success} color="#22C55E" />
-        <StatCard label="Failed" value={counts.failed} color="#EF4444" />
+        <StatCard label="Pending" value={statusCounts.pending} color="#F59E0B" />
+        <StatCard label="Success" value={statusCounts.success} color="#22C55E" />
+        <StatCard label="Failed" value={statusCounts.failed} color="#EF4444" />
       </div>
 
       <Card>
@@ -91,14 +102,14 @@ export default function XeroSyncStatusPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button onClick={() => setStatusFilter('')} className={`h-8 px-3 rounded-full text-xs ${!statusFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All Statuses</button>
+            <button onClick={() => chooseStatusFilter('')} className={`h-8 px-3 rounded-full text-xs ${!statusFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All Statuses</button>
             {STATUS_FILTERS.map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)} className={`h-8 px-3 rounded-full text-xs capitalize ${statusFilter === s ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{s}</button>
+              <button key={s} onClick={() => chooseStatusFilter(s)} className={`h-8 px-3 rounded-full text-xs capitalize ${statusFilter === s ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{s}</button>
             ))}
             <span className="w-px h-5 bg-slate-200 mx-1" />
-            <button onClick={() => setEntityFilter('')} className={`h-8 px-3 rounded-full text-xs ${!entityFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All Types</button>
-            <button onClick={() => setEntityFilter('vendor_invoice')} className={`h-8 px-3 rounded-full text-xs ${entityFilter === 'vendor_invoice' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>AP</button>
-            <button onClick={() => setEntityFilter('ar_invoice')} className={`h-8 px-3 rounded-full text-xs ${entityFilter === 'ar_invoice' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>AR</button>
+            <button onClick={() => chooseEntityFilter('')} className={`h-8 px-3 rounded-full text-xs ${!entityFilter ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>All Types</button>
+            <button onClick={() => chooseEntityFilter('vendor_invoice')} className={`h-8 px-3 rounded-full text-xs ${entityFilter === 'vendor_invoice' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>AP</button>
+            <button onClick={() => chooseEntityFilter('ar_invoice')} className={`h-8 px-3 rounded-full text-xs ${entityFilter === 'ar_invoice' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>AR</button>
           </div>
 
           <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
@@ -129,19 +140,49 @@ export default function XeroSyncStatusPage() {
                       <td className="px-4 py-2"><span className="text-xs text-slate-500">{log.synced_at ? new Date(log.synced_at).toLocaleString() : '—'}</span></td>
                       <td className="px-4 py-2">
                         {log.status === 'failed' && (
-                          log.retry_available ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {log.entity_type === 'vendor_invoice' && (
+                              <button onClick={() => navigate(`/vendor-invoices/${log.entity_id}`)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-medium">
+                                <Pencil size={12} /> Fix Invoice
+                              </button>
+                            )}
+                            {log.retry_available ? (
                             <button onClick={() => handleRetry(log.id)} disabled={retryingId === log.id} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium transition-all disabled:opacity-40">
                               <RefreshCw size={12} /> {retryingId === log.id ? 'Retrying…' : 'Retry'}
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400" title="Max retries reached or Xero disconnected">Retry unavailable</span>
-                          )
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>
+              Page {pagination.page || page} of {pagination.total_pages || 1} - {pagination.total || 0} sync log{Number(pagination.total || 0) === 1 ? '' : 's'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={loading || page <= 1}
+                className="h-8 rounded-md border border-slate-200 px-3 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(pagination.total_pages || 1, current + 1))}
+                disabled={loading || page >= (pagination.total_pages || 1)}
+                className="h-8 rounded-md border border-slate-200 px-3 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+              </button>
             </div>
           </div>
         </CardContent>

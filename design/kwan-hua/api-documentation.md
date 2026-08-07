@@ -425,7 +425,7 @@ Redirects to `/settings/xero?connected=true`
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can edit vendor invoices |
 | 404 | `NOT_FOUND` | Vendor invoice not found |
-| 409 | `INVALID_STATUS` | Invoice cannot be edited in its current status. Only `pending_review` and `extraction_failed` invoices are editable. |
+| 409 | `INVALID_STATUS` | Invoice cannot be edited in its current status. Only `pending_review`, `extraction_failed`, and failed Xero-sync invoices are editable. |
 
 ---
 
@@ -644,7 +644,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 12A. POST `/api/vendor-invoices/:id/items`
 
-**Purpose:** Adds a manual line when OCR omitted invoice content or extraction failed. The amount is server-derived and all invoice totals are recalculated in the same transaction. Adding a line to an `extraction_failed` invoice returns it to `pending_review`; normal approval validation still blocks approval until every required header and line field is valid.
+**Purpose:** Adds a manual line when OCR omitted invoice content, extraction failed, or a Xero-rejected bill needs accounting correction before retry. The amount is server-derived and all invoice totals are recalculated in the same transaction. Adding a line to an `extraction_failed` invoice returns it to `pending_review`; editing a failed Xero-sync invoice keeps it `failed` so the original approval and retry trail remain intact.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -671,7 +671,7 @@ Redirects to `/settings/xero?connected=true`
 
 **Success response:** `200 OK`, containing the deleted item ID and recalculated `parent_invoice` summary.
 
-**Errors:** `404 NOT_FOUND` for an unknown item and `409 INVALID_STATUS` when the parent invoice is no longer editable.
+**Errors:** `404 NOT_FOUND` for an unknown item and `409 INVALID_STATUS` when the parent invoice is no longer editable. Line edits are allowed only for `pending_review`, `extraction_failed`, and failed Xero-sync invoices.
 
 ---
 
@@ -726,11 +726,17 @@ Redirects to `/settings/xero?connected=true`
     "total": 2,
     "total_pages": 1
   },
+  "status_counts": {
+    "pending": 1,
+    "success": 12,
+    "failed": 3
+  },
   "xero_connected": true
 }
 ```
 
 > `retry_available` is `false` when `status = 'success'`, `attempt_count >= 3`, or Xero is not connected.
+> `status_counts` respects the selected `entity_type` filter but ignores the selected `status` filter so the dashboard cards stay accurate while one status is selected.
 
 **Error responses:**
 
@@ -743,7 +749,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 14. POST `/api/xero/sync-logs/:id/retry`
 
-**Purpose:** Retries a failed Xero sync operation (UC-08 step 4). The server checks the token validity and the current `attempt_count` before attempting. If the attempt count is already 3 or more, the retry is blocked and the user is directed to contact support.
+**Purpose:** Retries a failed Xero sync operation (UC-08 step 4). The server checks token validity and the current `attempt_count` before attempting. AP vendor invoices are revalidated before a new Xero push so corrected bills do not resend incomplete coding, totals, or GST data. If the attempt count is already 3 or more, the retry is blocked and the user is directed to contact support.
 
 **Auth required:** Yes - roles: `ap_specialist`, `ar_specialist`
 
@@ -788,6 +794,7 @@ Redirects to `/settings/xero?connected=true`
 | 404 | `NOT_FOUND` | Sync log entry not found |
 | 409 | `RETRY_LIMIT_REACHED` | This sync has failed 3 or more times. Please contact support - this likely indicates a configuration issue in Xero. |
 | 409 | `NOT_FAILED` | Only failed sync log entries can be retried |
+| 409 | `APPROVAL_VALIDATION_FAILED` | Resolve the vendor invoice validation issues before retrying Xero sync. |
 | 503 | `XERO_NOT_CONNECTED` | Xero is not connected. Ask the Managing Director to reconnect before retrying. |
 
 ---

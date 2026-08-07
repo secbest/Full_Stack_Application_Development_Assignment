@@ -195,7 +195,7 @@ test('confirms deletion and refreshes the recalculated invoice', async () => {
   await user.click(screen.getByRole('button', { name: 'Delete Item' }))
 
   await waitFor(() => expect(mock.history.delete).toHaveLength(1))
-  expect(await screen.findByText('No line items. Add one manually or retry extraction.')).toBeInTheDocument()
+  expect(await screen.findByText('No line items. Add one manually before approving.')).toBeInTheDocument()
   expect(screen.getByText('At least one line item is required.')).toBeInTheDocument()
 })
 
@@ -230,6 +230,34 @@ test('blocks approval when the connected Xero chart cannot validate the account'
   expect(account).toBeDisabled()
   expect(screen.getAllByText(/Xero is not connected/i).length).toBeGreaterThan(0)
   expect(screen.getByRole('button', { name: /Approve & Sync/i })).toBeDisabled()
+})
+
+test('lets a failed Xero-sync invoice be corrected without reopening approval or rejection', async () => {
+  const user = userEvent.setup()
+  const failedSync = invoice({
+    status: 'failed',
+    approval_validation: {
+      can_approve: false,
+      issues: [{ code: 'LINE_TOTAL_MISMATCH', message: 'Line items total does not match subtotal.' }],
+      requires_low_confidence_confirmation: false,
+    },
+  })
+  mock.onGet('/vendor-invoices/12').replyOnce(200, { success: true, data: failedSync })
+  mock.onGet('/vendor-invoices/12').reply(200, { success: true, data: { ...failedSync, xero_account_code: '410' } })
+  mock.onPatch('/vendor-invoices/12').reply(200, { success: true, data: {} })
+  renderPage()
+
+  expect(await screen.findByText(/Xero rejected this approved bill/i)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Approve & Sync/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^Reject$/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Retry Extraction/i })).not.toBeInTheDocument()
+
+  await user.selectOptions(screen.getByLabelText(/Xero Expense Account/i), '410')
+  await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+  await waitFor(() => expect(mock.history.patch).toHaveLength(1))
+  expect(JSON.parse(mock.history.patch[0].data)).toMatchObject({ xero_account_code: '410' })
+  expect(await screen.findByLabelText(/Xero Expense Account/i)).toHaveValue('410')
 })
 
 test('requires confirmation before replacing existing data with a new OCR result', async () => {

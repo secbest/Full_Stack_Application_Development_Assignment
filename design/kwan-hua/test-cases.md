@@ -70,12 +70,14 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-054 | `POST /api/vendor-invoices/:id/reextract` | Gemini fails again on retry | 502 `OCR_EXTRACTION_FAILED`; status, fields and line items remain unchanged; failure audited | |
 | TC-054A | `POST /api/vendor-invoices/:id/reextract` | `confirm_replace` is absent/false | 400 validation error before OCR or database replacement |
 | TC-054B | `POST /api/vendor-invoices/:id/reextract` | Invoice changes while OCR is running | 409 `INVOICE_CHANGED`; latest data remains unchanged |
+| TC-054C | `PATCH /api/vendor-invoices/:id` | Invoice status is `failed` after Xero rejection | 200, corrections are audited while status/approval metadata remain `failed`/approved |
 | TC-055 | `PATCH /api/vendor-invoice-items/:id` | Change an item's `amount` | Parent's `extracted_total`/`rebate_amount`/`verified_total` recomputed from all items | |
 | TC-056 | `PATCH /api/vendor-invoice-items/:id` | `amount` set to 0 or negative | 400 `INVALID_AMOUNT` | |
 | TC-057 | `PATCH /api/vendor-invoice-items/:id` | Parent invoice not in an editable status | 409 `INVALID_STATUS` | |
 | TC-058 | `PATCH /api/vendor-invoice-items/:id` | Unknown item id | 404 `NOT_FOUND` | |
-| TC-059 | `GET /api/xero/sync-logs` | No filters | 200, entries with pagination and an `xero_connected` flag | |
-| TC-060 | `GET /api/xero/sync-logs` | `status=failed` | Only failed entries returned | |
+| TC-058A | `PATCH /api/vendor-invoice-items/:id` | Parent invoice status is `failed` after Xero rejection | 200, line and parent totals are recomputed while invoice status remains `failed` |
+| TC-059 | `GET /api/xero/sync-logs` | No filters | 200, entries with pagination, `status_counts`, and an `xero_connected` flag | |
+| TC-060 | `GET /api/xero/sync-logs` | `status=failed` | Only failed entries returned while `status_counts` still contains all statuses under the entity filter | |
 | TC-061 | `GET /api/xero/sync-logs` | `entity_type=vendor_invoice` vs `entity_type=ar_invoice` | Only matching entity rows returned for each | |
 | TC-062 | `GET /api/xero/sync-logs` | Entry with `attempt_count >= 3` | `retry_available: false` on that entry | |
 | TC-063 | `GET /api/xero/sync-logs` | Xero currently disconnected | `retry_available: false` on all `failed` entries, `xero_connected: false` | |
@@ -85,6 +87,7 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-067 | `POST /api/xero/sync-logs/:id/retry` | Log status is not `failed` | 409 `NOT_FAILED` | |
 | TC-068 | `POST /api/xero/sync-logs/:id/retry` | Xero not connected | 503 `XERO_NOT_CONNECTED` | |
 | TC-069 | `POST /api/xero/sync-logs/:id/retry` | Unknown log id | 404 `NOT_FOUND` | |
+| TC-069A | `POST /api/xero/sync-logs/:id/retry` | AP vendor invoice still fails local approval validation | 409 `APPROVAL_VALIDATION_FAILED`; log is released back to `failed`; Xero is not called |
 | TC-070 | `GET /api/xero/sync-logs` / `POST .../retry` | Call as a role outside ap/ar(/md for GET) | 403 `FORBIDDEN` | |
 | TC-071 | `POST /api/vendor-invoices/:id/approve` | Call as any non-`ap_specialist` role | 403 `FORBIDDEN` | |
 | TC-072 | `POST /api/vendor-invoices/:id/reject` | Call as any non-`ap_specialist` role | 403 `FORBIDDEN` | |
@@ -129,6 +132,7 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-103 | AP Invoice Review page | Save header changes that the server rejects (e.g. negative total) | Error toast with the server's message, invoice left unchanged | |
 | TC-103A | AP Invoice Review page | Load Xero expense accounts and change the selected account | Selector contains only server-supplied active expense-family accounts; save sends the selected code | |
 | TC-103B | AP Invoice Review page | Xero account lookup fails or the stored code is no longer active | Selector is disabled with an actionable error/warning; invalid current code is not silently replaced | |
+| TC-103C | AP Invoice Review page | Invoice status is `failed` after Xero rejection | Fields and line items are editable; Approve, Reject, and Retry Extraction are hidden; banner links to Xero Sync Status |
 | TC-104 | AP Invoice Review page | Click "Approve & Sync" when Xero push succeeds | Success toast "Approved and synced to Xero.", status badge -> `synced_to_xero`, Xero bill ID banner shown | |
 | TC-105 | AP Invoice Review page | Click "Approve & Sync" when the Xero push fails | Error toast with the sync failure reason, status badge -> `failed` | |
 | TC-106 | AP Invoice Review page | Click "Reject" then "Confirm Reject" with no reason entered | Inline error "Enter a reason for rejecting this invoice.", modal stays open | |
@@ -146,6 +150,7 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-117 | Xero Sync Status page | Click a status filter (Pending/Success/Failed) | Table updates to show only matching rows | |
 | TC-118 | Xero Sync Status page | Click an entity-type filter (AP/AR) | Table updates to show only matching `entity_type` rows | |
 | TC-119 | Xero Sync Status page | Failed row with `attempt_count < 3` and Xero connected | "Retry" button shown and enabled | |
+| TC-119A | Xero Sync Status page | Failed AP vendor-invoice row | "Fix Invoice" action opens `/vendor-invoices/:id` before retrying |
 | TC-120 | Xero Sync Status page | Failed row with `attempt_count >= 3` | "Retry unavailable" text shown instead of a button; attempt count shown in red | |
 | TC-121 | Xero Sync Status page | Click "Retry" on a retryable failed row, retry succeeds | Success toast "Retry succeeded - synced to Xero.", row updates to `success` | |
 | TC-122 | Xero Sync Status page | Click "Retry" and it fails again | Error toast with the failure reason, row stays `failed` with incremented attempt count | |

@@ -201,7 +201,8 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     VendorInvoice.findByPk.mockResolvedValue(invoice)
     VendorInvoice.findOne.mockResolvedValue(null)
     xeroController.getFreshConnection.mockResolvedValue(null)
-    XeroSyncLog.create.mockResolvedValue({ id: 9, update: jest.fn() })
+    const syncLog = { id: 9, update: jest.fn() }
+    XeroSyncLog.create.mockResolvedValue(syncLog)
 
     const res = mockRes()
     await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, res)
@@ -209,7 +210,11 @@ describe('approveVendorInvoice (UC-06/07)', () => {
     expect(res.status).toHaveBeenCalledWith(503)
     expect(payload(res).code).toBe('XERO_NOT_CONNECTED')
     expect(invoice.status).toBe('failed')
-    expect(XeroSyncLog.create).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', entity_type: 'vendor_invoice' }))
+    expect(XeroSyncLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', entity_type: 'vendor_invoice' }),
+      expect.any(Object)
+    )
+    expect(syncLog.update).toHaveBeenCalledWith({ status: 'failed', error_message: 'Xero is not connected.' })
   })
 
   // Xero does not deduplicate ACCPAY bills, so the status check must happen under the row
@@ -284,6 +289,14 @@ describe('rejectVendorInvoice (UC-06)', () => {
     VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice({ status: 'synced_to_xero' }))
     const res = mockRes()
     await rejectVendorInvoice({ params: { id: 1 }, body: { rejection_reason: 'Bad scan' } }, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVALID_STATUS')
+  })
+
+  test('does not allow rejecting an approved invoice that only failed Xero sync', async () => {
+    VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice({ status: 'failed' }))
+    const res = mockRes()
+    await rejectVendorInvoice({ params: { id: 1 }, body: { rejection_reason: 'Wrong account' } }, res)
     expect(res.status).toHaveBeenCalledWith(409)
     expect(payload(res).code).toBe('INVALID_STATUS')
   })
@@ -367,6 +380,17 @@ describe('reextractVendorInvoice (UC-04)', () => {
     }))
   })
 
+  test('does not allow re-extraction on an approved invoice that only failed Xero sync', async () => {
+    VendorInvoice.findByPk.mockResolvedValue(makeVendorInvoice({ status: 'failed' }))
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVALID_STATUS')
+    expect(ocrService.extractVendorInvoice).not.toHaveBeenCalled()
+  })
+
   test('does not overwrite an invoice changed while OCR was running', async () => {
     const initial = makeVendorInvoice({ updatedAt: '2026-08-07T10:00:00.000Z' })
     const changed = makeVendorInvoice({ updatedAt: '2026-08-07T10:01:00.000Z', vendor_name: 'Latest Manual Edit' })
@@ -427,6 +451,30 @@ describe('reextractVendorInvoice (UC-04)', () => {
       }),
     }))
     expect(res.status).toHaveBeenCalledWith(200)
+  })
+
+  test('allows correcting a failed Xero-sync invoice without clearing approval state', async () => {
+    const invoice = makeVendorInvoice({
+      status: 'failed',
+      approved_by: 2,
+      approved_at: '2026-08-07T10:00:00.000Z',
+      xero_bill_id: null,
+    })
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    const res = mockRes()
+
+    await updateVendorInvoice({ params: { id: 1 }, body: { xero_account_code: '410' }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(invoice.status).toBe('failed')
+    expect(invoice.approved_by).toBe(2)
+    expect(invoice.approved_at).toBe('2026-08-07T10:00:00.000Z')
+    expect(invoice.xero_account_code).toBe('410')
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 3,
+      action: 'header_updated',
+    }))
   })
 })
 

@@ -13,7 +13,8 @@ const { getFreshConnection } = require('./xeroController')
 const { vendorInvoiceUploadSchema } = require('../validators')
 const { success, created, error, notFound, round2 } = require('../utils')
 
-const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const HEADER_EDITABLE_STATUSES = ['pending_review', 'extraction_failed', 'failed']
+const PRE_APPROVAL_EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
 const VENDOR_INVOICE_STATUSES = ['pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed']
 
 // Rebate Calculation (UC-05): rebate_amount = extracted_total * (rebate_percentage / 100),
@@ -343,8 +344,8 @@ async function updateVendorInvoice(req, res) {
   try {
     const invoice = await VendorInvoice.findByPk(req.params.id, { include: [{ model: VendorInvoiceItem }] })
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
-      return error(res, 'Invoice cannot be edited in its current status. Only `pending_review` and `extraction_failed` invoices are editable.', 'INVALID_STATUS', 409)
+    if (!HEADER_EDITABLE_STATUSES.includes(invoice.status)) {
+      return error(res, 'Invoice cannot be edited in its current status. Only `pending_review`, `extraction_failed`, and failed Xero-sync invoices are editable.', 'INVALID_STATUS', 409)
     }
 
     const {
@@ -489,8 +490,9 @@ async function approveVendorInvoice(req, res) {
     // serialises them; the loser sees the status check fail and is rejected.
     let invoice
     let approvedAt
+    let log
     try {
-      ({ invoice, approvedAt } = await sequelize.transaction(async (t) => {
+      ({ invoice, approvedAt, log } = await sequelize.transaction(async (t) => {
         const inv = await VendorInvoice.findByPk(req.params.id, {
           include: [{ model: VendorInvoiceItem }],
           lock: t.LOCK.UPDATE,
@@ -553,7 +555,13 @@ async function approveVendorInvoice(req, res) {
             : null,
           transaction: t,
         })
-        return { invoice: inv, approvedAt: at }
+        const syncLog = await XeroSyncLog.create({
+          entity_type: 'vendor_invoice',
+          entity_id: inv.id,
+          status: 'pending',
+          attempt_count: 1,
+        }, { transaction: t })
+        return { invoice: inv, approvedAt: at, log: syncLog }
       }))
     } catch (err) {
       if (err.httpCode) {
@@ -567,13 +575,7 @@ async function approveVendorInvoice(req, res) {
     // status screen shows and the retry endpoint can recover - not a silent dead end.
     const conn = await getFreshConnection()
     if (!conn) {
-      const log = await XeroSyncLog.create({
-        entity_type: 'vendor_invoice',
-        entity_id: invoice.id,
-        status: 'failed',
-        attempt_count: 1,
-        error_message: 'Xero is not connected.',
-      })
+      await log.update({ status: 'failed', error_message: 'Xero is not connected.' })
       await invoice.update({ status: 'failed' })
       await vendorInvoiceAuditService.record({
         invoiceId: invoice.id,
@@ -587,7 +589,6 @@ async function approveVendorInvoice(req, res) {
       })
     }
 
-    const log = await XeroSyncLog.create({ entity_type: 'vendor_invoice', entity_id: invoice.id, status: 'pending', attempt_count: 1 })
     const result = await xeroService.pushBill(invoice, conn)
 
     if (result.ok) {
@@ -647,7 +648,7 @@ async function rejectVendorInvoice(req, res) {
     const reason = typeof req.body.rejection_reason === 'string' ? req.body.rejection_reason.trim() : ''
     if (!reason) return error(res, '`rejection_reason` is required when rejecting an invoice', 'MISSING_REASON', 400)
 
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
+    if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(invoice.status)) {
       return error(res, 'Only invoices with status `pending_review` or `extraction_failed` can be rejected', 'INVALID_STATUS', 409)
     }
 
@@ -692,7 +693,7 @@ async function reextractVendorInvoice(req, res) {
 
     const invoice = await VendorInvoice.findByPk(req.params.id)
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
-    if (!EDITABLE_STATUSES.includes(invoice.status)) {
+    if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(invoice.status)) {
       return error(res, 'Re-extraction is only available for invoices with status `pending_review` or `extraction_failed`', 'INVALID_STATUS', 409)
     }
     const startedUpdatedAt = invoice.updatedAt ? new Date(invoice.updatedAt).getTime() : null
@@ -756,7 +757,7 @@ async function reextractVendorInvoice(req, res) {
     await sequelize.transaction(async (t) => {
       const current = await VendorInvoice.findByPk(invoice.id, { transaction: t, lock: t.LOCK.UPDATE })
       if (!current) throw Object.assign(new Error('Vendor invoice not found.'), { httpCode: 404, code: 'NOT_FOUND' })
-      if (!EDITABLE_STATUSES.includes(current.status)) {
+      if (!PRE_APPROVAL_EDITABLE_STATUSES.includes(current.status)) {
         throw Object.assign(
           new Error('The invoice is no longer editable, so its data was not replaced.'),
           { httpCode: 409, code: 'INVALID_STATUS' }

@@ -4,7 +4,7 @@ const { calculateRebate } = require('./vendorInvoiceController')
 const { apInvoiceService, vendorInvoiceAuditService } = require('../services')
 const { success, created, error, notFound, round2 } = require('../utils')
 
-const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const EDITABLE_STATUSES = ['pending_review', 'extraction_failed', 'failed']
 
 async function recalculateParentInvoice(parent, transaction, { recoverExtractionFailure = false } = {}) {
   const items = await VendorInvoiceItem.findAll({

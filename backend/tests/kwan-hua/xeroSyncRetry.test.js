@@ -13,7 +13,7 @@ jest.mock('../../src/models', () => ({
   Client: {},
   Booking: {},
   User: { findOne: jest.fn() },
-  XeroSyncLog: { findByPk: jest.fn(), findAndCountAll: jest.fn() },
+  XeroSyncLog: { findByPk: jest.fn(), findAndCountAll: jest.fn(), count: jest.fn() },
 }))
 
 jest.mock('../../src/services', () => ({
@@ -25,6 +25,9 @@ jest.mock('../../src/services', () => ({
     computeRetryAvailable: jest.fn(() => false),
     describeMode: jest.fn(() => ({ simulated: true, label: 'SIMULATION', detail: 'test' })),
     MAX_SYNC_ATTEMPTS: 3,
+  },
+  apInvoiceService: {
+    validateForApproval: jest.fn(async () => ({ can_approve: true, issues: [], requires_low_confidence_confirmation: false })),
   },
 }))
 
@@ -39,7 +42,7 @@ jest.mock('../../src/services/notificationService', () => ({ create: jest.fn() }
 jest.mock('../../src/services/vendorInvoiceAuditService', () => ({ record: jest.fn(async () => ({})) }))
 
 const { XeroConnection, VendorInvoice, Invoice, User, XeroSyncLog } = require('../../src/models')
-const { xeroService } = require('../../src/services')
+const { xeroService, apInvoiceService } = require('../../src/services')
 const notificationService = require('../../src/services/notificationService')
 const { retrySync, listSyncLogs, expenseAccounts } = require('../../src/controllers/xeroController')
 
@@ -65,6 +68,7 @@ beforeEach(() => {
   // no token-expiry math needs mocking for these tests.
   xeroService.isSimulation.mockReturnValue(true)
   XeroConnection.findOne.mockResolvedValue({ id: 1, is_connected: true, xero_tenant_id: 'demo-tenant', access_token: 'demo-token' })
+  XeroSyncLog.count.mockResolvedValue([])
 })
 
 describe('expenseAccounts', () => {
@@ -197,6 +201,29 @@ describe('retrySync (UC-08) - entity_type "ar_invoice"', () => {
 })
 
 describe('retrySync (UC-08) - entity_type "vendor_invoice" (unchanged behaviour)', () => {
+  test('blocks retry before Xero when the corrected AP invoice is still invalid', async () => {
+    const log = makeLog({ id: 22, entity_type: 'vendor_invoice', entity_id: 6, attempt_count: 1 })
+    XeroSyncLog.findByPk.mockResolvedValue(log)
+    const vendorInvoice = { id: 6, vendor_name: 'Esso Petroleum Pte Ltd', uploaded_by: 4, xero_bill_id: null }
+    VendorInvoice.findByPk.mockResolvedValue(vendorInvoice)
+    apInvoiceService.validateForApproval.mockResolvedValueOnce({
+      can_approve: false,
+      issues: [{ code: 'MISSING_XERO_ACCOUNT_CODE', message: 'Xero expense account code is required.' }],
+      requires_low_confidence_confirmation: false,
+    })
+
+    const res = mockRes()
+    await retrySync({ params: { id: 22 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res)).toMatchObject({
+      code: 'APPROVAL_VALIDATION_FAILED',
+      data: { issues: [{ code: 'MISSING_XERO_ACCOUNT_CODE' }] },
+    })
+    expect(log.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
+    expect(xeroService.pushBill).not.toHaveBeenCalled()
+  })
+
   test('retries through pushBill and updates the VendorInvoice row on success', async () => {
     const log = makeLog({ id: 20, entity_type: 'vendor_invoice', entity_id: 5, attempt_count: 1 })
     XeroSyncLog.findByPk.mockResolvedValue(log)
@@ -238,6 +265,27 @@ describe('listSyncLogs (UC-08) - resolveEntityReference', () => {
 
     expect(Invoice.findByPk).toHaveBeenCalledWith(9, expect.objectContaining({ include: expect.anything() }))
     expect(payload(res).data.data[0].entity_reference).toBe('Tan Tock Seng Hospital - Invoice #9')
+    expect(payload(res).data.status_counts).toEqual({ pending: 0, success: 0, failed: 0 })
+  })
+
+  test('returns status counts that ignore only the selected status filter', async () => {
+    XeroSyncLog.findAndCountAll.mockResolvedValue({
+      rows: [],
+      count: 0,
+    })
+    XeroSyncLog.count.mockResolvedValue([
+      { status: 'failed', count: '4' },
+      { status: 'success', count: '9' },
+    ])
+
+    const res = mockRes()
+    await listSyncLogs({ query: { status: 'failed', entity_type: 'vendor_invoice', page: 1, limit: 50 } }, res)
+
+    expect(XeroSyncLog.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+      where: { entity_type: 'vendor_invoice', status: 'failed' },
+    }))
+    expect(XeroSyncLog.count).toHaveBeenCalledWith({ where: { entity_type: 'vendor_invoice' }, group: ['status'] })
+    expect(payload(res).data.status_counts).toEqual({ pending: 0, success: 9, failed: 4 })
   })
 
   test('an ar_invoice row with no linked Invoice resolves to null instead of throwing', async () => {

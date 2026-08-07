@@ -108,6 +108,12 @@ _List all test cases below before submission. Include what is being tested and t
 | 102 | vendor-invoices.test.js | OCR retry fails | Existing status/fields/items preserved and failure audited |
 | 103 | vendor-invoices.test.js | Invoice changes while OCR runs | 409 `INVOICE_CHANGED`; replacement not applied |
 | 104 | vendor-invoices.test.js | Confirmed OCR retry succeeds | Atomic replacement with before/after audit snapshots |
+| 105 | vendor-invoices.test.js | `updateVendorInvoice()` failed Xero-sync invoice | Corrections are audited while status/approval metadata remain intact |
+| 106 | vendor-invoices.test.js | `rejectVendorInvoice()` failed Xero-sync invoice | 409 `INVALID_STATUS`; approved failed-sync invoices are not rejectable |
+| 107 | vendor-invoices.test.js | `reextractVendorInvoice()` failed Xero-sync invoice | 409 `INVALID_STATUS`; OCR is not called |
+| 108 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` failed Xero-sync invoice | Line and parent totals recompute while status remains `failed` |
+| 109 | xeroSyncRetry.test.js | `retrySync()` AP invoice fails local validation | 409 `APPROVAL_VALIDATION_FAILED`; Xero is not called |
+| 110 | xeroSyncRetry.test.js | `listSyncLogs()` status counts | Counts ignore only the selected status filter |
 
 _Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path.
 The re-extraction fetch/OCR boundary is mocked in `vendor-invoices.test.js`._

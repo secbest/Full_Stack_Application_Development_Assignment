@@ -156,6 +156,24 @@ describe('updateVendorInvoiceItem (UC-06)', () => {
     expect(payload(res).data.parent_invoice.extracted_total).toBe(1200)
   })
 
+  test('allows correcting line items on a failed Xero-sync invoice without recovering its status', async () => {
+    const { item, parent } = makeItem({ status: 'failed' })
+    VendorInvoiceItem.findByPk.mockResolvedValue(item)
+    VendorInvoiceItem.findAll.mockResolvedValue([{ amount: 1200 }])
+
+    const res = mockRes()
+    await updateVendorInvoiceItem({ params: { id: 5 }, body: { unit_price: 1200 }, user: { sub: 4 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(parent.status).toBe('failed')
+    expect(parent.extracted_total).toBe(1200)
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 4,
+      action: 'line_item_updated',
+    }))
+  })
+
   test('recomputes the parent extracted_total and rebate from all line items', async () => {
     const { item, parent } = makeItem()
     VendorInvoiceItem.findByPk.mockResolvedValue(item)
