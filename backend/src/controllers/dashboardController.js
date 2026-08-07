@@ -43,6 +43,21 @@ function toDateOnly(date) {
   return date.toISOString().slice(0, 10)
 }
 
+// EFAR operates only in Singapore (UTC+8, no DST). `date_from`/`date_to` arrive as bare
+// YYYY-MM-DD calendar dates computed from the browser's local (Singapore) clock, so they
+// must be anchored to Singapore local time when bounding a TIMESTAMP column - not UTC.
+// Parsing e.g. "2026-08-08T00:00:00.000Z" reads as 08:00 Singapore time, not midnight, which
+// silently drops early-morning records (created between local midnight and 8am) from a
+// same-day "Today" filter. Only relevant for TIMESTAMP columns (created_at, recorded_at);
+// DATE-only columns like scheduled_date/invoice_date have no time component to shift.
+const SGT_OFFSET = '+08:00'
+function sgDayStart(dateStr) {
+  return new Date(`${dateStr}T00:00:00.000${SGT_OFFSET}`)
+}
+function sgDayEnd(dateStr) {
+  return new Date(`${dateStr}T23:59:59.999${SGT_OFFSET}`)
+}
+
 // Resolves the `period` shorthand into a concrete [from, to] range. Only used when the
 // caller didn't supply explicit date_from/date_to (those always take precedence).
 function resolvePeriodRange(period) {
@@ -219,7 +234,7 @@ async function revenueLeakage(req, res) {
   // JSONB emptiness test is done in JS rather than SQL to stay portable across databases
   // (the same reasoning as fleetOverview's set difference above).
   const invoices = await Invoice.findAll({
-    where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+    where: { created_at: { [Op.between]: [sgDayStart(from), sgDayEnd(to)] } },
     include: [
       { model: Client, attributes: ['id', 'name'], required: false },
       { model: PricingContract, attributes: ['id', 'contract_name'], required: false },
@@ -266,7 +281,7 @@ async function cycleTime(req, res) {
     const completedMilestones = await JobMilestone.findAll({
       where: {
         milestone_type: 'job_completed',
-        recorded_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] },
+        recorded_at: { [Op.between]: [sgDayStart(from), sgDayEnd(to)] },
       },
       attributes: ['booking_id', 'recorded_at'],
     })
@@ -502,7 +517,7 @@ async function revenueByServiceType(req, res) {
     const to = date_to || toDateOnly(new Date())
 
     const invoices = await Invoice.findAll({
-      where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+      where: { created_at: { [Op.between]: [sgDayStart(from), sgDayEnd(to)] } },
       include: [{ model: Booking, attributes: ['service_type'] }],
       attributes: ['total_amount'],
     })
@@ -539,7 +554,7 @@ async function leakageHistory(req, res) {
     const to = date_to || toDateOnly(new Date())
 
     const invoices = await Invoice.findAll({
-      where: { created_at: { [Op.between]: [new Date(from), new Date(`${to}T23:59:59.999Z`)] } },
+      where: { created_at: { [Op.between]: [sgDayStart(from), sgDayEnd(to)] } },
       include: [
         { model: Client, attributes: ['id', 'name'], required: false },
         { model: Booking, attributes: ['reference_number'], required: false },
