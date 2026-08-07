@@ -31,7 +31,7 @@ export default function VendorInvoiceListPage() {
   const [statusCounts, setStatusCounts] = useState({})
   const [uploadOpen, setUploadOpen] = useState(false)
   const [intakeSettings, setIntakeSettings] = useState(null)
-  const [gmailStatus, setGmailStatus] = useState(null)
+  const [gmailStatus, setGmailStatus] = useState(undefined)
   const [gmailBusy, setGmailBusy] = useState(false)
 
   async function fetchInvoices() {
@@ -53,7 +53,7 @@ export default function VendorInvoiceListPage() {
     // endpoint must never stop staff from opening the AP queue.
     getVendorInvoiceIntakeSettings().then(setIntakeSettings).catch(() => {})
   }, [])
-  useEffect(() => { getGmailIntakeStatus().then(setGmailStatus).catch(() => {}) }, [])
+  useEffect(() => { getGmailIntakeStatus().then(setGmailStatus).catch(() => setGmailStatus(false)) }, [])
 
   async function connectGmail() {
     setGmailBusy(true)
@@ -105,24 +105,24 @@ export default function VendorInvoiceListPage() {
         </div>
       )}
 
-      {gmailStatus && (
-        <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-          <div className="flex items-start gap-3">
-            <Mail size={18} className="mt-0.5 shrink-0 text-rose-600" />
-            <div>
-              <div className="font-semibold text-slate-900">Gmail AP intake</div>
-              <p className="mt-0.5 text-xs text-slate-600">{gmailStatus.is_connected ? `Connected to ${gmailStatus.gmail_address}. Label invoice emails “${gmailStatus.intake_label}”, then import them.` : 'Connect the invoice Gmail inbox to import labelled PDF invoices.'}</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            {gmailStatus.is_connected ? (
-              <button onClick={importFromGmail} disabled={gmailBusy} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">{gmailBusy ? 'Importing…' : 'Import Gmail'}</button>
-            ) : user?.role === 'managing_director' ? (
-              <button onClick={connectGmail} disabled={gmailBusy || !gmailStatus.configured} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">Connect Gmail</button>
-            ) : null}
+      <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <div className="flex items-start gap-3">
+          <Mail size={18} className="mt-0.5 shrink-0 text-rose-600" />
+          <div>
+            <div className="font-semibold text-slate-900">Gmail AP intake</div>
+            <p className="mt-0.5 text-xs text-slate-600">
+              {gmailStatus === undefined ? 'Checking Gmail connection…' : gmailStatus === false ? 'Gmail status could not load. Refresh the page and make sure you are signed in as AP or Managing Director.' : gmailStatus.is_connected ? `Connected to ${gmailStatus.gmail_address}. Label invoice emails “${gmailStatus.intake_label}”, then import them.` : 'Connect the invoice Gmail inbox to import labelled PDF invoices.'}
+            </p>
           </div>
         </div>
-      )}
+        <div className="flex shrink-0 gap-2">
+          {gmailStatus && gmailStatus.is_connected ? (
+            <button onClick={importFromGmail} disabled={gmailBusy} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">{gmailBusy ? 'Importing…' : 'Import Gmail'}</button>
+          ) : gmailStatus && user?.role === 'managing_director' ? (
+            <button onClick={connectGmail} disabled={gmailBusy || !gmailStatus.configured} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">Connect Gmail</button>
+          ) : null}
+        </div>
+      </div>
 
       <Card>
         <CardHeader>
