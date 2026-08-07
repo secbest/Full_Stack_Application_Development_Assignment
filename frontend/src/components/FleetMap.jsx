@@ -169,18 +169,22 @@ export function FleetMap({ crew }) {
   }
 
   return (
-    <div className="relative w-full h-full">
-      {status === 'loading' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground bg-white/60">
-          Loading map...
-        </div>
-      )}
-      {status === 'fallback' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground bg-white/60">
-          Map could not be loaded.
-        </div>
-      )}
-      <div ref={containerRef} className="w-full h-full rounded-lg" />
+    <div className="flex flex-col w-full h-full">
+      <div className="relative w-full flex-1 min-h-0">
+        {status === 'loading' && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground bg-white/60">
+            Loading map...
+          </div>
+        )}
+        {status === 'fallback' && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted-foreground bg-white/60">
+            Map could not be loaded.
+          </div>
+        )}
+        <div ref={containerRef} className="w-full h-full rounded-lg" />
+      </div>
+
+      <MapLegend />
 
       {/* Google renders the marker label as a plain <div> with this className - styled
           globally here (same pattern as ReportPage.jsx's Recharts outline override)
@@ -196,6 +200,23 @@ export function FleetMap({ crew }) {
           font-family: 'Inter', sans-serif;
         }
       `}</style>
+    </div>
+  )
+}
+
+function MapLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 border-t border-[#E2E8F0] flex-shrink-0">
+      {Object.keys(STATUS_LABELS).map((key) => (
+        <div key={key} className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+            style={{ background: STATUS_COLORS[key] }}
+          />
+          <span className="text-xs text-muted-foreground">{STATUS_LABELS[key]}</span>
+        </div>
+      ))}
     </div>
   )
 }

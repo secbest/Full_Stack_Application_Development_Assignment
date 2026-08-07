@@ -44,7 +44,10 @@ export default function Step2ServiceCharges({ booking, initialValues, onNext, on
       // avoids a memo whose service type contradicts its own booking, which would send
       // the pricing engine looking for the wrong rate row. Still changeable on the spot.
       service_type: initialValues.service_type || booking?.service_type || '',
-      transfer_type: initialValues.transfer_type || '',
+      // Quotations already picked this during the intake review (see
+      // IntakeQueuePage's "Transfer Type" field) - defaulting from it saves a tap and
+      // keeps the memo consistent with what was quoted. Still changeable on the spot.
+      transfer_type: initialValues.transfer_type || booking?.quoted_transfer_type || '',
       is_office_hours: initialValues.is_office_hours ?? true,
       oxygen_litres_used: initialValues.oxygen_litres_used ?? 0,
       has_inconvenience_fee: initialValues.has_inconvenience_fee ?? false,
