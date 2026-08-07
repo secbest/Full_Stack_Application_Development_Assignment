@@ -496,7 +496,10 @@ async function approveVendorInvoice(req, res) {
       ({ invoice, approvedAt, log } = await sequelize.transaction(async (t) => {
         const inv = await VendorInvoice.findByPk(req.params.id, {
           include: [{ model: VendorInvoiceItem }],
-          lock: t.LOCK.UPDATE,
+          // PostgreSQL cannot lock the nullable (item) side of Sequelize's LEFT JOIN.
+          // Lock only the invoice row; its status is the resource that prevents a
+          // concurrent approval from creating a duplicate Xero bill.
+          lock: { level: t.LOCK.UPDATE, of: VendorInvoice },
           transaction: t,
         })
         if (!inv) throw Object.assign(new Error('Vendor invoice not found.'), { httpCode: 404 })

@@ -230,7 +230,9 @@ describe('approveVendorInvoice (UC-06/07)', () => {
 
     await approveVendorInvoice({ params: { id: 1 }, user: { sub: 1 } }, mockRes())
 
-    expect(VendorInvoice.findByPk).toHaveBeenCalledWith(1, expect.objectContaining({ lock: 'UPDATE' }))
+    expect(VendorInvoice.findByPk).toHaveBeenCalledWith(1, expect.objectContaining({
+      lock: { level: 'UPDATE', of: VendorInvoice },
+    }))
     expect(xeroService.pushBill).toHaveBeenCalledTimes(1)
 
     // The second caller now finds the invoice already synced and must not push again.
