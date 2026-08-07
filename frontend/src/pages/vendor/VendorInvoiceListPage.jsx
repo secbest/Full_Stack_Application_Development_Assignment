@@ -7,7 +7,9 @@ import { Building2, Eye, UploadCloud, FileText, Mail, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
+import { useAuth } from '@/hooks'
 import { getVendorInvoiceIntakeSettings, listVendorInvoices, uploadVendorInvoice } from '@/api/vendor'
+import { getGmailConnectUrl, getGmailIntakeStatus, importGmailInvoices } from '@/api/gmail'
 
 const STATUSES = ['pending_review', 'extraction_failed', 'approved', 'synced_to_xero', 'failed', 'rejected']
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
@@ -22,12 +24,15 @@ function ConfidenceCell({ confidence, isLowConfidence }) {
 export default function VendorInvoiceListPage() {
   const toast = useToast()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [statusCounts, setStatusCounts] = useState({})
   const [uploadOpen, setUploadOpen] = useState(false)
   const [intakeSettings, setIntakeSettings] = useState(null)
+  const [gmailStatus, setGmailStatus] = useState(null)
+  const [gmailBusy, setGmailBusy] = useState(false)
 
   async function fetchInvoices() {
     setLoading(true)
@@ -48,6 +53,24 @@ export default function VendorInvoiceListPage() {
     // endpoint must never stop staff from opening the AP queue.
     getVendorInvoiceIntakeSettings().then(setIntakeSettings).catch(() => {})
   }, [])
+  useEffect(() => { getGmailIntakeStatus().then(setGmailStatus).catch(() => {}) }, [])
+
+  async function connectGmail() {
+    setGmailBusy(true)
+    try { window.location.href = await getGmailConnectUrl() }
+    catch (err) { toast.error(err.response?.data?.message || 'Could not start Gmail connection.') ; setGmailBusy(false) }
+  }
+
+  async function importFromGmail() {
+    setGmailBusy(true)
+    try {
+      const result = await importGmailInvoices()
+      const successful = result.imported.filter((row) => row.imported).length
+      toast.success(successful ? `${successful} Gmail message(s) imported into AP.` : 'No labelled PDF invoices are waiting in Gmail.')
+      await fetchInvoices()
+    } catch (err) { toast.error(err.response?.data?.message || 'Gmail import failed.') }
+    finally { setGmailBusy(false) }
+  }
 
   return (
     <div className="p-6 space-y-4 font-sans">
@@ -78,6 +101,25 @@ export default function VendorInvoiceListPage() {
             ) : (
               <p className="mt-0.5 text-xs">Automatic forwarding has not been configured yet. You can still upload a PDF manually.</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {gmailStatus && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+          <div className="flex items-start gap-3">
+            <Mail size={18} className="mt-0.5 shrink-0 text-rose-600" />
+            <div>
+              <div className="font-semibold text-slate-900">Gmail AP intake</div>
+              <p className="mt-0.5 text-xs text-slate-600">{gmailStatus.is_connected ? `Connected to ${gmailStatus.gmail_address}. Label invoice emails “${gmailStatus.intake_label}”, then import them.` : 'Connect the invoice Gmail inbox to import labelled PDF invoices.'}</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {gmailStatus.is_connected ? (
+              <button onClick={importFromGmail} disabled={gmailBusy} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">{gmailBusy ? 'Importing…' : 'Import Gmail'}</button>
+            ) : user?.role === 'managing_director' ? (
+              <button onClick={connectGmail} disabled={gmailBusy || !gmailStatus.configured} className="h-8 rounded-md bg-slate-900 px-3 text-xs font-medium text-white disabled:opacity-40">Connect Gmail</button>
+            ) : null}
           </div>
         </div>
       )}

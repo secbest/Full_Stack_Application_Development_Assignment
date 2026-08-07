@@ -6,6 +6,7 @@ const { testConnection } = require('./config')
 require('./models')   // initialise all models and associations
 const routes = require('./routes')
 const { xeroService } = require('./services')
+const { importPendingGmailInvoices } = require('./controllers/gmailController')
 
 const app = express()
 
@@ -42,6 +43,25 @@ app.listen(PORT, () => {
   // credentials that forgets XERO_SIMULATION=false would otherwise report every sync as
   // successful while nothing ever reaches Xero.
   xeroService.logMode()
+  // Gmail has no HTTP-forwarding primitive. Once the inbox has been connected, poll
+  // only its explicitly-labelled AP queue. The immediate Import Gmail button uses the
+  // same function for a test; this timer makes subsequent vendor emails automatic.
+  const gmailPollMs = Math.max(Number(process.env.GMAIL_INTAKE_POLL_MS) || 5 * 60 * 1000, 60 * 1000)
+  let gmailImportRunning = false
+  const pollGmail = async () => {
+    if (gmailImportRunning) return
+    gmailImportRunning = true
+    try {
+      const result = await importPendingGmailInvoices()
+      const count = result.imported?.filter((entry) => entry.imported).length || 0
+      if (count) console.log(`[gmail-intake] Imported ${count} Gmail message(s).`)
+    } catch (err) {
+      console.error('[gmail-intake] Poll failed:', err.message)
+    } finally { gmailImportRunning = false }
+  }
+  const gmailTimer = setInterval(pollGmail, gmailPollMs)
+  gmailTimer.unref()
+  pollGmail()
   // Verify the DB is reachable but never crash the process if it isn't.
   // In Node 15+ an unhandled rejection inside an async listen callback kills the process.
   testConnection().catch((err) => {

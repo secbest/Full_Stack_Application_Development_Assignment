@@ -868,10 +868,10 @@ async function inboundApUserId() {
 // not accept browser authentication: it is intentionally for the mail adapter.
 async function receiveInboundEmail(req, res) {
   try {
-    if (!process.env.AP_INBOUND_EMAIL_SECRET) {
+    if (!req.internal_email_intake && !process.env.AP_INBOUND_EMAIL_SECRET) {
       return error(res, 'Inbound email intake is not configured.', 'INBOUND_EMAIL_DISABLED', 503)
     }
-    if (!matchesInboundSecret(req.get?.('X-AP-Inbound-Secret') || req.headers?.['x-ap-inbound-secret'], process.env.AP_INBOUND_EMAIL_SECRET)) {
+    if (!req.internal_email_intake && !matchesInboundSecret(req.get?.('X-AP-Inbound-Secret') || req.headers?.['x-ap-inbound-secret'], process.env.AP_INBOUND_EMAIL_SECRET)) {
       return error(res, 'Invalid inbound email credentials.', 'UNAUTHORIZED', 401)
     }
 

@@ -37,3 +37,7 @@ Use `multipart/form-data` with:
 The message id plus attachment number prevents a provider retry from creating another AP invoice. Each attachment is stored, OCR-processed, rebate-checked, and sent to the existing manual review queue. An OCR failure still creates a recoverable `extraction_failed` invoice.
 
 Only the forwarding address is shown to staff in Vendor Invoices. The webhook secret stays server-side.
+
+## Gmail API option
+
+For a personal Gmail inbox, use the Gmail card in Vendor Invoices instead of the forwarding webhook. Configure the `GOOGLE_GMAIL_*` values, run `npm run db:migrate:gmail-intake`, then sign in as the Managing Director and select **Connect Gmail**. Apply the `EFAR AP Invoices` label to a PDF invoice email and select **Import Gmail** to test. The server subsequently polls that labelled queue every five minutes and adds `EFAR AP Processed` only after successful intake.
