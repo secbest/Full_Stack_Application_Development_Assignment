@@ -26,6 +26,8 @@ Authorization: Bearer <token>
 | 10 | POST | `/api/vendor-invoices/:id/reject` | UC-06 | Yes |
 | 11 | POST | `/api/vendor-invoices/:id/reextract` | UC-04 | Yes |
 | 12 | PATCH | `/api/vendor-invoice-items/:id` | UC-06 | Yes |
+| 12A | POST | `/api/vendor-invoices/:id/items` | UC-06 | Yes |
+| 12B | DELETE | `/api/vendor-invoice-items/:id` | UC-06 | Yes |
 | 13 | GET | `/api/xero/sync-logs` | UC-08 | Yes |
 | 14 | POST | `/api/xero/sync-logs/:id/retry` | UC-08 | Yes |
 | 15 | GET | `/api/dashboard/revenue-leakage` | UC-09 | Yes |
@@ -540,7 +542,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 12. PATCH `/api/vendor-invoice-items/:id`
 
-**Purpose:** Allows Chloe to correct an individual line item extracted by OCR (UC-06 - editing line items in the right panel). Recalculates the parent invoice's `extracted_total` automatically if `amount` is changed.
+**Purpose:** Allows Chloe to correct an individual line item extracted by OCR (UC-06 - editing line items in the right panel). The server derives `amount` from `quantity × unit_price` and recalculates all parent totals, GST and rebate atomically.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -555,8 +557,7 @@ Redirects to `/settings/xero?connected=true`
 {
   "description": "Diesel 50ppm - 1,200 litres",
   "quantity": "1200.00",
-  "unit_price": "1.45",
-  "amount": "1740.00"
+  "unit_price": "1.45"
 }
 ```
 
@@ -583,11 +584,44 @@ Redirects to `/settings/xero?connected=true`
 
 | Status | Code | Message |
 |--------|------|---------|
-| 400 | `INVALID_AMOUNT` | `amount` must be a positive number |
+| 400 | `VALIDATION_ERROR` | Description, quantity or unit price is invalid |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can edit invoice line items |
 | 404 | `NOT_FOUND` | Invoice line item not found |
 | 409 | `INVALID_STATUS` | Line items cannot be edited - parent invoice is not in an editable status |
+
+---
+
+## 12A. POST `/api/vendor-invoices/:id/items`
+
+**Purpose:** Adds a manual line when OCR omitted invoice content or extraction failed. The amount is server-derived and all invoice totals are recalculated in the same transaction. Adding a line to an `extraction_failed` invoice returns it to `pending_review`; normal approval validation still blocks approval until every required header and line field is valid.
+
+**Auth required:** Yes - roles: `ap_specialist`
+
+**Request body:**
+```json
+{
+  "description": "Ambulance transport",
+  "quantity": 1,
+  "unit_price": 250.00
+}
+```
+
+**Success response:** `201 Created`, containing the created item and recalculated `parent_invoice` summary.
+
+**Errors:** `404 NOT_FOUND` for an unknown invoice, `409 INVALID_STATUS` when the invoice is no longer editable, and `400 VALIDATION_ERROR` for invalid line fields.
+
+---
+
+## 12B. DELETE `/api/vendor-invoice-items/:id`
+
+**Purpose:** Deletes an incorrect OCR or manual line and recalculates totals, GST and rebate in the same transaction. Deleting the final line is allowed, but approval validation will block an invoice with no line items.
+
+**Auth required:** Yes - roles: `ap_specialist`
+
+**Success response:** `200 OK`, containing the deleted item ID and recalculated `parent_invoice` summary.
+
+**Errors:** `404 NOT_FOUND` for an unknown item and `409 INVALID_STATUS` when the parent invoice is no longer editable.
 
 ---
 

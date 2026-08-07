@@ -1,6 +1,6 @@
 jest.mock('../../src/models', () => ({
-  VendorInvoiceItem: { findByPk: jest.fn(), findAll: jest.fn() },
-  VendorInvoice: {},
+  VendorInvoiceItem: { create: jest.fn(), findByPk: jest.fn(), findAll: jest.fn() },
+  VendorInvoice: { findByPk: jest.fn() },
 }))
 
 jest.mock('../../src/config', () => ({
@@ -18,8 +18,9 @@ jest.mock('../../src/services', () => ({
   },
 }))
 
-const { VendorInvoiceItem } = require('../../src/models')
-const { updateVendorInvoiceItem } = require('../../src/controllers/vendorInvoiceItemController')
+const { VendorInvoice, VendorInvoiceItem } = require('../../src/models')
+const { vendorInvoiceAuditService } = require('../../src/services')
+const { createVendorInvoiceItem, updateVendorInvoiceItem, deleteVendorInvoiceItem } = require('../../src/controllers/vendorInvoiceItemController')
 
 function mockRes() {
   const res = {}
@@ -35,10 +36,75 @@ function makeItem(parentOverrides = {}, itemOverrides = {}) {
   parent.update = jest.fn(async (f) => Object.assign(parent, f))
   const item = { id: 5, vendor_invoice_id: 1, description: 'Fuel', quantity: 1, unit_price: 900, amount: 900, updatedAt: null, VendorInvoice: parent, ...itemOverrides }
   item.update = jest.fn(async (f) => Object.assign(item, f))
+  item.destroy = jest.fn(async () => {})
   return { item, parent }
 }
 
 beforeEach(() => jest.clearAllMocks())
+
+describe('createVendorInvoiceItem', () => {
+  test('404s when the parent invoice does not exist', async () => {
+    VendorInvoice.findByPk.mockResolvedValue(null)
+    const res = mockRes()
+
+    await createVendorInvoiceItem({ params: { id: 99 }, body: {} }, res)
+
+    expect(res.status).toHaveBeenCalledWith(404)
+    expect(VendorInvoiceItem.create).not.toHaveBeenCalled()
+  })
+
+  test('409s when the parent invoice is not editable', async () => {
+    const { parent } = makeItem({ status: 'approved' })
+    VendorInvoice.findByPk.mockResolvedValue(parent)
+    const res = mockRes()
+
+    await createVendorInvoiceItem({ params: { id: 1 }, body: { description: 'Fuel', quantity: 1, unit_price: 20 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVALID_STATUS')
+  })
+
+  test('derives amount, recalculates totals and audits the new line', async () => {
+    const { parent } = makeItem()
+    const createdItem = { id: 8, vendor_invoice_id: 1, description: 'Bandages', quantity: 3, unit_price: 12.5, amount: 37.5, createdAt: null }
+    VendorInvoice.findByPk.mockResolvedValue(parent)
+    VendorInvoiceItem.create.mockResolvedValue(createdItem)
+    VendorInvoiceItem.findAll.mockResolvedValue([{ amount: 900 }, createdItem])
+    const res = mockRes()
+
+    await createVendorInvoiceItem({
+      params: { id: 1 },
+      body: { description: 'Bandages', quantity: 3, unit_price: 12.5, amount: 999 },
+      user: { sub: 4 },
+    }, res)
+
+    expect(VendorInvoiceItem.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 37.5 }), expect.any(Object))
+    expect(parent.extracted_total).toBe(937.5)
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 4,
+      action: 'line_item_added',
+    }))
+  })
+
+  test('moves an OCR-failed invoice back to pending review after a manual line is added', async () => {
+    const { parent } = makeItem({ status: 'extraction_failed', extracted_total: null })
+    const createdItem = { id: 8, vendor_invoice_id: 1, description: 'Transport', quantity: 1, unit_price: 100, amount: 100 }
+    VendorInvoice.findByPk.mockResolvedValue(parent)
+    VendorInvoiceItem.create.mockResolvedValue(createdItem)
+    VendorInvoiceItem.findAll.mockResolvedValue([createdItem])
+    const res = mockRes()
+
+    await createVendorInvoiceItem({ params: { id: 1 }, body: { description: 'Transport', quantity: 1, unit_price: 100 } }, res)
+
+    expect(parent.status).toBe('pending_review')
+    expect(payload(res).data.parent_invoice.status).toBe('pending_review')
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      changes: expect.objectContaining({ status: { from: 'extraction_failed', to: 'pending_review' } }),
+    }))
+  })
+})
 
 describe('updateVendorInvoiceItem (UC-06)', () => {
   test('404s when the line item does not exist', async () => {
@@ -115,5 +181,58 @@ describe('updateVendorInvoiceItem (UC-06)', () => {
     await updateVendorInvoiceItem({ params: { id: 5 }, body: { quantity: 3, unit_price: 0.335 } }, res)
 
     expect(item.amount).toBe(1.01)
+  })
+})
+
+describe('deleteVendorInvoiceItem', () => {
+  test('404s when the line item does not exist', async () => {
+    VendorInvoiceItem.findByPk.mockResolvedValue(null)
+    const res = mockRes()
+
+    await deleteVendorInvoiceItem({ params: { id: 99 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(404)
+  })
+
+  test('409s when the parent invoice is not editable', async () => {
+    const { item } = makeItem({ status: 'synced_to_xero' })
+    VendorInvoiceItem.findByPk.mockResolvedValue(item)
+    const res = mockRes()
+
+    await deleteVendorInvoiceItem({ params: { id: 5 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(item.destroy).not.toHaveBeenCalled()
+  })
+
+  test('deletes the line, recalculates the remaining total and records an audit event', async () => {
+    const { item, parent } = makeItem()
+    VendorInvoiceItem.findByPk.mockResolvedValue(item)
+    VendorInvoiceItem.findAll.mockResolvedValue([{ amount: 300 }, { amount: 200 }])
+    const res = mockRes()
+
+    await deleteVendorInvoiceItem({ params: { id: 5 }, user: { sub: 4 } }, res)
+
+    expect(item.destroy).toHaveBeenCalled()
+    expect(parent.extracted_total).toBe(500)
+    expect(payload(res).data.parent_invoice.extracted_total).toBe(500)
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 4,
+      action: 'line_item_deleted',
+      changes: expect.objectContaining({ item_id: 5, description: 'Fuel' }),
+    }))
+  })
+
+  test('allows deleting the final line and leaves approval to reject the empty invoice', async () => {
+    const { item, parent } = makeItem()
+    VendorInvoiceItem.findByPk.mockResolvedValue(item)
+    VendorInvoiceItem.findAll.mockResolvedValue([])
+    const res = mockRes()
+
+    await deleteVendorInvoiceItem({ params: { id: 5 } }, res)
+
+    expect(parent.status).toBe('pending_review')
+    expect(parent.extracted_total).toBe(0)
+    expect(parent.verified_total).toBe(0)
   })
 })

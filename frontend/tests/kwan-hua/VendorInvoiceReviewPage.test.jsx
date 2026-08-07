@@ -116,3 +116,73 @@ test('shows each server-supplied approval issue and disables approval', async ()
   expect(screen.getByText('Xero expense account code is required.')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /Approve & Sync/i })).toBeDisabled()
 })
+
+test('manually adds a line to recover an OCR-failed invoice', async () => {
+  const user = userEvent.setup()
+  const failedInvoice = invoice({
+    status: 'extraction_failed',
+    items: [],
+    extracted_total: null,
+    total_including_gst: null,
+    approval_validation: { can_approve: false, issues: [], requires_low_confidence_confirmation: false },
+  })
+  const recoveredInvoice = invoice({
+    status: 'pending_review',
+    items: [{ id: 9, description: 'Ambulance transport', quantity: 1, unit_price: 250, amount: 250 }],
+    subtotal_excluding_gst: 250,
+    gst_amount: 22.5,
+    total_including_gst: 272.5,
+    extracted_total: 272.5,
+  })
+  mock.onGet('/vendor-invoices/12').replyOnce(200, { success: true, data: failedInvoice })
+  mock.onGet('/vendor-invoices/12').reply(200, { success: true, data: recoveredInvoice })
+  mock.onPost('/vendor-invoices/12/items').reply(201, { success: true, data: {} })
+  renderPage()
+
+  await user.click(await screen.findByRole('button', { name: /Add Item/i }))
+  await user.type(screen.getByLabelText('Line Description'), 'Ambulance transport')
+  await user.clear(screen.getByLabelText('Unit Price'))
+  await user.type(screen.getByLabelText('Unit Price'), '250')
+  await user.click(screen.getByRole('button', { name: 'Add Line' }))
+
+  await waitFor(() => expect(mock.history.post).toHaveLength(1))
+  expect(JSON.parse(mock.history.post[0].data)).toEqual({
+    description: 'Ambulance transport',
+    quantity: '1',
+    unit_price: '250',
+  })
+  expect(await screen.findByText('Ambulance transport')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Approve & Sync/i })).toBeInTheDocument()
+})
+
+test('confirms deletion and refreshes the recalculated invoice', async () => {
+  const user = userEvent.setup()
+  mock.onGet('/vendor-invoices/12').replyOnce(200, { success: true, data: invoice() })
+  mock.onGet('/vendor-invoices/12').reply(200, {
+    success: true,
+    data: invoice({
+      items: [],
+      subtotal_excluding_gst: 0,
+      gst_amount: 0,
+      total_including_gst: 0,
+      extracted_total: 0,
+      rebate_amount: 0,
+      verified_total: 0,
+      approval_validation: {
+        can_approve: false,
+        issues: [{ code: 'MISSING_LINE_ITEMS', message: 'At least one line item is required.' }],
+        requires_low_confidence_confirmation: false,
+      },
+    }),
+  })
+  mock.onDelete('/vendor-invoice-items/1').reply(200, { success: true, data: { id: 1 } })
+  renderPage()
+
+  await user.click(await screen.findByRole('button', { name: 'Delete Medical supplies' }))
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('Delete line item?')
+  await user.click(screen.getByRole('button', { name: 'Delete Item' }))
+
+  await waitFor(() => expect(mock.history.delete).toHaveLength(1))
+  expect(await screen.findByText('No line items. Add one manually or retry extraction.')).toBeInTheDocument()
+  expect(screen.getByText('At least one line item is required.')).toBeInTheDocument()
+})

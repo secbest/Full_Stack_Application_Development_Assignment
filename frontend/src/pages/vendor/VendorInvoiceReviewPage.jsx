@@ -3,9 +3,10 @@
 // editable fields right. Rebate auto-calculation, low-confidence flag, approve/reject/reextract.
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon, History } from 'lucide-react'
+import { ArrowLeft, RefreshCw, UploadCloud, XCircle, AlertTriangle, ExternalLink, Pencil, Check, X as XIcon, History, Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useToast } from '@/context/ToastContext'
 import {
   getVendorInvoice,
@@ -13,11 +14,14 @@ import {
   approveVendorInvoice,
   rejectVendorInvoice,
   reextractVendorInvoice,
+  createVendorInvoiceItem,
   updateVendorInvoiceItem,
+  deleteVendorInvoiceItem,
 } from '@/api/vendor'
 
 const money = (n) => (n === null || n === undefined ? '—' : `$${Number(n).toFixed(2)}`)
 const EDITABLE_STATUSES = ['pending_review', 'extraction_failed']
+const EMPTY_LINE_ITEM = { description: '', quantity: '1', unit_price: '' }
 
 export default function VendorInvoiceReviewPage() {
   const { id } = useParams()
@@ -31,6 +35,9 @@ export default function VendorInvoiceReviewPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [editingItemId, setEditingItemId] = useState(null)
   const [itemForm, setItemForm] = useState({})
+  const [addingItem, setAddingItem] = useState(false)
+  const [newItemForm, setNewItemForm] = useState(EMPTY_LINE_ITEM)
+  const [deleteItemTarget, setDeleteItemTarget] = useState(null)
   const [isDirty, setIsDirty] = useState(false)
   const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false)
 
@@ -128,11 +135,62 @@ export default function VendorInvoiceReviewPage() {
   }
 
   function startEditItem(item) {
+    if (isDirty) {
+      toast.error('Save the header changes before editing line items.')
+      return
+    }
+    setAddingItem(false)
     setEditingItemId(item.id)
     setItemForm({ description: item.description, quantity: item.quantity, unit_price: item.unit_price, amount: item.amount })
   }
 
+  function startAddItem() {
+    if (isDirty) {
+      toast.error('Save the header changes before adding line items.')
+      return
+    }
+    setEditingItemId(null)
+    setAddingItem(true)
+  }
+
+  function validLineItem(values) {
+    const quantity = Number(values.quantity)
+    const unitPrice = Number(values.unit_price)
+    if (!values.description.trim()) {
+      toast.error('Enter a line item description.')
+      return false
+    }
+    if (values.quantity === '' || !Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Quantity must be greater than zero.')
+      return false
+    }
+    if (values.unit_price === '' || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      toast.error('Unit price cannot be negative.')
+      return false
+    }
+    return true
+  }
+
+  async function addItem() {
+    if (!validLineItem(newItemForm)) return
+    setBusy(true)
+    try {
+      await createVendorInvoiceItem(invoice.id, newItemForm)
+      toast.success(invoice.status === 'extraction_failed'
+        ? 'Line item added. The invoice is ready for review.'
+        : 'Line item added.')
+      setAddingItem(false)
+      setNewItemForm(EMPTY_LINE_ITEM)
+      await load()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add line item.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function saveItem() {
+    if (!validLineItem(itemForm)) return
     setBusy(true)
     try {
       await updateVendorInvoiceItem(editingItemId, itemForm)
@@ -141,6 +199,27 @@ export default function VendorInvoiceReviewPage() {
       await load()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update line item.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeItem() {
+    if (!deleteItemTarget) return
+    if (isDirty) {
+      toast.error('Save the header changes before deleting line items.')
+      setDeleteItemTarget(null)
+      return
+    }
+    const itemId = deleteItemTarget.id
+    setDeleteItemTarget(null)
+    setBusy(true)
+    try {
+      await deleteVendorInvoiceItem(itemId)
+      toast.success('Line item deleted. Totals recalculated.')
+      await load()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete line item.')
     } finally {
       setBusy(false)
     }
@@ -288,8 +367,34 @@ export default function VendorInvoiceReviewPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Line Items</CardTitle></CardHeader>
-            <CardContent>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Line Items</CardTitle>
+              {editable && (
+                <button
+                  type="button"
+                  onClick={startAddItem}
+                  disabled={busy || addingItem || isDirty}
+                  title={isDirty ? 'Save the header changes first.' : undefined}
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <Plus size={13} /> Add Item
+                </button>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {addingItem && (
+                <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                  <div className="grid gap-3 sm:grid-cols-[1fr_90px_120px]">
+                    <Field label="Line Description" value={newItemForm.description} editable onChange={(value) => setNewItemForm((current) => ({ ...current, description: value }))} />
+                    <Field label="Quantity" type="number" value={newItemForm.quantity} editable onChange={(value) => setNewItemForm((current) => ({ ...current, quantity: value }))} />
+                    <Field label="Unit Price" type="number" value={newItemForm.unit_price} editable onChange={(value) => setNewItemForm((current) => ({ ...current, unit_price: value }))} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => { setAddingItem(false); setNewItemForm(EMPTY_LINE_ITEM) }} disabled={busy} className="h-8 rounded-md px-3 text-xs font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+                    <button type="button" onClick={addItem} disabled={busy} className="h-8 rounded-md bg-blue-600 px-3 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40">Add Line</button>
+                  </div>
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <table className="w-full border-collapse">
                   <thead>
@@ -301,7 +406,7 @@ export default function VendorInvoiceReviewPage() {
                   </thead>
                   <tbody>
                     {invoice.items.length === 0 ? (
-                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">No line items extracted.</td></tr>
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-400">No line items. Add one manually or retry extraction.</td></tr>
                     ) : invoice.items.map((item) => (
                       <tr key={item.id} className="border-b border-slate-100 last:border-0">
                         {editingItemId === item.id ? (
@@ -323,7 +428,10 @@ export default function VendorInvoiceReviewPage() {
                             <td className="px-3 py-2 text-sm font-medium text-slate-900">{money(item.amount)}</td>
                             <td className="px-3 py-2 text-right">
                               {editable && (
-                                <button onClick={() => startEditItem(item)} className="text-slate-400 hover:text-blue-600"><Pencil size={14} /></button>
+                                <div className="flex justify-end gap-2">
+                                  <button aria-label={`Edit ${item.description}`} onClick={() => startEditItem(item)} disabled={busy || isDirty} className="text-slate-400 hover:text-blue-600 disabled:opacity-40"><Pencil size={14} /></button>
+                                  <button aria-label={`Delete ${item.description}`} onClick={() => setDeleteItemTarget(item)} disabled={busy || isDirty} className="text-slate-400 hover:text-rose-600 disabled:opacity-40"><Trash2 size={14} /></button>
+                                </div>
                               )}
                             </td>
                           </>
@@ -397,6 +505,15 @@ export default function VendorInvoiceReviewPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteItemTarget)}
+        title="Delete line item?"
+        description={deleteItemTarget ? `Delete “${deleteItemTarget.description}”? The invoice totals will be recalculated.` : ''}
+        confirmLabel="Delete Item"
+        onCancel={() => setDeleteItemTarget(null)}
+        onConfirm={removeItem}
+      />
     </div>
   )
 }

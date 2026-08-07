@@ -97,9 +97,13 @@ _List all test cases below before submission. Include what is being tested and t
 | 91 | vendor-invoices.test.js | `rejectVendorInvoice()` happy path | 200, invoice -> `rejected` with the reason stored |
 | 92 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` unknown item id | 404 |
 | 93 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` parent invoice not editable | 409 `INVALID_STATUS` |
-| 94 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` non-positive `amount` | 400 `INVALID_AMOUNT` |
-| 95 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` edit without an amount change | Parent invoice total left untouched |
+| 94 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` client supplies a false `amount` | Amount derived from quantity × unit price |
+| 95 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` changes unit price | Line and parent totals recomputed |
 | 96 | vendor-invoice-items.test.js | `updateVendorInvoiceItem()` amount change | Parent `extracted_total`/rebate recomputed from all line items |
+| 97 | vendor-invoice-items.test.js | `createVendorInvoiceItem()` unknown/locked parent | 404 or 409; no item created |
+| 98 | vendor-invoice-items.test.js | Add a manual line after OCR failure | Server-derived amount; totals recalculated; status becomes `pending_review`; audit recorded |
+| 99 | vendor-invoice-items.test.js | Delete a line from an editable invoice | Item deleted; remaining totals recalculated; audit recorded |
+| 100 | vendor-invoice-items.test.js | Delete the final line | Totals become zero and invoice remains `pending_review` for approval validation to block |
 
 _Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path and
 `reextractVendorInvoice` (both require mocking `fetch`/Cloudinary/OCR I/O rather than pure

@@ -67,6 +67,21 @@ const vendorInvoiceApproveSchema = Yup.object({
   confirm_low_confidence: Yup.boolean().default(false),
 })
 
+// POST /api/vendor-invoices/:id/items - manually recover a missing OCR line.
+// All user-editable fields are required when creating a line; `amount` is deliberately
+// omitted and stripped for the same reason as it is on update: the server derives it.
+const vendorInvoiceItemCreateSchema = Yup.object({
+  description: Yup.string().trim().min(1, 'description cannot be blank').max(500).required('description is required'),
+  quantity: Yup.number()
+    .typeError('quantity must be a number')
+    .positive('quantity must be a positive number')
+    .required('quantity is required'),
+  unit_price: Yup.number()
+    .typeError('unit_price must be a number')
+    .min(0, 'unit_price cannot be negative')
+    .required('unit_price is required'),
+})
+
 // PATCH /api/vendor-invoice-items/:id - AP corrections to one extracted line item.
 //
 // `amount` is deliberately NOT accepted from the client: it is derived server-side as
@@ -197,6 +212,7 @@ module.exports = {
   vendorInvoiceUploadSchema,
   vendorInvoiceUpdateSchema,
   vendorInvoiceApproveSchema,
+  vendorInvoiceItemCreateSchema,
   vendorInvoiceItemUpdateSchema,
   vendorInvoiceListQuerySchema,
   syncLogListQuerySchema,

@@ -51,3 +51,13 @@ export async function updateVendorInvoiceItem(itemId, payload) {
   const res = await api.patch(`/vendor-invoice-items/${itemId}`, payload)
   return res.data.data // { ...item, parent_invoice }
 }
+
+export async function createVendorInvoiceItem(invoiceId, payload) {
+  const res = await api.post(`/vendor-invoices/${invoiceId}/items`, payload)
+  return res.data.data // { ...item, parent_invoice }
+}
+
+export async function deleteVendorInvoiceItem(itemId) {
+  const res = await api.delete(`/vendor-invoice-items/${itemId}`)
+  return res.data.data // { id, parent_invoice }
+}
