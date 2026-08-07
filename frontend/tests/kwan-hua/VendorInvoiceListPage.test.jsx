@@ -6,6 +6,10 @@ import api from '@/api/index'
 import { ToastProvider } from '@/context/ToastContext'
 import VendorInvoiceListPage from '@/pages/vendor/VendorInvoiceListPage'
 
+jest.mock('@/hooks', () => ({
+  useAuth: () => ({ user: { role: 'ap_specialist' } }),
+}))
+
 let mock
 
 beforeEach(() => {
