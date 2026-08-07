@@ -1,7 +1,9 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai')
+const { GoogleGenAI } = require('@google/genai')
 const { round2 } = require('../utils/money')
 
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.0-flash'
+// The legacy Gemini 2.x models and `@google/generative-ai` SDK are retired. Gemini
+// 3.6 Flash is the stable replacement and supports PDF/document understanding.
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
 
 // A line-item total and a stated invoice total may legitimately differ by a rounding
 // cent. Anything past this is a real disagreement, not float noise.
@@ -71,7 +73,7 @@ function getClient() {
     err.code = 'OCR_CONFIG_MISSING'
     throw err
   }
-  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 }
 
 // Retained as a fallback: responseMimeType makes a fence unlikely, but a model version
@@ -186,23 +188,21 @@ function reconcile(parsed) {
 // persist the invoice as `extraction_failed`.
 async function extractVendorInvoice(pdfBuffer) {
   const genAI = getClient()
-  const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
-    // Temperature 0: re-extracting the same PDF must not produce different numbers.
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
-    },
-  })
 
   let raw
   try {
-    const result = await model.generateContent([
-      { inlineData: { data: pdfBuffer.toString('base64'), mimeType: 'application/pdf' } },
-      { text: EXTRACTION_PROMPT },
-    ])
-    raw = result.response.text()
+    const result = await genAI.models.generateContent({
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts: [
+        { inlineData: { data: pdfBuffer.toString('base64'), mimeType: 'application/pdf' } },
+        { text: EXTRACTION_PROMPT },
+      ] }],
+      config: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: RESPONSE_SCHEMA,
+      },
+    })
+    raw = result.text
   } catch (err) {
     const wrapped = new Error(`Gemini OCR request failed: ${err.message}`)
     wrapped.code = 'OCR_EXTRACTION_FAILED'

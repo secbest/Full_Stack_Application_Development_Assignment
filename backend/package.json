@@ -32,7 +32,7 @@
     "db:purge-seed:field-crew-jobs": "node src/scripts/purge-field-crew-test-jobs.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.17.1",
+    "@google/genai": "^2.16.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.3.1",
     "cors": "^2.8.5",
