@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
 const { uploadPdf } = require('../middleware/upload')
-const { vendorInvoiceListQuerySchema, vendorInvoiceUpdateSchema, vendorInvoiceApproveSchema, vendorInvoiceItemCreateSchema } = require('../validators')
+const { vendorInvoiceListQuerySchema, vendorInvoiceUpdateSchema, vendorInvoiceApproveSchema, vendorInvoiceReextractSchema, vendorInvoiceItemCreateSchema } = require('../validators')
 const {
   uploadVendorInvoice,
   listVendorInvoices,
@@ -23,6 +23,6 @@ router.patch('/:id', authenticate, authorise('ap_specialist'), validate(vendorIn
 router.post('/:id/items', authenticate, authorise('ap_specialist'), validate(vendorInvoiceItemCreateSchema), createVendorInvoiceItem)
 router.post('/:id/approve', authenticate, authorise('ap_specialist'), validate(vendorInvoiceApproveSchema), approveVendorInvoice)
 router.post('/:id/reject', authenticate, authorise('ap_specialist'), rejectVendorInvoice)
-router.post('/:id/reextract', authenticate, authorise('ap_specialist'), reextractVendorInvoice)
+router.post('/:id/reextract', authenticate, authorise('ap_specialist'), validate(vendorInvoiceReextractSchema), reextractVendorInvoice)
 
 module.exports = router

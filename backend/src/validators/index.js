@@ -67,6 +67,12 @@ const vendorInvoiceApproveSchema = Yup.object({
   confirm_low_confidence: Yup.boolean().default(false),
 })
 
+const vendorInvoiceReextractSchema = Yup.object({
+  confirm_replace: Yup.boolean()
+    .oneOf([true], 'confirm_replace must be true before replacing existing invoice data')
+    .required('confirm_replace is required'),
+})
+
 // POST /api/vendor-invoices/:id/items - manually recover a missing OCR line.
 // All user-editable fields are required when creating a line; `amount` is deliberately
 // omitted and stripped for the same reason as it is on update: the server derives it.
@@ -212,6 +218,7 @@ module.exports = {
   vendorInvoiceUploadSchema,
   vendorInvoiceUpdateSchema,
   vendorInvoiceApproveSchema,
+  vendorInvoiceReextractSchema,
   vendorInvoiceItemCreateSchema,
   vendorInvoiceItemUpdateSchema,
   vendorInvoiceListQuerySchema,

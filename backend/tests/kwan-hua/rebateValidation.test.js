@@ -4,7 +4,7 @@
 // area with no schema. Its single downstream guard rejected a NEGATIVE verified_total, which
 // a negative rebate_percentage can never trigger because it makes verified_total LARGER.
 // These tests pin the arithmetic that made that a money bug, then the bounds that stop it.
-const { vendorInvoiceUpdateSchema, vendorInvoiceItemCreateSchema, vendorInvoiceItemUpdateSchema } = require('../../src/validators')
+const { vendorInvoiceUpdateSchema, vendorInvoiceReextractSchema, vendorInvoiceItemCreateSchema, vendorInvoiceItemUpdateSchema } = require('../../src/validators')
 const { calculateRebate } = require('../../src/controllers/vendorInvoiceController')
 
 async function validationErrors(schema, body) {
@@ -130,5 +130,13 @@ describe('vendorInvoiceItemCreateSchema', () => {
     )
 
     expect(cleaned).toEqual({ description: 'Complimentary item', quantity: 1, unit_price: 0 })
+  })
+})
+
+describe('vendorInvoiceReextractSchema', () => {
+  test('only permits replacement after explicit true confirmation', async () => {
+    expect(await validationErrors(vendorInvoiceReextractSchema, {})).toContain('confirm_replace is required')
+    expect(await validationErrors(vendorInvoiceReextractSchema, { confirm_replace: false })).toContain('confirm_replace must be true before replacing existing invoice data')
+    expect(await validationErrors(vendorInvoiceReextractSchema, { confirm_replace: true })).toBeNull()
   })
 })

@@ -490,7 +490,7 @@ Redirects to `/settings/xero?connected=true`
 
 ## 11. POST `/api/vendor-invoices/:id/reextract`
 
-**Purpose:** Re-triggers Gemini OCR extraction on an invoice that previously failed (status `extraction_failed`) or was manually requested for re-processing (UC-04 retry edge case). Replaces any previously extracted data and line items with the new extraction result.
+**Purpose:** Re-triggers Gemini OCR extraction on an invoice that previously failed (status `extraction_failed`) or was manually requested for re-processing (UC-04 retry edge case). Replacement requires explicit acknowledgement. Failed retries preserve the current status, fields, and line items; successful replacements store before/after snapshots in the audit trail.
 
 **Auth required:** Yes - roles: `ap_specialist`
 
@@ -500,7 +500,12 @@ Redirects to `/settings/xero?connected=true`
 |-------|------|-------------|
 | `id` | integer | Vendor invoice ID |
 
-**Request body:** None
+**Request body:**
+```json
+{
+  "confirm_replace": true
+}
+```
 
 **Success response `200 OK`:**
 ```json
@@ -532,11 +537,13 @@ Redirects to `/settings/xero?connected=true`
 
 | Status | Code | Message |
 |--------|------|---------|
+| 400 | `VALIDATION_ERROR` | `confirm_replace` must be explicitly set to `true` |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Only the AP Specialist can trigger re-extraction |
 | 404 | `NOT_FOUND` | Vendor invoice not found |
 | 409 | `INVALID_STATUS` | Re-extraction is only available for invoices with status `pending_review` or `extraction_failed` |
-| 502 | `OCR_EXTRACTION_FAILED` | Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually. |
+| 409 | `INVOICE_CHANGED` | Invoice data changed while OCR was running; no replacement was applied |
+| 502 | `OCR_EXTRACTION_FAILED` | Re-extraction failed; existing invoice fields, status, and line items were kept unchanged |
 
 ---
 

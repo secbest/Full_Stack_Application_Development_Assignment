@@ -38,6 +38,7 @@ export default function VendorInvoiceReviewPage() {
   const [addingItem, setAddingItem] = useState(false)
   const [newItemForm, setNewItemForm] = useState(EMPTY_LINE_ITEM)
   const [deleteItemTarget, setDeleteItemTarget] = useState(null)
+  const [confirmingReextract, setConfirmingReextract] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [confirmedLowConfidence, setConfirmedLowConfidence] = useState(false)
 
@@ -122,16 +123,25 @@ export default function VendorInvoiceReviewPage() {
   }
 
   async function handleReextract() {
+    setConfirmingReextract(false)
     setBusy(true)
     try {
       await reextractVendorInvoice(invoice.id)
       toast.success('Re-extraction complete.')
       await load()
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Re-extraction failed again.')
+      toast.error(err.response?.data?.message || 'Re-extraction failed. Your existing invoice data was kept.')
     } finally {
       setBusy(false)
     }
+  }
+
+  function requestReextract() {
+    if (isDirty) {
+      toast.error('Save or discard the current header changes before retrying extraction.')
+      return
+    }
+    setConfirmingReextract(true)
   }
 
   function startEditItem(item) {
@@ -286,7 +296,7 @@ export default function VendorInvoiceReviewPage() {
       {invoice.status === 'extraction_failed' && (
         <div className="flex items-center justify-between gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
           <span className="flex items-center gap-2"><AlertTriangle size={14} /> Gemini could not extract data from this PDF. Enter fields manually or retry extraction.</span>
-          <button onClick={handleReextract} disabled={busy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-500 disabled:opacity-40">
+          <button onClick={requestReextract} disabled={busy} className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-500 disabled:opacity-40">
             <RefreshCw size={12} /> Retry Extraction
           </button>
         </div>
@@ -513,6 +523,15 @@ export default function VendorInvoiceReviewPage() {
         confirmLabel="Delete Item"
         onCancel={() => setDeleteItemTarget(null)}
         onConfirm={removeItem}
+      />
+
+      <ConfirmDialog
+        open={confirmingReextract}
+        title="Replace extracted invoice data?"
+        description={`This will replace the current extracted fields and ${invoice.items.length} line item${invoice.items.length === 1 ? '' : 's'} with a new OCR result. If OCR fails, the current data will be kept.`}
+        confirmLabel="Replace & Retry"
+        onCancel={() => setConfirmingReextract(false)}
+        onConfirm={handleReextract}
       />
     </div>
   )

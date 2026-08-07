@@ -1,6 +1,6 @@
 jest.mock('../../src/models', () => ({
   VendorInvoice: { findByPk: jest.fn(), findOne: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn() },
-  VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn() },
+  VendorInvoiceItem: { create: jest.fn(), destroy: jest.fn(), findAll: jest.fn() },
   User: {},
   VendorInvoiceAudit: {},
   XeroSyncLog: { create: jest.fn() },
@@ -36,11 +36,12 @@ jest.mock('../../src/config', () => ({
   transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })),
 }))
 
-const { VendorInvoice, XeroSyncLog } = require('../../src/models')
-const { xeroService, apInvoiceService } = require('../../src/services')
+const { VendorInvoice, VendorInvoiceItem, XeroSyncLog } = require('../../src/models')
+const { xeroService, apInvoiceService, ocrService, vendorInvoiceAuditService } = require('../../src/services')
 const xeroController = require('../../src/controllers/xeroController')
 const {
   calculateRebate, uploadVendorInvoice, updateVendorInvoice, approveVendorInvoice, rejectVendorInvoice,
+  reextractVendorInvoice,
 } = require('../../src/controllers/vendorInvoiceController')
 
 function mockRes() {
@@ -65,6 +66,7 @@ function makeVendorInvoice(overrides = {}) {
     ...overrides,
   }
   obj.update = jest.fn(async (fields) => { Object.assign(obj, fields); return obj })
+  obj.toJSON = jest.fn(() => ({ ...obj }))
   return obj
 }
 
@@ -293,6 +295,107 @@ describe('rejectVendorInvoice (UC-06)', () => {
     await rejectVendorInvoice({ params: { id: 1 }, body: { rejection_reason: 'Bad scan' } }, res)
     expect(invoice.status).toBe('rejected')
     expect(invoice.rejection_reason).toBe('Bad scan')
+    expect(res.status).toHaveBeenCalledWith(200)
+  })
+})
+
+describe('reextractVendorInvoice (UC-04)', () => {
+  const originalFetch = global.fetch
+
+  afterEach(() => { global.fetch = originalFetch })
+
+  test('requires explicit confirmation before starting destructive replacement', async () => {
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: {}, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('REEXTRACTION_CONFIRMATION_REQUIRED')
+    expect(VendorInvoice.findByPk).not.toHaveBeenCalled()
+  })
+
+  test('keeps the current status, fields and line items when OCR retry fails', async () => {
+    const invoice = makeVendorInvoice({ status: 'pending_review', vendor_name: 'Manually Corrected Vendor' })
+    VendorInvoice.findByPk.mockResolvedValue(invoice)
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockRejectedValue(new Error('Gemini unavailable'))
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(502)
+    expect(payload(res).code).toBe('OCR_EXTRACTION_FAILED')
+    expect(payload(res).message).toMatch(/kept unchanged/i)
+    expect(invoice.status).toBe('pending_review')
+    expect(invoice.vendor_name).toBe('Manually Corrected Vendor')
+    expect(invoice.update).not.toHaveBeenCalled()
+    expect(VendorInvoiceItem.destroy).not.toHaveBeenCalled()
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 1,
+      userId: 3,
+      action: 'reextraction_failed',
+    }))
+  })
+
+  test('does not overwrite an invoice changed while OCR was running', async () => {
+    const initial = makeVendorInvoice({ updatedAt: '2026-08-07T10:00:00.000Z' })
+    const changed = makeVendorInvoice({ updatedAt: '2026-08-07T10:01:00.000Z', vendor_name: 'Latest Manual Edit' })
+    VendorInvoice.findByPk.mockResolvedValueOnce(initial).mockResolvedValueOnce(changed)
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockResolvedValue({
+      vendor_name: 'OCR Vendor', invoice_number: 'OCR-1', invoice_date: '2026-08-07',
+      subtotal_excluding_gst: 50, gst_amount: 0, total_including_gst: 50, extracted_total: 50,
+      items: [{ description: 'Fuel', quantity: 1, unit_price: 50, amount: 50 }],
+      reconciliation: { confidence: 0.95, isLowConfidence: false, checks: [], itemsSum: 50, discrepancy: 0 },
+    })
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(payload(res).code).toBe('INVOICE_CHANGED')
+    expect(changed.vendor_name).toBe('Latest Manual Edit')
+    expect(VendorInvoiceItem.destroy).not.toHaveBeenCalled()
+  })
+
+  test('replaces data atomically and audits before/after snapshots after confirmation', async () => {
+    const invoice = makeVendorInvoice({ updatedAt: '2026-08-07T10:00:00.000Z' })
+    const replacementLine = { description: 'Medical transport', quantity: 1, unit_price: 250, amount: 250 }
+    const reloaded = makeVendorInvoice({
+      vendor_name: 'New Vendor', invoice_number: 'NEW-1', extracted_total: 250,
+      VendorInvoiceItems: [{ id: 22, ...replacementLine }], auditTrail: [],
+    })
+    VendorInvoice.findByPk
+      .mockResolvedValueOnce(invoice)
+      .mockResolvedValueOnce(invoice)
+      .mockResolvedValueOnce(reloaded)
+    VendorInvoiceItem.findAll.mockResolvedValue(invoice.VendorInvoiceItems)
+    VendorInvoiceItem.create.mockImplementation(async (fields) => ({ id: 22, ...fields }))
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: jest.fn(async () => new ArrayBuffer(4)) })
+    ocrService.extractVendorInvoice.mockResolvedValue({
+      vendor_name: 'New Vendor', invoice_number: 'NEW-1', invoice_date: '2026-08-07', due_date: '2026-09-07',
+      currency_code: 'SGD', subtotal_excluding_gst: 250, gst_amount: 0, total_including_gst: 250, extracted_total: 250,
+      items: [replacementLine],
+      reconciliation: { confidence: 0.97, isLowConfidence: false, checks: [], itemsSum: 250, discrepancy: 0 },
+    })
+    const res = mockRes()
+
+    await reextractVendorInvoice({ params: { id: 1 }, body: { confirm_replace: true }, user: { sub: 3 } }, res)
+
+    expect(VendorInvoice.findByPk).toHaveBeenNthCalledWith(2, 1, expect.objectContaining({ lock: 'UPDATE' }))
+    expect(VendorInvoiceItem.findAll).toHaveBeenCalled()
+    expect(VendorInvoiceItem.destroy).toHaveBeenCalled()
+    expect(invoice.vendor_name).toBe('New Vendor')
+    expect(invoice.status).toBe('pending_review')
+    expect(vendorInvoiceAuditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'reextracted',
+      changes: expect.objectContaining({
+        previous_header: expect.objectContaining({ vendor_name: 'Esso' }),
+        previous_line_items: [expect.objectContaining({ description: 'Fuel' })],
+        replacement_header: expect.objectContaining({ vendor_name: 'New Vendor' }),
+        replacement_line_items: [expect.objectContaining({ description: 'Medical transport' })],
+      }),
+    }))
     expect(res.status).toHaveBeenCalledWith(200)
   })
 })

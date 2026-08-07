@@ -670,35 +670,103 @@ async function rejectVendorInvoice(req, res) {
 // stored PDF, replacing the previously extracted header + line items.
 async function reextractVendorInvoice(req, res) {
   try {
+    if (req.body?.confirm_replace !== true) {
+      return error(
+        res,
+        'Confirm that the existing extracted fields and line items may be replaced.',
+        'REEXTRACTION_CONFIRMATION_REQUIRED',
+        409
+      )
+    }
+
     const invoice = await VendorInvoice.findByPk(req.params.id)
     if (!invoice) return notFound(res, 'Vendor invoice not found.')
     if (!EDITABLE_STATUSES.includes(invoice.status)) {
       return error(res, 'Re-extraction is only available for invoices with status `pending_review` or `extraction_failed`', 'INVALID_STATUS', 409)
     }
-
-    let buffer
-    try {
-      const resp = await fetch(invoice.pdf_url)
-      if (!resp.ok) throw new Error(`PDF fetch returned ${resp.status}`)
-      buffer = Buffer.from(await resp.arrayBuffer())
-    } catch {
-      await invoice.update({ status: 'extraction_failed' })
-      return error(res, 'Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually.', 'OCR_EXTRACTION_FAILED', 502)
-    }
+    const startedUpdatedAt = invoice.updatedAt ? new Date(invoice.updatedAt).getTime() : null
 
     let extraction
     try {
+      const resp = await fetch(invoice.pdf_url)
+      if (!resp.ok) throw new Error(`PDF fetch returned ${resp.status}`)
+      const buffer = Buffer.from(await resp.arrayBuffer())
       extraction = await ocrService.extractVendorInvoice(buffer)
     } catch {
-      await invoice.update({ status: 'extraction_failed' })
-      return error(res, 'Gemini failed to extract data again. Invoice status has been set to `extraction_failed`. Please enter fields manually.', 'OCR_EXTRACTION_FAILED', 502)
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'reextraction_failed',
+        note: 'OCR retry failed. Existing invoice fields, status, and line items were preserved.',
+      })
+      return error(
+        res,
+        'Re-extraction failed. Your existing invoice fields and line items were kept unchanged.',
+        'OCR_EXTRACTION_FAILED',
+        502
+      )
     }
 
     const rec = extraction.reconciliation
-    const taxFields = await taxFieldsFromExtraction(extraction, Number(invoice.rebate_percentage))
+    let taxFields
+    try {
+      taxFields = await taxFieldsFromExtraction(extraction, Number(invoice.rebate_percentage))
+    } catch (err) {
+      await vendorInvoiceAuditService.record({
+        invoiceId: invoice.id,
+        userId: req.user?.sub || null,
+        action: 'reextraction_failed',
+        note: `OCR retry completed, but its accounting fields could not be validated: ${err.message}. Existing invoice data was preserved.`,
+      })
+      return error(res, `Re-extraction could not be applied: ${err.message} Existing invoice data was kept unchanged.`, err.code || 'INVALID_GST_CONFIGURATION', 400)
+    }
+
+    const headerFields = [
+      'vendor_name', 'invoice_number', 'invoice_date', 'due_date', 'currency_code',
+      'supplier_gst_registration_no', 'gst_treatment', 'gst_rate_id', 'gst_rate_percent',
+      'gst_effective_date', 'xero_tax_type', 'xero_account_code', 'subtotal_excluding_gst',
+      'gst_amount', 'total_including_gst', 'extracted_total', 'rebate_amount',
+      'verified_total', 'extraction_confidence', 'is_low_confidence', 'extraction_checks',
+      'extracted_items_sum', 'reconciliation_delta', 'status',
+    ]
+    const snapshotHeader = (record) => headerFields.reduce((snapshot, field) => {
+      snapshot[field] = record[field] ?? null
+      return snapshot
+    }, {})
+    const snapshotItems = (items) => items.map((item) => ({
+      id: item.id ?? null,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      amount: item.amount,
+    }))
+
+    let appliedInvoice
     await sequelize.transaction(async (t) => {
+      const current = await VendorInvoice.findByPk(invoice.id, { transaction: t, lock: t.LOCK.UPDATE })
+      if (!current) throw Object.assign(new Error('Vendor invoice not found.'), { httpCode: 404, code: 'NOT_FOUND' })
+      if (!EDITABLE_STATUSES.includes(current.status)) {
+        throw Object.assign(
+          new Error('The invoice is no longer editable, so its data was not replaced.'),
+          { httpCode: 409, code: 'INVALID_STATUS' }
+        )
+      }
+      const currentUpdatedAt = current.updatedAt ? new Date(current.updatedAt).getTime() : null
+      if (startedUpdatedAt !== null && currentUpdatedAt !== null && currentUpdatedAt !== startedUpdatedAt) {
+        throw Object.assign(
+          new Error('The invoice changed while OCR was running. Review the latest data before retrying.'),
+          { httpCode: 409, code: 'INVOICE_CHANGED' }
+        )
+      }
+
+      const previousItems = await VendorInvoiceItem.findAll({
+        where: { vendor_invoice_id: current.id },
+        transaction: t,
+      })
+      const previousHeader = snapshotHeader(current)
+      const replacementItems = extraction.items || []
       await VendorInvoiceItem.destroy({ where: { vendor_invoice_id: invoice.id }, transaction: t })
-      await invoice.update({
+      await current.update({
         vendor_name: extraction.vendor_name,
         invoice_number: extraction.invoice_number,
         invoice_date: extraction.invoice_date,
@@ -712,8 +780,8 @@ async function reextractVendorInvoice(req, res) {
       }, { transaction: t })
 
       await Promise.all(
-        (extraction.items || []).map((item) => VendorInvoiceItem.create({
-          vendor_invoice_id: invoice.id,
+        replacementItems.map((item) => VendorInvoiceItem.create({
+          vendor_invoice_id: current.id,
           description: item.description,
           quantity: item.quantity ?? 1,
           unit_price: item.unit_price,
@@ -721,25 +789,32 @@ async function reextractVendorInvoice(req, res) {
         }, { transaction: t }))
       )
       await vendorInvoiceAuditService.record({
-        invoiceId: invoice.id,
+        invoiceId: current.id,
         userId: req.user?.sub || null,
         action: 'reextracted',
+        changes: {
+          previous_header: previousHeader,
+          previous_line_items: snapshotItems(previousItems),
+          replacement_header: snapshotHeader(current),
+          replacement_line_items: snapshotItems(replacementItems),
+        },
         note: 'OCR data and line items were replaced from the source PDF.',
         transaction: t,
       })
+      appliedInvoice = current
     })
 
-    if (invoice.is_low_confidence) {
+    if (appliedInvoice.is_low_confidence) {
       notificationService.create({
-        user_id: invoice.uploaded_by,
+        user_id: appliedInvoice.uploaded_by,
         type: 'ocr_low_confidence',
-        title: `Low-confidence OCR on ${invoice.vendor_name}`,
+        title: `Low-confidence OCR on ${appliedInvoice.vendor_name}`,
         body: `Re-extraction: ${lowConfidenceReason(rec)}`,
-        link: `/vendor-invoices/${invoice.id}`,
+        link: `/vendor-invoices/${appliedInvoice.id}`,
       })
     }
 
-    const reloaded = await VendorInvoice.findByPk(invoice.id, {
+    const reloaded = await VendorInvoice.findByPk(appliedInvoice.id, {
       include: [
         { model: VendorInvoiceItem },
         { model: VendorInvoiceAudit, as: 'auditTrail', include: [{ model: User, as: 'actor', attributes: ['id', 'name'] }] },
@@ -747,6 +822,10 @@ async function reextractVendorInvoice(req, res) {
     })
     return success(res, serializeInvoice(reloaded))
   } catch (err) {
+    if (err.httpCode) return error(res, err.message, err.code || 'REEXTRACTION_FAILED', err.httpCode)
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return error(res, 'The re-extracted vendor and invoice number already belong to another invoice. Existing data was kept unchanged.', 'DUPLICATE_INVOICE', 409)
+    }
     return error(res, err.message, 'INTERNAL_ERROR', 500)
   }
 }

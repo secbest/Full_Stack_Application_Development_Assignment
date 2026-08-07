@@ -62,9 +62,11 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-049 | `POST /api/vendor-invoices/:id/reject` | Valid `rejection_reason`, invoice `pending_review` | 200, status `rejected`, reason stored | |
 | TC-050 | `POST /api/vendor-invoices/:id/reject` | Missing `rejection_reason` | 400 `MISSING_REASON` | |
 | TC-051 | `POST /api/vendor-invoices/:id/reject` | Invoice already `approved`/`synced_to_xero` | 409 `INVALID_STATUS` | |
-| TC-052 | `POST /api/vendor-invoices/:id/reextract` | Invoice in `extraction_failed`, retry succeeds | 200, new extraction replaces old line items, status `pending_review` | |
+| TC-052 | `POST /api/vendor-invoices/:id/reextract` | Confirmed retry succeeds | 200, new extraction atomically replaces old data, status `pending_review`, before/after snapshot audited | |
 | TC-053 | `POST /api/vendor-invoices/:id/reextract` | Invoice not in `pending_review`/`extraction_failed` | 409 `INVALID_STATUS` | |
-| TC-054 | `POST /api/vendor-invoices/:id/reextract` | Gemini fails again on retry | 502 `OCR_EXTRACTION_FAILED`, status stays `extraction_failed` | |
+| TC-054 | `POST /api/vendor-invoices/:id/reextract` | Gemini fails again on retry | 502 `OCR_EXTRACTION_FAILED`; status, fields and line items remain unchanged; failure audited | |
+| TC-054A | `POST /api/vendor-invoices/:id/reextract` | `confirm_replace` is absent/false | 400 validation error before OCR or database replacement |
+| TC-054B | `POST /api/vendor-invoices/:id/reextract` | Invoice changes while OCR is running | 409 `INVOICE_CHANGED`; latest data remains unchanged |
 | TC-055 | `PATCH /api/vendor-invoice-items/:id` | Change an item's `amount` | Parent's `extracted_total`/`rebate_amount`/`verified_total` recomputed from all items | |
 | TC-056 | `PATCH /api/vendor-invoice-items/:id` | `amount` set to 0 or negative | 400 `INVALID_AMOUNT` | |
 | TC-057 | `PATCH /api/vendor-invoice-items/:id` | Parent invoice not in an editable status | 409 `INVALID_STATUS` | |
@@ -128,7 +130,8 @@ Fill in **Pass/Fail** manually after running each test. `Fail` entries should li
 | TC-107 | AP Invoice Review page | Click "Reject", enter a reason, "Confirm Reject" | Success toast, modal closes, status -> `rejected`, reason displayed on the page | |
 | TC-108 | AP Invoice Review page | Invoice is low-confidence | Amber "Low-confidence extraction (_%)" banner shown | |
 | TC-109 | AP Invoice Review page | Invoice status is `extraction_failed` | Red banner with a "Retry Extraction" button shown | |
-| TC-110 | AP Invoice Review page | Click "Retry Extraction" | Success toast on success, or error toast if extraction fails again | |
+| TC-110 | AP Invoice Review page | Click "Retry Extraction" | Replacement confirmation appears; no request is sent until confirmed | |
+| TC-110A | AP Invoice Review page | Confirm retry and OCR fails | Error explains that existing data was kept; current fields and lines remain visible | |
 | TC-111 | AP Invoice Review page | Click the pencil icon on a line item, edit values, click check/save | Line item updates; parent extracted/rebate/verified totals refresh | |
 | TC-112 | AP Invoice Review page | Click the X icon to cancel a line item edit | Edit form discarded, original values shown unchanged | |
 | TC-113 | AP Invoice Review page | Click "Open in new tab" on the source document | PDF opens in a new browser tab at `pdf_url` | |

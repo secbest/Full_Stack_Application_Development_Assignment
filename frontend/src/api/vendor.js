@@ -43,7 +43,7 @@ export async function rejectVendorInvoice(id, reason) {
 }
 
 export async function reextractVendorInvoice(id) {
-  const res = await api.post(`/vendor-invoices/${id}/reextract`)
+  const res = await api.post(`/vendor-invoices/${id}/reextract`, { confirm_replace: true })
   return res.data.data
 }
 

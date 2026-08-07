@@ -104,7 +104,10 @@ _List all test cases below before submission. Include what is being tested and t
 | 98 | vendor-invoice-items.test.js | Add a manual line after OCR failure | Server-derived amount; totals recalculated; status becomes `pending_review`; audit recorded |
 | 99 | vendor-invoice-items.test.js | Delete a line from an editable invoice | Item deleted; remaining totals recalculated; audit recorded |
 | 100 | vendor-invoice-items.test.js | Delete the final line | Totals become zero and invoice remains `pending_review` for approval validation to block |
+| 101 | vendor-invoices.test.js | `reextractVendorInvoice()` without confirmation | 409 before OCR starts |
+| 102 | vendor-invoices.test.js | OCR retry fails | Existing status/fields/items preserved and failure audited |
+| 103 | vendor-invoices.test.js | Invoice changes while OCR runs | 409 `INVOICE_CHANGED`; replacement not applied |
+| 104 | vendor-invoices.test.js | Confirmed OCR retry succeeds | Atomic replacement with before/after audit snapshots |
 
-_Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path and
-`reextractVendorInvoice` (both require mocking `fetch`/Cloudinary/OCR I/O rather than pure
-DB + logic branches) - these are exercised manually via the AP Invoice Review screen instead._
+_Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path.
+The re-extraction fetch/OCR boundary is mocked in `vendor-invoices.test.js`._

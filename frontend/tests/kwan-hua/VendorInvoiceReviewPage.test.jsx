@@ -186,3 +186,48 @@ test('confirms deletion and refreshes the recalculated invoice', async () => {
   expect(await screen.findByText('No line items. Add one manually or retry extraction.')).toBeInTheDocument()
   expect(screen.getByText('At least one line item is required.')).toBeInTheDocument()
 })
+
+test('requires confirmation before replacing existing data with a new OCR result', async () => {
+  const user = userEvent.setup()
+  const failedInvoice = invoice({ status: 'extraction_failed' })
+  const reextractedInvoice = invoice({
+    vendor_name: 'Recovered Supplier Pte Ltd',
+    invoice_number: 'REC-200',
+    items: [{ id: 8, description: 'Recovered line', quantity: 1, unit_price: 100, amount: 100 }],
+  })
+  mock.onGet('/vendor-invoices/12').replyOnce(200, { success: true, data: failedInvoice })
+  mock.onGet('/vendor-invoices/12').reply(200, { success: true, data: reextractedInvoice })
+  mock.onPost('/vendor-invoices/12/reextract').reply(200, { success: true, data: reextractedInvoice })
+  renderPage()
+
+  await user.click(await screen.findByRole('button', { name: 'Retry Extraction' }))
+
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('Replace extracted invoice data?')
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('replace the current extracted fields and 1 line item')
+  expect(mock.history.post).toHaveLength(0)
+  await user.click(screen.getByRole('button', { name: 'Replace & Retry' }))
+
+  await waitFor(() => expect(mock.history.post).toHaveLength(1))
+  expect(JSON.parse(mock.history.post[0].data)).toEqual({ confirm_replace: true })
+  expect(await screen.findByRole('heading', { name: 'Recovered Supplier Pte Ltd' })).toBeInTheDocument()
+  expect(screen.getByText('Recovered line')).toBeInTheDocument()
+})
+
+test('keeps the current review data visible when a confirmed OCR retry fails', async () => {
+  const user = userEvent.setup()
+  const failedInvoice = invoice({ status: 'extraction_failed' })
+  mock.onGet('/vendor-invoices/12').reply(200, { success: true, data: failedInvoice })
+  mock.onPost('/vendor-invoices/12/reextract').reply(502, {
+    success: false,
+    code: 'OCR_EXTRACTION_FAILED',
+    message: 'Re-extraction failed. Your existing invoice fields and line items were kept unchanged.',
+  })
+  renderPage()
+
+  await user.click(await screen.findByRole('button', { name: 'Retry Extraction' }))
+  await user.click(screen.getByRole('button', { name: 'Replace & Retry' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('existing invoice fields and line items were kept unchanged')
+  expect(screen.getByRole('heading', { name: 'Medical Supplier Pte Ltd' })).toBeInTheDocument()
+  expect(screen.getByText('Medical supplies')).toBeInTheDocument()
+})
