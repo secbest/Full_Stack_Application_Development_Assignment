@@ -19,6 +19,39 @@ const STATUS_SUBTITLES = {
 // the documented tokens (24px/700/#1E293B title, 32px content padding) literally.
 const cardBase = { background: '#FFFFFF', borderRadius: 12, border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }
 
+const MAP_ROW_HEIGHT = 480
+
+// Always-visible name+status index next to the map, since a status-colored pin only
+// identifies who it is once you already know to look for it (or click it) - this lets
+// Doris scan every crew member's current status at a glance, map aside.
+function CrewRoster({ crew }) {
+  return (
+    <div style={{ ...cardBase, height: MAP_ROW_HEIGHT, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
+        <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', fontFamily: "'Inter', sans-serif" }}>Crew Roster</h2>
+      </div>
+      <div style={{ overflowY: 'auto', flex: 1 }}>
+        {crew.map((member) => (
+          <div key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 20px', borderBottom: '1px solid #F1F5F9' }}>
+            <span
+              aria-hidden="true"
+              style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLORS[member.status] || STATUS_COLORS.off_duty, flexShrink: 0 }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 500, color: '#1E293B', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {member.name}
+              </p>
+              <p style={{ fontSize: 11, color: '#64748B', fontFamily: "'Inter', sans-serif" }}>
+                {STATUS_LABELS[member.status] || member.status}{member.current_job_reference ? ` · ${member.current_job_reference}` : ''}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function StatCard({ statusKey, count }) {
   return (
     <div style={{ ...cardBase, padding: '20px 24px' }}>
@@ -145,17 +178,19 @@ export default function FleetTrackerPage() {
             {STATUS_ORDER.map((s) => <StatCard key={s} statusKey={s} count={counts[s]} />)}
           </div>
 
-          <div style={{ ...cardBase, padding: 0, overflow: 'hidden', position: 'relative' }}>
-            <button
-              onClick={() => setExpanded(true)}
-              aria-label="Expand map"
-              style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
-            >
-              <Maximize2 size={16} color="#1E293B" />
-            </button>
-            <div style={{ height: 240 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+            <div style={{ ...cardBase, height: MAP_ROW_HEIGHT, overflow: 'hidden', position: 'relative' }}>
+              <button
+                onClick={() => setExpanded(true)}
+                aria-label="Expand map"
+                style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
+              >
+                <Maximize2 size={16} color="#1E293B" />
+              </button>
               <FleetMap crew={crew} />
             </div>
+
+            <CrewRoster crew={crew} />
           </div>
         </div>
       )}

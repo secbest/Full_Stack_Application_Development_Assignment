@@ -11,6 +11,13 @@ export const STATUS_LABELS = { available: 'Available', en_route: 'En Route', on_
 // own default red marker, but colored per status.
 const PIN_PATH = 'M 0,0 C -2,-20 -10,-22 -10,-30 A 10,10 0 1 1 10,-30 C 10,-22 2,-20 0,0 z'
 
+// First name only, and floated above the pin's head via labelOrigin - identifying which
+// crew member a pin belongs to shouldn't require clicking it first, and a full name would
+// crowd adjacent pins once several crew are near each other (e.g. idle at HQ).
+function firstName(fullName) {
+  return fullName.split(' ')[0]
+}
+
 function formatLastUpdated(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
@@ -94,16 +101,27 @@ export function FleetMap({ crew }) {
       const icon = {
         path: PIN_PATH,
         anchor: new maps.Point(0, 0),
+        // Symbol.labelOrigin (distinct from the deprecated Icon.labelOrigin, which
+        // ignores symbol paths) positions the label above the pin's rounded head
+        // instead of centered on its anchor tip.
+        labelOrigin: new maps.Point(0, -36),
         scale: 1.4,
         fillColor: STATUS_COLORS[member.status] || STATUS_COLORS.off_duty,
         fillOpacity: 1,
         strokeColor: '#FFFFFF',
         strokeWeight: 1.5,
       }
+      const label = {
+        text: firstName(member.name),
+        color: '#1E293B',
+        fontSize: '11px',
+        fontWeight: '600',
+        className: 'efar-crew-label',
+      }
 
       let marker = markersRef.current.get(member.id)
       if (!marker) {
-        marker = new maps.Marker({ map, position: member.position, icon, title: member.name })
+        marker = new maps.Marker({ map, position: member.position, icon, label, title: member.name })
         marker.addListener('click', () => {
           infoWindowRef.current.setContent(infoWindowContent(memberDataRef.current.get(member.id)))
           infoWindowRef.current.open({ map, anchor: marker })
@@ -163,6 +181,21 @@ export function FleetMap({ crew }) {
         </div>
       )}
       <div ref={containerRef} className="w-full h-full rounded-lg" />
+
+      {/* Google renders the marker label as a plain <div> with this className - styled
+          globally here (same pattern as ReportPage.jsx's Recharts outline override)
+          since it can't be reached via a CSS module/scoped class. */}
+      <style>{`
+        .efar-crew-label {
+          background: #FFFFFF;
+          padding: 1px 6px;
+          border-radius: 6px;
+          border: 1px solid #E2E8F0;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+          white-space: nowrap;
+          font-family: 'Inter', sans-serif;
+        }
+      `}</style>
     </div>
   )
 }

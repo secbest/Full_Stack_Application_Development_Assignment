@@ -28,7 +28,7 @@ beforeEach(() => {
   jest.clearAllMocks()
 })
 
-test('renders a stat card per status and passes the full crew list to the map', async () => {
+test('renders a stat card per status, a named crew roster, and passes the full crew list to the map', async () => {
   getCrewPositions.mockResolvedValue({ data: { data: [
     crewMember({ id: 1, name: 'Ravi Kumar', status: 'available' }),
     crewMember({ id: 2, name: 'Ahmad Salleh', status: 'en_route', current_job_reference: 'BKG-1' }),
@@ -39,13 +39,23 @@ test('renders a stat card per status and passes the full crew list to the map', 
   render(React.createElement(FleetTrackerPage))
 
   expect(await screen.findByText('Fleet Tracker')).toBeInTheDocument()
-  expect(screen.getByText('Available')).toBeInTheDocument()
-  expect(screen.getByText('En Route')).toBeInTheDocument()
-  expect(screen.getByText('On Scene')).toBeInTheDocument()
-  expect(screen.getByText('Off Duty')).toBeInTheDocument()
+  // "Available"/"Off Duty" each appear twice - once as a stat card label, once as that
+  // status's roster row (the other two roster rows carry a job reference, so their text
+  // isn't an exact match against the bare status label).
+  expect(screen.getAllByText('Available')).toHaveLength(2)
+  expect(screen.getByText('En Route · BKG-1')).toBeInTheDocument()
+  expect(screen.getByText('On Scene · BKG-2')).toBeInTheDocument()
+  expect(screen.getAllByText('Off Duty')).toHaveLength(2)
 
   // One crew member per status in the fixture above, so every stat card reads "1".
   expect(screen.getAllByText('1')).toHaveLength(4)
+
+  // Crew Roster names every crew member so their status can be read without clicking a pin.
+  expect(screen.getByText('Crew Roster')).toBeInTheDocument()
+  expect(screen.getByText('Ravi Kumar')).toBeInTheDocument()
+  expect(screen.getByText('Ahmad Salleh')).toBeInTheDocument()
+  expect(screen.getByText('Wei Jian')).toBeInTheDocument()
+  expect(screen.getByText('Farah Ismail')).toBeInTheDocument()
 
   expect(screen.getByTestId('fleet-map')).toHaveTextContent('4 pins')
 })
