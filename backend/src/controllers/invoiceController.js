@@ -3,10 +3,11 @@ const { Op } = require('sequelize')
 const sequelize = require('../config')
 const {
   Invoice, InvoiceLineItem, Booking, Client, ServiceMemo, PricingContract, PricingRate,
-  SurchargeSchedule, User, XeroSyncLog,
+  User, XeroSyncLog,
 } = require('../models')
 const { xeroService, pricingService, gstService } = require('../services')
 const { findActiveContract } = require('../services/activeContractService')
+const { resolveSurchargeRows } = require('../services/surchargeScheduleService')
 const notificationService = require('../services/notificationService')
 const { getFreshConnection } = require('./xeroController')
 const { success, created, error, notFound } = require('../utils')
@@ -492,9 +493,9 @@ async function rematchInvoice(req, res) {
           }
         }
         contractId = booking.pricing_contract_id || null
-        const surcharges = contractId
-          ? await SurchargeSchedule.findAll({ where: { contract_id: contractId }, transaction: t })
-          : []
+        // Mirrors memo approval: a quotation freezes the base price only, so surcharges
+        // resolve from the published rate card with any contract rows overriding it.
+        const surcharges = await resolveSurchargeRows(contractId, { transaction: t })
         result = pricingService.computeQuotedInvoiceLineItems(booking, memo, surcharges)
       } else {
         // Legacy bookings created before Quotations captured an immutable price retain
@@ -520,7 +521,7 @@ async function rematchInvoice(req, res) {
             },
             transaction: t,
           }),
-          SurchargeSchedule.findAll({ where: { contract_id: contract.id }, transaction: t }),
+          resolveSurchargeRows(contract.id, { transaction: t }),
         ])
         result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
         if (!result.matched) {

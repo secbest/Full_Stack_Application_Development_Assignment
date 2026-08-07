@@ -2,11 +2,12 @@
 const sequelize = require('../config')
 const {
   ServiceMemo, MemoSignature, Booking, Client, User,
-  PricingRate, SurchargeSchedule,
+  PricingRate,
   Invoice, InvoiceLineItem,
 } = require('../models')
 const { pricingService, gstService } = require('../services')
 const { findActiveContract } = require('../services/activeContractService')
+const { resolveSurchargeRows } = require('../services/surchargeScheduleService')
 const notificationService = require('../services/notificationService')
 const { success, error, notFound } = require('../utils')
 
@@ -149,9 +150,11 @@ async function approveMemo(req, res) {
         })
       }
 
-      const quotedSurcharges = booking.pricing_contract_id
-        ? await SurchargeSchedule.findAll({ where: { contract_id: booking.pricing_contract_id } })
-        : []
+      // A one-off quotation freezes a BASE price only; it says nothing about surcharges,
+      // which are published rates rather than negotiated ones. Resolving through the
+      // schedule service fills in the published card underneath any contract overrides,
+      // so a quoted booking no longer reports every recorded charge as unpriced.
+      const quotedSurcharges = await resolveSurchargeRows(booking.pricing_contract_id)
       const quotedResult = pricingService.computeQuotedInvoiceLineItems(booking, memo, quotedSurcharges)
       const totals = gstService.calculateTotals(quotedResult.lineItems, gstSnapshot.gst_rate_percent)
       const invoice = await sequelize.transaction(async (t) => {
@@ -220,7 +223,9 @@ async function approveMemo(req, res) {
     const rates = await PricingRate.findAll({
       where: { contract_id: contract.id, service_type: memo.service_type, transfer_type: memo.transfer_type },
     })
-    const surcharges = await SurchargeSchedule.findAll({ where: { contract_id: contract.id } })
+    // Published rate card underneath the contract's own rows, so a contract that prices
+    // only some surcharges inherits the rest instead of silently dropping them.
+    const surcharges = await resolveSurchargeRows(contract.id)
 
     const result = pricingService.computeInvoiceLineItems(memo, rates, surcharges)
 

@@ -115,5 +115,22 @@ _List all test cases below before submission. Include what is being tested and t
 | 109 | xeroSyncRetry.test.js | `retrySync()` AP invoice fails local validation | 409 `APPROVAL_VALIDATION_FAILED`; Xero is not called |
 | 110 | xeroSyncRetry.test.js | `listSyncLogs()` status counts | Counts ignore only the selected status filter |
 
+| 111 | surchargeScheduleService.test.js | `resolveSurchargeRows(null)` for a one-off-quote booking with no contract | Returns the published global defaults instead of `[]`, so recorded charges are priced rather than all reported unpriced |
+| 112 | surchargeScheduleService.test.js | `resolveSurchargeRows(contractId)` where the contract prices one surcharge | Contract row overrides that type only; every other type still inherits the published rate |
+| 113 | surchargeScheduleService.test.js | DECIMAL amounts returned by Sequelize as strings | Coerced to numbers so the pricing engine can do arithmetic |
+| 114 | surchargeScheduleService.test.js | `resolveSurchargeRows(contractId)` with no global defaults seeded | Falls back to the contract's own rows |
+| 115 | surchargeScheduleService.test.js | `PUBLISHED_SURCHARGE_RATES` contents | Excludes `overtime_per_hour` and `cancellation` (no flat published amount); includes the 11 published rates |
+| 116 | clientResolutionService.test.js | `resolveClientForIntake()` organisation already on file, email reused from a different client | Matches on organisation name, not the reused email - the booking is no longer billed to the wrong client |
+| 117 | clientResolutionService.test.js | `resolveClientForIntake()` new organisation whose email already exists | Creates a new client rather than silently returning the email's existing owner |
+| 118 | clientResolutionService.test.js | `resolveClientForIntake()` organisation with differing case/whitespace | Normalised to a single comparison key before matching |
+| 119 | clientResolutionService.test.js | `resolveClientForIntake()` organisation containing `%` or `_` | Wildcards escaped so the name cannot match unrelated rows |
+| 120 | clientResolutionService.test.js | `resolveClientForIntake()` individual customer (no organisation) | Falls back to `contact_email`, which is the correct identity when there is no company |
+| 121 | clientResolutionService.test.js | `resolveClientForIntake()` blank/whitespace organisation | Treated as absent; uses the email path |
+| 122 | clientResolutionService.test.js | `resolveClientForIntake()` individual client naming | Client named from the normalised `customer_name` |
+| 123 | clientResolutionService.test.js | `normaliseName()` | Trims, collapses internal whitespace, and returns `''` for null/undefined |
+
 _Not covered by unit tests: `uploadVendorInvoice`'s Cloudinary/Gemini OCR happy path.
 The re-extraction fetch/OCR boundary is mocked in `vendor-invoices.test.js`._
+
+_Rows 1-110 predate this change set. Rows 111-123 cover the two services added when
+fixing the always-unpriced surcharge warning and the wrong-client-on-booking defect._

@@ -3,6 +3,7 @@ import { CalendarDays, Search, ChevronDown, Eye, Trash2, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { intakeRejectSchema } from '@/schemas';
+import { getPublishedRate, classifyAgainstPublished, RATE_CARD_SERVICE } from '@/lib/publishedRateCard';
 import api from '../../api';
 
 const serviceTypeLabels = {
@@ -61,6 +62,42 @@ const STATUS_FILTER_PILLS = [
   { value: 'Confirmed', label: 'Confirmed', activeClass: 'bg-blue-500 text-white border-blue-500', inactiveClass: 'bg-blue-50 text-blue-700 border-blue-500 hover:bg-blue-100' },
   { value: 'Rejected', label: 'Rejected', activeClass: 'bg-red-500 text-white border-red-500', inactiveClass: 'bg-red-50 text-red-700 border-red-500 hover:bg-red-100' },
 ]
+
+// Shows the published rate band for the selected transfer type and time category, and
+// flags an agreed price that falls outside it. Guidance only - an outlier is a warning,
+// never a block, because the specialist may have genuinely negotiated the figure.
+function PublishedRateHint({ transferType, timeOfDay, serviceTypeCode, amount }) {
+  if (!transferType || !timeOfDay) {
+    return <p className="mt-1 text-xs text-slate-500">Select a transfer type and time category to see the published rate.</p>
+  }
+
+  const rate = getPublishedRate(transferType, timeOfDay)
+  if (!rate) return <p className="mt-1 text-xs text-slate-500">No published rate for this combination - agree the price with the client.</p>
+  if (rate.quoteOnly) {
+    return <p className="mt-1 text-xs text-amber-700">Published table lists this as <strong>Call for Quote</strong> - confirm the agreed figure with operations before proceeding.</p>
+  }
+
+  const verdict = classifyAgainstPublished(amount, transferType, timeOfDay)
+  // The published table is headed "Medical Transport Services"; other service types are
+  // negotiated separately, so the band is a weaker reference and is labelled as such.
+  const offCard = serviceTypeCode && serviceTypeCode !== RATE_CARD_SERVICE
+
+  return (
+    <div className="mt-1 space-y-1">
+      <p className="text-xs text-slate-600">
+        Published rate: <strong className="text-slate-900">{rate.label}</strong>
+        {offCard ? <span className="text-slate-500"> (Medical Transport Services table - this service is negotiated separately)</span> : null}
+      </p>
+      {verdict === 'below' ? (
+        <p className="text-xs font-medium text-amber-700">Below the published rate - confirm this discount is agreed, or the shortfall becomes revenue leakage.</p>
+      ) : verdict === 'above' ? (
+        <p className="text-xs font-medium text-amber-700">Above the published rate - confirm the client agreed this premium.</p>
+      ) : verdict === 'ok' ? (
+        <p className="text-xs font-medium text-emerald-700">Within the published rate.</p>
+      ) : null}
+    </div>
+  )
+}
 
 export default function IntakeQueuePage() {
   const [intakes, setIntakes] = useState([])
@@ -492,6 +529,22 @@ export default function IntakeQueuePage() {
                   <div>
                     <label htmlFor="quoted_base_amount" className="text-xs font-medium uppercase text-slate-500">Agreed Base Price (SGD) <span className="text-red-500">*</span></label>
                     <input id="quoted_base_amount" type="number" min="0.01" max="50000" step="0.01" value={quotedBaseAmount} onChange={(e) => setQuotedBaseAmount(e.target.value)} placeholder="0.00" className="mt-2 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none" />
+                    <PublishedRateHint
+                      transferType={quotedTransferType}
+                      timeOfDay={quotedTimeOfDay}
+                      serviceTypeCode={selectedIntake.serviceTypeCode}
+                      amount={quotedBaseAmount}
+                    />
+                  </div>
+                ) : pricingSource === 'contract' ? (
+                  // The contract path never showed a figure at all, so the specialist
+                  // confirmed a booking without ever seeing the price being frozen onto it.
+                  <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+                    <p className="text-xs font-medium text-blue-900">Base price comes from the client's contract</p>
+                    <p className="mt-0.5 text-xs text-blue-800">
+                      The rate for this service, transfer type and time category is read from the client's active
+                      pricing contract and frozen onto the booking. Confirming fails if the contract has no matching rate.
+                    </p>
                   </div>
                 ) : null}
                 <div>
