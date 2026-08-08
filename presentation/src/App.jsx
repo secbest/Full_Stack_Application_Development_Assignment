@@ -1,7 +1,9 @@
+import Hero from './sections/Hero.jsx'
+
 export default function App() {
   return (
     <main>
-      <h1>EFAR Presentation</h1>
+      <Hero />
     </main>
   )
 }

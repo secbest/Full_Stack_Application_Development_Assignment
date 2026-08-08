@@ -131,3 +131,33 @@ ul.bullet-list li::before {
   border-radius: 50%;
   background: var(--accent);
 }
+
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.15), transparent 40%), var(--bg);
+}
+
+.hero-inner {
+  max-width: 780px;
+}
+
+.hero h1 {
+  font-size: 44px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+  margin: 20px 0;
+}
+
+.hero-subtitle {
+  font-size: 18px;
+  color: var(--text-muted);
+  margin-bottom: 40px;
+}
+
+.hero-scroll-hint {
+  font-size: 14px;
+  color: var(--text-muted);
+}
