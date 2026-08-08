@@ -3,6 +3,11 @@ import { loadGoogleMaps } from '@/lib/googleMaps'
 
 const SINGAPORE_CENTER = { lat: 1.3521, lng: 103.8198 }
 
+// Generous box around the main island plus outlying islands (Pulau Ubin, Sentosa, etc.) -
+// crew never operate outside this area, so the map has no reason to pan or zoom past it.
+const SINGAPORE_BOUNDS = { north: 1.4784, south: 1.1304, east: 104.1327, west: 103.5942 }
+const SINGAPORE_MIN_ZOOM = 11
+
 export const STATUS_COLORS = { available: '#22C55E', en_route: '#F59E0B', on_scene: '#3B82F6', off_duty: '#94A3B8' }
 export const STATUS_LABELS = { available: 'Available', en_route: 'En Route', on_scene: 'On Scene', off_duty: 'Off Duty' }
 
@@ -59,6 +64,11 @@ export function FleetMap({ crew }) {
         mapRef.current = new maps.Map(containerRef.current, {
           center: SINGAPORE_CENTER,
           zoom: 12,
+          minZoom: SINGAPORE_MIN_ZOOM,
+          restriction: {
+            latLngBounds: SINGAPORE_BOUNDS,
+            strictBounds: true,
+          },
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
