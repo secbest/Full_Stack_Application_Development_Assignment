@@ -39,8 +39,23 @@ function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
+// Formats a Date as the YYYY-MM-DD calendar day it represents in SERVER-LOCAL time.
+//
+// Must not use toISOString(): that converts to UTC first, and every Date this receives is
+// anchored to local midnight - either from startOfDay() below, or from Yup.date() coercing
+// a bare "2026-08-08" query param (Yup parses date-only strings as local, unlike native
+// `new Date()`, which parses them as UTC). In Singapore (UTC+8) local midnight is 16:00 the
+// PREVIOUS day in UTC, so toISOString() silently reported the whole MD dashboard one day
+// behind - "Today" showed yesterday's bookings, and an explicit date_to=2026-08-08 came
+// back as 2026-08-07. Reading the local components instead keeps the calendar day intact.
+//
+// The output bounds DATE-only columns (scheduled_date, invoice_date), which is why a plain
+// calendar string is the right shape here. TIMESTAMP columns use sgDayStart/sgDayEnd below.
 function toDateOnly(date) {
-  return date.toISOString().slice(0, 10)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 // EFAR operates only in Singapore (UTC+8, no DST). `date_from`/`date_to` arrive as bare
