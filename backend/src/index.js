@@ -38,7 +38,8 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
   console.log(`EFAR API running on port ${PORT}`)
-  console.log(`Health check: http://localhost:${PORT}/health`)
+  const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`
+  console.log(`Health check: ${baseUrl}/health`)
   // Stated at startup because simulation is the DEFAULT: a deployment with real Xero
   // credentials that forgets XERO_SIMULATION=false would otherwise report every sync as
   // successful while nothing ever reaches Xero.
