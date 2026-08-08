@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
-const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema, revenueByServiceTypeQuerySchema, leakageHistoryQuerySchema } = require('../validators')
-const { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory, crewPositions } = require('../controllers/dashboardController')
+const { fleetOverviewQuerySchema, vendorExpensesQuerySchema, revenueLeakageQuerySchema, cycleTimeQuerySchema, revenueTrendQuerySchema, revenueByServiceTypeQuerySchema, leakageHistoryQuerySchema, dismissLeakageSchema, leakageInvoiceParamSchema } = require('../validators')
+const { fleetOverview, vendorExpenses, revenueLeakage, dismissLeakage, restoreLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory, crewPositions } = require('../controllers/dashboardController')
 
 router.get(
   '/fleet-overview',
@@ -28,6 +28,26 @@ router.get(
   authorise('managing_director', 'ar_specialist'),
   validate(revenueLeakageQuerySchema, 'query'),
   revenueLeakage
+)
+
+// Dismissing writes off revenue, so it is restricted to the two roles accountable for the
+// number: the AR Specialist who worked the invoice, and the MD who owns the figure. The
+// wider read access above deliberately does not extend to this.
+router.patch(
+  '/revenue-leakage/:invoiceId/dismiss',
+  authenticate,
+  authorise('managing_director', 'ar_specialist'),
+  validate(leakageInvoiceParamSchema, 'params'),
+  validate(dismissLeakageSchema),
+  dismissLeakage
+)
+
+router.delete(
+  '/revenue-leakage/:invoiceId/dismiss',
+  authenticate,
+  authorise('managing_director', 'ar_specialist'),
+  validate(leakageInvoiceParamSchema, 'params'),
+  restoreLeakage
 )
 
 router.get(

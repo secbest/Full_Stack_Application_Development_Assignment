@@ -13,15 +13,20 @@
 // at all. Presenting an estimate as a billed figure would be worse than showing nothing.
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { TrendingDown, AlertTriangle, Info, FileWarning, Wrench } from 'lucide-react'
+import { TrendingDown, AlertTriangle, Info, FileWarning, Wrench, CheckCircle2, Undo2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/context/ToastContext'
-import { getRevenueLeakage } from '@/api/leakage'
+import { getRevenueLeakage, dismissLeakage, restoreLeakage } from '@/api/leakage'
 
 const money = (n) => `$${Number(n || 0).toFixed(2)}`
 
+// Local calendar day, not the UTC one. toISOString() converts first, so in Singapore
+// (UTC+8) any time before 08:00 would send yesterday's date as the range end and silently
+// drop today's invoices from the report - the same defect fixed in the backend's
+// utils/date.js.
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 function startOfYearISO() {
   return `${new Date().getFullYear()}-01-01`
@@ -75,6 +80,40 @@ export default function RevenueLeakagePage() {
   const [preset, setPreset] = useState('ytd')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
+  // The row being written off, and the reason typed for it. Held here rather than in a
+  // per-row component so only one dismissal can be in flight at a time.
+  const [dismissing, setDismissing] = useState(null)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [showDismissed, setShowDismissed] = useState(false)
+
+  async function confirmDismiss() {
+    setBusy(true)
+    try {
+      await dismissLeakage(dismissing.invoice_id, reason.trim())
+      toast.success(`Invoice #${dismissing.invoice_id} closed - ${money(dismissing.estimated_amount)} written off the open figure.`)
+      setDismissing(null)
+      setReason('')
+      await load(preset)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to dismiss this leakage row.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRestore(row) {
+    setBusy(true)
+    try {
+      await restoreLeakage(row.invoice_id)
+      toast.success(`Invoice #${row.invoice_id} reopened - back on the active figure.`)
+      await load(preset)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reopen this leakage row.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function load(presetId) {
     setLoading(true)
@@ -90,6 +129,7 @@ export default function RevenueLeakagePage() {
         by_surcharge_type: result.by_surcharge_type ?? [],
         by_contract: result.by_contract ?? [],
         affected_invoices: result.affected_invoices ?? [],
+        dismissed: result.dismissed ?? { count: 0, estimated_amount: 0, rows: [] },
         period: result.period ?? {},
       })
     } catch (err) {
@@ -313,12 +353,22 @@ export default function RevenueLeakagePage() {
                           <td className="py-2 pr-4 text-muted-foreground">{row.unpriced_count}</td>
                           <td className="py-2 pr-4 text-right font-semibold text-red-500">{money(row.estimated_amount)}</td>
                           <td className="py-2">
-                            <button
-                              onClick={() => navigate(`/invoices/${row.invoice_id}`)}
-                              className="h-8 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100"
-                            >
-                              View invoice
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => navigate(`/invoices/${row.invoice_id}`)}
+                                className="h-8 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100"
+                              >
+                                View invoice
+                              </button>
+                              {/* Closing the loop: a gap that has been billed separately or
+                                  written off stops inflating the open figure. */}
+                              <button
+                                onClick={() => { setDismissing(row); setReason('') }}
+                                className="h-8 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -329,6 +379,75 @@ export default function RevenueLeakagePage() {
             </>
           )}
 
+          {/* Closed rows: reported, never merged into the open figure. A write-off that
+              disappeared entirely would look identical to a gap that was actually fixed. */}
+          {report.dismissed.count > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                      Closed ({report.dismissed.count})
+                    </CardTitle>
+                    <CardDescription>
+                      {money(report.dismissed.estimated_amount)} reviewed and closed - excluded from the estimated leakage above.
+                    </CardDescription>
+                  </div>
+                  <button
+                    onClick={() => setShowDismissed((v) => !v)}
+                    className="h-8 shrink-0 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100"
+                  >
+                    {showDismissed ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </CardHeader>
+              {showDismissed && (
+                <CardContent className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <th className="py-2 pr-4">Invoice</th>
+                        <th className="py-2 pr-4">Client</th>
+                        <th className="py-2 pr-4 text-right">Amount</th>
+                        <th className="py-2 pr-4">Reason</th>
+                        <th className="py-2 pr-4">Closed by</th>
+                        <th className="py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.dismissed.rows.map((row) => (
+                        <tr key={row.invoice_id} className="border-b border-slate-100">
+                          <td className="py-2 pr-4 font-medium text-foreground">#{row.invoice_id}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">{row.client_name || '-'}</td>
+                          <td className="py-2 pr-4 text-right text-muted-foreground line-through">{money(row.estimated_amount)}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">{row.dismissed_reason}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">
+                            {row.dismissed_by?.name || 'Unknown'}
+                            {row.dismissed_at && (
+                              <span className="block text-xs text-slate-400">
+                                {new Date(row.dismissed_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 text-right">
+                            <button
+                              onClick={() => handleRestore(row)}
+                              disabled={busy}
+                              className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-slate-100 disabled:opacity-40"
+                            >
+                              <Undo2 size={12} /> Reopen
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           {/* Stated on screen, not just in the payload: these are estimates. */}
           <Card className="bg-slate-50">
             <CardContent className="flex items-start gap-3 pt-6">
@@ -336,6 +455,51 @@ export default function RevenueLeakagePage() {
               <p className="text-xs leading-relaxed text-muted-foreground">{report.basis_note}</p>
             </CardContent>
           </Card>
+
+          {/* The reason is mandatory (backend enforces min 10 chars). This is a decision
+              that money will not be collected, so it has to carry an author and a why. */}
+          {dismissing && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+              <Card className="w-full max-w-lg">
+                <CardHeader>
+                  <CardTitle className="text-base">Dismiss leakage on invoice #{dismissing.invoice_id}</CardTitle>
+                  <CardDescription>
+                    {dismissing.client_name || 'Unknown client'} · {money(dismissing.estimated_amount)} across {dismissing.unpriced_count} unpriced item(s).
+                    This removes the amount from the open figure. The record of what went unbilled is kept, and this can be reopened.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground" htmlFor="dismiss-reason">
+                    Reason (required)
+                  </label>
+                  <textarea
+                    id="dismiss-reason"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    placeholder="e.g. Billed separately on INV-204, or written off - invoice already issued in Xero."
+                    className="w-full rounded-lg border border-border p-2 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-xs text-muted-foreground">{reason.trim().length}/10 characters minimum</p>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      onClick={() => { setDismissing(null); setReason('') }}
+                      className="h-9 rounded-md border border-border px-4 text-sm text-muted-foreground hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmDismiss}
+                      disabled={busy || reason.trim().length < 10}
+                      className="h-9 rounded-md bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+                    >
+                      Dismiss &amp; close
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </>
       )}
     </div>

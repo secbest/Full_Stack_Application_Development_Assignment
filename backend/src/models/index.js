@@ -125,6 +125,10 @@ Invoice.belongsTo(Client,         { foreignKey: 'client_id' })
 Invoice.belongsTo(PricingContract, { foreignKey: 'contract_id' })
 Invoice.belongsTo(GstRate,         { foreignKey: 'gst_rate_id' })
 Invoice.belongsTo(User,           { foreignKey: 'approved_by', as: 'approvedBy' })
+// Who wrote off this invoice's unbilled charges on the revenue-leakage report. Separate
+// from approvedBy: approving bills an invoice, dismissing accepts that part of it never
+// will be, and the two are not always the same person.
+Invoice.belongsTo(User,           { foreignKey: 'leakage_dismissed_by', as: 'dismissedBy' })
 Invoice.hasMany(InvoiceLineItem,  { foreignKey: 'invoice_id', onDelete: 'CASCADE' })
 // Polymorphic: AR invoices use XeroSyncLog with entity_type = 'ar_invoice'. constraints:
 // false is required - entity_id also serves vendor_invoice rows (see VendorInvoice.hasMany
