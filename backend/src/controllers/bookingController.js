@@ -6,12 +6,10 @@ const { bookingCrewSchema, bookingRejectSchema } = require('../validators')
 const { serializeMilestones } = require('./jobMilestoneController')
 const notificationService = require('../services/notificationService')
 
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
-}
-function toDateOnly(date) {
-  return date.toISOString().slice(0, 10)
-}
+// Shared with dashboardController - see utils/date.js for why these must not be
+// re-derived locally. The previous local copy formatted startOfDay()'s local midnight
+// through toISOString(), which put My Jobs' Today/Tomorrow/This Week tabs a day behind.
+const { startOfDay, toDateOnly } = require('../utils/date')
 
 // Field Crew "My Jobs" screen - only the current user's assigned bookings.
 // try/catch matters here specifically: an uncaught rejection from an async Express
