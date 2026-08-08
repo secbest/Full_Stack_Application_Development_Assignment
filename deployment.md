@@ -4,8 +4,8 @@
 
 | Layer | Provider | Public URL |
 |-------|----------|------------|
-| Frontend | Vercel | _fill in after deploying, e.g. `https://efar.vercel.app`_ |
-| Backend | Render | _fill in after deploying, e.g. `https://efar-api.onrender.com`_ |
+| Frontend | Vercel | `https://full-stack-application-development-pi.vercel.app/` |
+| Backend | Render | `https://full-stack-application-development.onrender.com` |
 | Database | Supabase (PostgreSQL) | Not public - accessed only via `DATABASE_URL` from the backend |
 | File Storage | Cloudinary | Not public - accessed via the Cloudinary SDK/CDN, no dedicated app URL |
 
