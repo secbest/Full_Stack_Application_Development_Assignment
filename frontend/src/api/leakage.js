@@ -14,3 +14,17 @@ export async function getRevenueLeakage(params) {
   const res = await api.get('/dashboard/revenue-leakage', { params })
   return res.data.data
 }
+
+// PATCH .../:invoiceId/dismiss - close a leakage row that will not be recovered.
+// `reason` is required by the backend (min 10 chars) because this writes off revenue and
+// the audit record is the whole point.
+export async function dismissLeakage(invoiceId, reason) {
+  const res = await api.patch(`/dashboard/revenue-leakage/${invoiceId}/dismiss`, { reason })
+  return res.data.data
+}
+
+// DELETE .../:invoiceId/dismiss - reopen a row dismissed in error.
+export async function restoreLeakage(invoiceId) {
+  const res = await api.delete(`/dashboard/revenue-leakage/${invoiceId}/dismiss`)
+  return res.data.data
+}

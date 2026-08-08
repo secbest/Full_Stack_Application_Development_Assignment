@@ -60,6 +60,25 @@ const leakageHistoryQuerySchema = Yup.object({
   date_to: Yup.string().matches(/^\d{4}-\d{2}-\d{2}$/, 'date_to must be in YYYY-MM-DD format'),
 }).test('date-range', 'date_from must be before or equal to date_to.', dateRangeTest())
 
+// PATCH /api/dashboard/revenue-leakage/:invoiceId/dismiss
+//
+// The reason is REQUIRED and has a floor on its length. Dismissing writes off revenue the
+// system proved was earned, so a blank or one-word note ("ok", "n/a") would leave an audit
+// trail that records the decision without recording why - which is the same as not
+// recording it. The floor is deliberately low enough not to obstruct a genuine short
+// reason ("billed on INV-204").
+const dismissLeakageSchema = Yup.object({
+  reason: Yup.string()
+    .trim()
+    .min(10, 'Give a reason of at least 10 characters - this is a write-off audit record.')
+    .max(500, 'Keep the reason under 500 characters.')
+    .required('A reason is required to dismiss a leakage row.'),
+})
+
+const leakageInvoiceParamSchema = Yup.object({
+  invoiceId: Yup.number().integer().positive().required(),
+})
+
 module.exports = {
   fleetOverviewQuerySchema,
   vendorExpensesQuerySchema,
@@ -68,4 +87,6 @@ module.exports = {
   revenueTrendQuerySchema,
   revenueByServiceTypeQuerySchema,
   leakageHistoryQuerySchema,
+  dismissLeakageSchema,
+  leakageInvoiceParamSchema,
 }

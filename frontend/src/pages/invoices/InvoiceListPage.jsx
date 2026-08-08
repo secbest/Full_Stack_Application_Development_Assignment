@@ -6,6 +6,7 @@ import { Receipt, Eye, UploadCloud } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/context/ToastContext'
+import { useAuth } from '@/hooks'
 import { listInvoices, batchApprove } from '@/api/ar'
 
 const STATUSES = ['matched', 'adjusted', 'approved', 'synced_to_xero', 'failed', 'unmatched']
@@ -13,6 +14,10 @@ const money = (n) => `$${Number(n || 0).toFixed(2)}`
 
 export default function InvoiceListPage() {
   const toast = useToast()
+  // Read-only for the MD - see the route comment in App.jsx. Approving and syncing are
+  // ar_specialist-only on the backend, so the controls that call them are hidden.
+  const { user } = useAuth()
+  const canEdit = user?.role === 'ar_specialist'
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -92,9 +97,13 @@ export default function InvoiceListPage() {
           <Receipt className="w-5 h-5 text-muted-foreground" />
           <h1 className="text-2xl font-semibold text-foreground">Invoices</h1>
         </div>
-        <button onClick={handleBatchApprove} disabled={busy || selected.size === 0} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
-          <UploadCloud size={16} /> Batch Approve &amp; Sync ({selected.size})
-        </button>
+        {canEdit ? (
+          <button onClick={handleBatchApprove} disabled={busy || selected.size === 0} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-40">
+            <UploadCloud size={16} /> Batch Approve &amp; Sync ({selected.size})
+          </button>
+        ) : (
+          <span className="text-xs font-medium text-slate-500 border border-slate-200 rounded-md px-2 py-1">View only</span>
+        )}
       </div>
 
       <Card>
@@ -118,7 +127,9 @@ export default function InvoiceListPage() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/70">
                     <th className="px-3 py-3 w-10">
-                      <input type="checkbox" onChange={toggleAll} checked={approvable.length > 0 && approvable.every((r) => selected.has(r.id))} />
+                      {canEdit && (
+                        <input type="checkbox" onChange={toggleAll} checked={approvable.length > 0 && approvable.every((r) => selected.has(r.id))} />
+                      )}
                     </th>
                     {['Booking Ref', 'Client', 'Subtotal', 'GST', 'Total', 'Status', 'Xero ID', 'Action'].map((c) => (
                       <th key={c} className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{c}</th>
@@ -135,7 +146,9 @@ export default function InvoiceListPage() {
                     return (
                       <tr key={inv.id} className={`h-12 hover:bg-slate-50/80 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'}`}>
                         <td className="px-3 py-2">
-                          <input type="checkbox" disabled={!canSelect} checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} />
+                          {canEdit && (
+                            <input type="checkbox" disabled={!canSelect} checked={selected.has(inv.id)} onChange={() => toggle(inv.id)} />
+                          )}
                         </td>
                         <td className="px-4 py-2"><span className="text-xs font-semibold text-slate-900 font-mono">{inv.booking_reference || `INV#${inv.id}`}</span></td>
                         <td className="px-4 py-2"><span className="text-xs font-medium text-slate-800">{inv.client_name || '—'}</span></td>

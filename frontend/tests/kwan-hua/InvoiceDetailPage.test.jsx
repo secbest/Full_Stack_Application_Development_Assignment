@@ -34,6 +34,14 @@ import api from '@/api/index'
 import { ToastProvider } from '@/context/ToastContext'
 import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 
+// The page reads the viewer's role to decide whether the AR write controls render at all
+// (the Managing Director reaches this screen read-only from the Revenue Leakage report).
+// Every test below exercises an AR action, so the harness logs in as the AR Specialist -
+// the same pattern as InvoiceListPage.test.jsx and VendorInvoiceListPage.test.jsx.
+jest.mock('@/hooks', () => ({
+  useAuth: () => ({ user: { id: 2, role: 'ar_specialist' } }),
+}))
+
 // getInvoice() (frontend/src/api/ar.js) unwraps { success, data } and returns `data`
 // directly - this is the shape InvoiceDetailPage renders.
 function baseInvoice(overrides = {}) {

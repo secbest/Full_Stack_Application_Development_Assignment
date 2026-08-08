@@ -3,7 +3,7 @@ const { Booking, ServiceMemo, Invoice, VendorInvoice, PricingContract, Surcharge
 const { leakageService } = require('../services')
 const xeroService = require('../services/xeroService')
 const geocodingService = require('../services/geocodingService')
-const { success, internalError, round2 } = require('../utils')
+const { success, internalError, error, notFound, round2 } = require('../utils')
 
 const BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'invoiced']
 
@@ -35,13 +35,16 @@ function hqOffset(crewId) {
   return { lat: Math.sin(angle) * HQ_SPREAD_DEGREES, lng: Math.cos(angle) * HQ_SPREAD_DEGREES }
 }
 
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
-}
-
-function toDateOnly(date) {
-  return date.toISOString().slice(0, 10)
-}
+// Local-calendar-day helpers. Shared with bookingController via utils/date.js, which
+// documents why toISOString() is wrong here: every Date reaching toDateOnly is anchored to
+// LOCAL midnight - from startOfDay() below, or from Yup.date() coercing a bare
+// "2026-08-08" query param (Yup parses date-only strings as local; native `new Date()`
+// parses them as UTC, which is why they disagree). In Singapore local midnight is 16:00 the
+// previous day in UTC, which put this whole dashboard one calendar day behind.
+//
+// The output bounds DATE-only columns (scheduled_date, invoice_date), which is why a plain
+// calendar string is the right shape here. TIMESTAMP columns use sgDayStart/sgDayEnd below.
+const { startOfDay, toDateOnly } = require('../utils/date')
 
 // EFAR operates only in Singapore (UTC+8, no DST). `date_from`/`date_to` arrive as bare
 // YYYY-MM-DD calendar dates computed from the browser's local (Singapore) clock, so they
@@ -238,6 +241,7 @@ async function revenueLeakage(req, res) {
     include: [
       { model: Client, attributes: ['id', 'name'], required: false },
       { model: PricingContract, attributes: ['id', 'contract_name'], required: false },
+      { model: User, as: 'dismissedBy', attributes: ['id', 'name'], required: false },
     ],
   })
 
@@ -245,7 +249,7 @@ async function revenueLeakage(req, res) {
   // oxygen_per_litre, that is a defensible basis for valuing a contract that does not.
   const surchargeRows = await SurchargeSchedule.findAll({ attributes: ['surcharge_type', 'amount'] })
 
-  const rows = invoices.map((inv) => ({
+  const toRow = (inv) => ({
     id: inv.id,
     client_id: inv.client_id,
     client_name: inv.Client ? inv.Client.name : null,
@@ -253,16 +257,114 @@ async function revenueLeakage(req, res) {
     contract_name: inv.PricingContract ? inv.PricingContract.contract_name : null,
     created_at: inv.createdAt,
     unpriced_surcharges: inv.unpriced_surcharges || [],
-  }))
+  })
 
-  const report = leakageService.buildLeakageReport(rows, surchargeRows)
+  // A dismissed row is a decision already taken, so it must not keep inflating the open
+  // figure the MD is being asked to act on. It is not deleted either: the split is done
+  // here rather than in the SQL above so the same reference rates value both sets, and the
+  // closed total can be reported alongside instead of vanishing.
+  const open = invoices.filter((inv) => !inv.leakage_dismissed_at)
+  const dismissed = invoices.filter((inv) => inv.leakage_dismissed_at)
+
+  const report = leakageService.buildLeakageReport(open.map(toRow), surchargeRows)
+  const dismissedReport = leakageService.buildLeakageReport(dismissed.map(toRow), surchargeRows)
+
+  const dismissedRows = dismissed
+    .filter((inv) => (inv.unpriced_surcharges || []).length > 0)
+    .map((inv) => {
+      const valued = dismissedReport.affected_invoices.find((r) => r.invoice_id === inv.id)
+      return {
+        invoice_id: inv.id,
+        client_id: inv.client_id,
+        client_name: inv.Client ? inv.Client.name : null,
+        created_at: inv.createdAt,
+        unpriced_count: (inv.unpriced_surcharges || []).length,
+        estimated_amount: valued ? valued.estimated_amount : 0,
+        dismissed_at: inv.leakage_dismissed_at,
+        dismissed_reason: inv.leakage_dismissed_reason,
+        dismissed_by: inv.dismissedBy ? { id: inv.dismissedBy.id, name: inv.dismissedBy.name } : null,
+      }
+    })
+    .sort((a, b) => new Date(b.dismissed_at) - new Date(a.dismissed_at))
 
   return success(res, {
     period: { from, to },
     ...report,
+    // Reported separately so "we are leaking $X" and "we decided to stop chasing $Y" stay
+    // distinguishable. Folding them into one number would let a write-off look like a fix.
+    dismissed: {
+      count: dismissedRows.length,
+      estimated_amount: dismissedReport.summary.estimated_leakage,
+      rows: dismissedRows,
+    },
     // Stated in the payload so the UI cannot present an estimate as a billed figure.
     basis_note: 'Amounts are estimates. Unpriced surcharges have no contracted rate by definition, so each is valued at the median rate other contracts charge for the same surcharge type. Items with no reference rate anywhere in the system are counted but valued at zero.',
   })
+}
+
+// PATCH /api/dashboard/revenue-leakage/:invoiceId/dismiss
+//
+// Closes a leakage row that will not be recovered, with an attributable reason. This is the
+// end of the loop the report opens: prevention (surcharges price from the published rate
+// card) and detection (this report) were already in place, but a gap that had genuinely
+// been dealt with - billed separately, or written off - had no way to leave the total.
+//
+// Deliberately does NOT clear unpriced_surcharges. The record of what went unbilled is the
+// evidence behind the decision; erasing it would make the dismissal unauditable and the
+// figure unreproducible.
+async function dismissLeakage(req, res) {
+  try {
+    const invoice = await Invoice.findByPk(req.params.invoiceId)
+    if (!invoice) return notFound(res, 'No invoice with this id.')
+
+    // Nothing to dismiss is a different situation from an already-dismissed row, and
+    // silently succeeding on either would let the UI show a resolution that never happened.
+    if (!(invoice.unpriced_surcharges || []).length) {
+      return error(res, 'This invoice has no unpriced charges, so there is no leakage to dismiss.', 'NO_LEAKAGE_TO_DISMISS', 409)
+    }
+    if (invoice.leakage_dismissed_at) {
+      return error(res, 'This leakage row has already been dismissed.', 'LEAKAGE_ALREADY_DISMISSED', 409)
+    }
+
+    await invoice.update({
+      leakage_dismissed_at: new Date(),
+      leakage_dismissed_reason: req.body.reason.trim(),
+      leakage_dismissed_by: req.user.sub,
+    })
+
+    return success(res, {
+      invoice_id: invoice.id,
+      dismissed_at: invoice.leakage_dismissed_at,
+      dismissed_reason: invoice.leakage_dismissed_reason,
+    })
+  } catch (err) {
+    return internalError(res, err)
+  }
+}
+
+// DELETE /api/dashboard/revenue-leakage/:invoiceId/dismiss - reopens a dismissed row.
+//
+// A write-off decided in error must be reversible, otherwise the safe move is never to
+// dismiss anything and the feature goes unused. Clearing all three fields returns the row
+// to exactly the state it had before, which is what NULL already means everywhere else.
+async function restoreLeakage(req, res) {
+  try {
+    const invoice = await Invoice.findByPk(req.params.invoiceId)
+    if (!invoice) return notFound(res, 'No invoice with this id.')
+    if (!invoice.leakage_dismissed_at) {
+      return error(res, 'This leakage row is not dismissed.', 'LEAKAGE_NOT_DISMISSED', 409)
+    }
+
+    await invoice.update({
+      leakage_dismissed_at: null,
+      leakage_dismissed_reason: null,
+      leakage_dismissed_by: null,
+    })
+
+    return success(res, { invoice_id: invoice.id, dismissed_at: null })
+  } catch (err) {
+    return internalError(res, err)
+  }
 }
 
 // GET /api/dashboard/cycle-time - average duration, per stage, from job completion
@@ -699,4 +801,4 @@ async function crewPositions(req, res) {
   }
 }
 
-module.exports = { fleetOverview, vendorExpenses, revenueLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory, crewPositions }
+module.exports = { fleetOverview, vendorExpenses, revenueLeakage, dismissLeakage, restoreLeakage, cycleTime, xeroHealth, revenueTrend, topClients, revenueByServiceType, leakageHistory, crewPositions }

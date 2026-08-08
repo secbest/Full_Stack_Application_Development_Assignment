@@ -35,6 +35,16 @@ const Invoice = sequelize.define('Invoice', {
   // time and surfaced on the Invoice Detail screen so the AR Specialist can price them by
   // hand instead of the charge silently disappearing. Empty array = nothing was dropped.
   unpriced_surcharges: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+  // Closes a revenue-leakage row that will not be recovered. Set together or not at all:
+  // NULL across all three means "still open", which is the correct default for every
+  // historical row. The actor is stored because this is the one action in the report that
+  // decides money will not be collected, and a write-off needs an author.
+  //
+  // Dismissing does NOT touch unpriced_surcharges - the record of what went unbilled is
+  // kept intact, so a dismissed row can still be inspected and the decision reversed.
+  leakage_dismissed_at:     { type: DataTypes.DATE,    allowNull: true },
+  leakage_dismissed_reason: { type: DataTypes.TEXT,    allowNull: true },
+  leakage_dismissed_by:     { type: DataTypes.INTEGER, allowNull: true, references: { model: 'users', key: 'id' } },
 }, {
   tableName: 'invoices',
   underscored: true,
