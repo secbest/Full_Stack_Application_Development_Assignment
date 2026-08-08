@@ -17,6 +17,8 @@ graph LR
     Cloudinary["Cloudinary\nImage & File Storage"]
     Gemini["Google Gemini API\nOCR & AI Extraction"]
     Xero["Xero API\nAccounting Ledger"]
+    Gmail["Gmail API / Google OAuth\nAutomatic Vendor Email Intake"]
+    Maps["Google Maps / Geocoding API\nFleet Tracker Map"]
 
     User -->|HTTPS| FE
     FE -->|"REST API calls (Axios)"| BE
@@ -28,4 +30,9 @@ graph LR
     Gemini -->|"Structured invoice data"| BE
     BE -->|"OAuth2 + draft invoices"| Xero
     Xero -->|"Bank feeds + sync status"| BE
+    BE -->|"OAuth2 + inbox polling"| Gmail
+    Gmail -->|"Vendor PDF attachments"| BE
+    FE -->|"Map render (JS SDK)"| Maps
+    BE -->|"Address geocoding requests"| Maps
+    Maps -->|"Lat/lng coordinates"| BE
 ```

@@ -245,6 +245,63 @@ erDiagram
         TIMESTAMP updated_at
     }
 
+    gmail_connections {
+        INTEGER id PK
+        INTEGER connected_by FK
+        STRING gmail_address
+        TEXT refresh_token
+        BOOLEAN is_connected
+        DATE connected_at
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    gst_rates {
+        INTEGER id PK
+        STRING jurisdiction
+        DECIMAL rate_percent
+        DATEONLY effective_from
+        DATEONLY effective_to
+        STRING xero_tax_type
+        STRING xero_input_tax_type
+        STRING source_name
+        STRING source_url
+        DATE verified_at
+        BOOLEAN is_active
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    geocoded_locations {
+        INTEGER id PK
+        TEXT address_text
+        DECIMAL lat
+        DECIMAL lng
+        DATE geocoded_at
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    vendor_invoice_audits {
+        INTEGER id PK
+        INTEGER vendor_invoice_id FK
+        INTEGER user_id FK
+        STRING action
+        JSONB changes
+        TEXT note
+        TIMESTAMP created_at
+    }
+
+    job_milestones {
+        INTEGER id PK
+        INTEGER booking_id FK
+        INTEGER recorded_by FK
+        STRING milestone_type
+        DATE recorded_at
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
     roles ||--o{ users : "has"
     users ||--o{ intake_submissions : "reviews"
     intake_submissions ||--o| bookings : "creates"
@@ -269,4 +326,11 @@ erDiagram
     users ||--o{ vendor_invoices : "uploaded by"
     users ||--o{ vendor_invoices : "approved by"
     vendor_invoices ||--o{ vendor_invoice_items : "contains"
+    users ||--o{ gmail_connections : "connected by"
+    gst_rates ||--o{ invoices : "applied to"
+    gst_rates ||--o{ vendor_invoices : "applied to"
+    vendor_invoices ||--o{ vendor_invoice_audits : "has"
+    users ||--o{ vendor_invoice_audits : "actor"
+    bookings ||--o{ job_milestones : "has"
+    users ||--o{ job_milestones : "recorded by"
 ```

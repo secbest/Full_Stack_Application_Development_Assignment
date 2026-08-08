@@ -1,4 +1,4 @@
-# API Documentation - Jasper
+﻿# API Documentation - Jasper
 
 **Feature Area:** AR Billing, Pricing Engine & Invoice Sync
 
@@ -28,9 +28,9 @@ The JSON examples throughout the sections below show only the contents of the `d
 4. [Memo Review Queue](#4-memo-review-queue)
 5. [Invoices](#5-invoices)
 6. [Invoice Line Items](#6-invoice-line-items)
-7. [Revenue Leakage Alerts](#7-revenue-leakage-alerts)
-8. [AR Dashboard](#8-ar-dashboard)
-9. [Xero Bank Feed](#9-xero-bank-feed)
+7. [Revenue Leakage Report](#7-revenue-leakage-report)
+8. [AR Dashboard - DROPPED](#8-ar-dashboard---dropped)
+9. [Xero Bank Feed - DROPPED](#9-xero-bank-feed---dropped)
 10. [Dev Auth Reference](#10-dev-auth-reference)
 
 ---
@@ -353,7 +353,7 @@ The JSON examples throughout the sections below show only the contents of the `d
 
 These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes query it read-only; only the `status` and `ar_note` fields are written by Jasper's endpoints.
 
-### `GET /api/memos/pending-review`
+### `GET /api/service-memos/pending-review`
 
 **Purpose:** List all submitted service memos awaiting AR review (UC-03). Returns memos with status `submitted` that have no linked invoice yet.
 
@@ -397,9 +397,9 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 ---
 
-### `PATCH /api/memos/:id/approve`
+### `PATCH /api/service-memos/:id/approve`
 
-**Purpose:** Sarah approves a memo and triggers the automated pricing match (UC-03 → UC-04). The system looks up the client's active contract and generates the invoice in the same transaction.
+**Purpose:** Sarah approves a memo and triggers the automated pricing match (UC-03 → UC-04). The system looks up the client's active pricing contract (or, for a quoted booking, its frozen quotation) and generates the invoice in the same transaction.
 
 **Auth required:** Yes
 
@@ -407,7 +407,7 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 **Request body:** None required.
 
-**Success response `200`:**
+**Success response `200` - fully matched:**
 ```json
 {
   "data": {
@@ -417,30 +417,75 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
       "id": 7,
       "status": "matched",
       "subtotal": 850.00,
-      "tax_amount": 0.00,
-      "total_amount": 850.00,
+      "gst_rate_percent": 9.00,
+      "gst_effective_date": "2024-01-01",
+      "tax_amount": 76.50,
+      "total_amount": 926.50,
+      "unpriced_surcharges": [],
       "line_items": [
-        { "description": "EAS - One-Way Hospital Transfer (Office Hours)", "quantity": 1, "unit_price": 850.00, "amount": 850.00, "is_manual_adjustment": false }
+        { "id": 21, "description": "EAS - One-Way Hospital Transfer (Office Hours)", "quantity": 1, "unit_price": 850.00, "amount": 850.00, "is_manual_adjustment": false }
       ]
     }
   }
 }
 ```
 
-**Error responses:**
+**Behavioral note - a missing contract or missing rate is NOT an error.** Approval always succeeds once the memo itself is valid: the memo is marked `reviewed` and an invoice is always created, even when the base transport charge cannot be priced automatically. This was deliberately changed from an earlier design that returned `422` after already committing both writes, which made the frontend report a successful approval as a failure and discarded the new invoice id AR needed to recover. See the comment above `approveMemo` in `backend/src/controllers/memoReviewController.js` (around lines 236-261).
+
+In these cases the response is still `200 success: true`, but `invoice.status` is `unmatched` (surcharges the engine could price are still added as line items - only the base transport charge is missing) and a `warning` object is included alongside `invoice`:
+
+```json
+{
+  "data": {
+    "memo_id": 9,
+    "memo_status": "reviewed",
+    "invoice": {
+      "id": 9,
+      "status": "unmatched",
+      "subtotal": 50.00,
+      "gst_rate_percent": 9.00,
+      "gst_effective_date": "2024-01-01",
+      "tax_amount": 4.50,
+      "total_amount": 54.50,
+      "unpriced_surcharges": [],
+      "line_items": [
+        { "id": 25, "description": "Oxygen Charge - Base (first 10L)", "quantity": 1, "unit_price": 50.00, "amount": 50.00, "is_manual_adjustment": false }
+      ]
+    },
+    "warning": {
+      "code": "NO_ACTIVE_CONTRACT",
+      "message": "Invoice #9 needs the base charge because no active contract covers this client's service date. Recorded surcharges have been priced. Create or activate the contract, then retry matching from the invoice; alternatively, price the base manually."
+    }
+  }
+}
+```
+
+`warning.code` is one of:
+
+| `warning.code` | Condition |
+|-----------------|-----------|
+| `QUOTATION_MISMATCH` | The booking was priced by Quotations, but the completed service (from the memo) does not match the service combination the quote was sold for. Only the base is in dispute; recorded surcharges are still priced |
+| `NO_ACTIVE_CONTRACT` | No active pricing contract covers this client and service date (legacy, non-quoted bookings only) |
+| `NO_MATCHING_RATE` | An active contract was found but has no rate row matching the memo's service/transfer/time combination |
+| `UNPRICED_SURCHARGES` | The base was priced successfully (via a quotation), but one or more recorded surcharges have no rate anywhere in the applicable schedule |
+
+Once the underlying contract/rate gap is fixed, retry automatic pricing with `POST /api/invoices/:id/rematch` (section 5) rather than re-approving the memo.
+
+**Error responses** (genuine failures only - a pricing gap is reported via `warning`, not here):
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| `404` | `MEMO_NOT_FOUND` | No memo with this id |
+| `404` | `NOT_FOUND` | No memo with this id |
+| `409` | `MEMO_RETURNED` | Memo was returned to the crew for correction and has not been resubmitted yet |
 | `409` | `MEMO_ALREADY_REVIEWED` | Memo has already been approved or an invoice already exists for it |
-| `422` | `NO_ACTIVE_CONTRACT` | No active pricing contract found for this client - invoice created with status `unmatched` |
-| `422` | `NO_MATCHING_RATE` | Active contract found but no rate row matches the memo's service/transfer/time combination - invoice created with status `unmatched` |
+| `409` | `INVOICE_SOURCE_MISSING` | The memo's booking has no scheduled service date, so the applicable GST rate cannot be determined |
+| `422` | `GST_RATE_NOT_CONFIGURED` / `INVALID_GST_DATE` | No GST rate is configured for the service date, or the date itself is invalid |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
 
 ---
 
-### `PATCH /api/memos/:id/return`
+### `PATCH /api/service-memos/:id/return`
 
 **Purpose:** Sarah returns a memo to the field crew with a correction note (UC-03 alternative flow). Memo status reverts to `submitted` and the crew is notified.
 
@@ -465,8 +510,10 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 | Status | Code | Condition |
 |--------|------|-----------|
 | `400` | `VALIDATION_ERROR` | `note` is missing or empty |
-| `404` | `MEMO_NOT_FOUND` | No memo with this id |
-| `409` | `MEMO_ALREADY_INVOICED` | Memo is linked to an invoice that has already been approved or synced - cannot be returned |
+| `404` | `NOT_FOUND` | No memo with this id |
+| `409` | `MEMO_ALREADY_INVOICED` | Memo is linked to an invoice - cannot be returned once an invoice exists (locked or not); the error message distinguishes an `approved`/`synced_to_xero` invoice (raise a credit note in Xero instead) from any other status (adjust the invoice, or reject its match first) |
+| `409` | `MEMO_ALREADY_RETURNED` | Memo has already been returned to the crew and is awaiting their correction |
+| `409` | `MEMO_NOT_SUBMITTED` | Memo is not in `submitted` status, so it cannot be returned |
 
 ---
 
@@ -567,7 +614,57 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| `404` | `INVOICE_NOT_FOUND` | No invoice with this id |
+| `404` | `NOT_FOUND` | No invoice with this id |
+| `401` | `UNAUTHORISED` | Missing or invalid JWT |
+| `403` | `FORBIDDEN` | Role not permitted |
+
+---
+
+### `POST /api/invoices/:id/rematch`
+
+**Purpose:** Re-runs automatic pricing on an invoice that is currently `unmatched` (e.g. because no active contract or no matching rate existed at approval time). This is the recovery action referenced by the `warning.message` on `PATCH /api/service-memos/:id/approve` - creating or fixing a contract does not by itself mutate an already-created invoice, so AR must explicitly retry matching. Deletes and regenerates all engine-produced line items (`is_manual_adjustment: false`); any manual adjustments already on the invoice are left untouched and block the operation instead (see `INVOICE_HAS_LINE_ITEMS` below).
+
+**Auth required:** Yes
+
+**Allowed roles:** `ar_specialist`
+
+**Request body:** None required.
+
+**Success response `200`:**
+```json
+{
+  "data": {
+    "invoice_id": 9,
+    "status": "matched",
+    "contract_id": 3,
+    "subtotal": 900.00,
+    "gst_rate_percent": 9.00,
+    "gst_effective_date": "2024-01-01",
+    "tax_amount": 81.00,
+    "total_amount": 981.00,
+    "unpriced_surcharges": [],
+    "line_items": [
+      { "id": 40, "description": "EAS - One-Way Hospital Transfer (Office Hours)", "quantity": 1, "unit_price": 850.00, "amount": 850.00, "line_type": "base", "is_manual_adjustment": false },
+      { "id": 41, "description": "Oxygen Charge - Base (first 10L)", "quantity": 1, "unit_price": 50.00, "amount": 50.00, "line_type": "surcharge", "is_manual_adjustment": false }
+    ],
+    "warning": null
+  }
+}
+```
+
+If the rematched invoice still has surcharges the schedule cannot price, `warning` is `{ "code": "UNPRICED_SURCHARGES", "message": "..." }` instead of `null` - same shape as the memo approval endpoint's warning.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `404` | `NOT_FOUND` | No invoice with this id |
+| `409` | `INVOICE_NOT_UNMATCHED` | Invoice is not currently `unmatched` - only an unmatched invoice can be re-matched |
+| `409` | `INVOICE_SOURCE_MISSING` | The invoice's source memo or booking record no longer exists, so it cannot be matched automatically |
+| `409` | `INVOICE_HAS_LINE_ITEMS` | The invoice has manual adjustment line items; remove them before retrying automatic matching, or continue pricing it by hand |
+| `422` | `QUOTATION_MISMATCH` | (Quoted bookings) The completed service still does not match the combination approved by Quotations |
+| `422` | `NO_ACTIVE_CONTRACT` | (Legacy, non-quoted bookings) No active pricing contract covers this client and service date yet |
+| `422` | `NO_MATCHING_RATE` | (Legacy, non-quoted bookings) The active contract still has no rate for this memo's service/transfer/time combination |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
 
@@ -632,7 +729,7 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| `404` | `INVOICE_NOT_FOUND` | No invoice with this id |
+| `404` | `NOT_FOUND` | No invoice with this id |
 | `409` | `INVOICE_NOT_FAILED` | Invoice is not in `failed` status - retry not applicable |
 | `502` | `XERO_SYNC_ERROR` | Xero rejected or timed out; invoice status remains `failed` with updated error log |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
@@ -685,7 +782,7 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 | Status | Code | Condition |
 |--------|------|-----------|
 | `400` | `VALIDATION_ERROR` | `description` missing, `quantity` or `unit_price` not a positive number |
-| `404` | `INVOICE_NOT_FOUND` | No invoice with this id |
+| `404` | `NOT_FOUND` | No invoice with this id |
 | `409` | `INVOICE_LOCKED` | Invoice is in `approved` or `synced_to_xero` status - edits not permitted |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
@@ -731,7 +828,7 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 | Status | Code | Condition |
 |--------|------|-----------|
 | `400` | `VALIDATION_ERROR` | Negative `quantity` or `unit_price` |
-| `404` | `LINE_ITEM_NOT_FOUND` | No line item with this id on this invoice |
+| `404` | `NOT_FOUND` | No line item with this id on this invoice |
 | `409` | `INVOICE_LOCKED` | Invoice is in `approved` or `synced_to_xero` status |
 
 ---
@@ -762,16 +859,18 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 | Status | Code | Condition |
 |--------|------|-----------|
 | `403` | `SYSTEM_LINE_ITEM` | Line item was engine-generated (`is_manual_adjustment = false`) - deletion not permitted |
-| `404` | `LINE_ITEM_NOT_FOUND` | No line item with this id on this invoice |
+| `404` | `NOT_FOUND` | No line item with this id on this invoice |
 | `409` | `INVOICE_LOCKED` | Invoice is in `approved` or `synced_to_xero` status |
 
 ---
 
-## 7. Revenue Leakage Alerts
+## 7. Revenue Leakage Report
 
-### `GET /api/revenue-leakage`
+### `GET /api/dashboard/revenue-leakage`
 
-**Purpose:** Return all bookings in `completed` status with no linked service memo after the alert threshold (default 4 hours). Powers the Revenue Leakage Alert panel on the AR and executive dashboards (UC-09).
+**Purpose:** NOT a missing-memo alert. This reports **unpriced surcharges on already-generated invoices** - chargeable items the field crew recorded on a memo that the matched pricing contract (or the published surcharge card) had no rate for, and which the pricing engine therefore could not bill. Every invoice carries an `unpriced_surcharges` JSONB column recording exactly this; this endpoint aggregates that column across the requested window into the report the Managing Director (and Sarah, who is the one who can actually fix the underlying contracts) needs: how much is going unbilled, which surcharge type causes it, and which contract to fix first. See `revenueLeakage()` in `backend/src/controllers/dashboardController.js` (around lines 216-266) and `backend/src/services/leakageService.js`.
+
+All amounts are **estimates**: by definition an unpriced surcharge has no contracted rate, so each occurrence is valued at the **median rate every other active contract charges for that same surcharge type**. An occurrence with no reference rate anywhere in the system is still counted, but valued at zero - the report states this explicitly rather than silently rounding an unknown to zero and presenting the total as complete.
 
 **Auth required:** Yes
 
@@ -781,25 +880,79 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `threshold_hours` | integer | No | Override the alert threshold. Default `4` |
+| `date_from` | date | No | Filter by invoice `created_at` range start (`YYYY-MM-DD`). Default: 1 January of the current year |
+| `date_to` | date | No | Filter by invoice `created_at` range end (`YYYY-MM-DD`). Default: today |
 
 **Success response `200`:**
 ```json
 {
-  "data": [
-    {
-      "booking_id": 7,
-      "booking_reference": "BKG-2026-00007",
-      "client_name": "Tan Tock Seng Hospital",
-      "scheduled_date": "2026-06-20",
-      "assigned_crew_name": "Ravi Kumar",
-      "hours_since_completion": 6.5,
-      "alert_severity": "high"
-    }
-  ],
-  "meta": { "total": 1 }
+  "data": {
+    "period": { "from": "2026-01-01", "to": "2026-06-22" },
+    "summary": {
+      "estimated_leakage": 850.00,
+      "affected_invoice_count": 4,
+      "unpriced_item_count": 6,
+      "items_without_reference_rate": 1,
+      "items_without_recorded_quantity": 0,
+      "top_recommendation": "Tan Tock Seng Hospital - FY2026 Service Agreement is missing 1 surcharge rate(s), accounting for an estimated $500.00 of unbilled charges across 3 invoice(s)."
+    },
+    "by_surcharge_type": [
+      {
+        "surcharge_type": "jurong_island_min",
+        "label": "Jurong Island Transport Surcharge",
+        "occurrences": 3,
+        "total_quantity": 3,
+        "unit_rate": 150.00,
+        "basis": "median",
+        "estimated_amount": 450.00
+      }
+    ],
+    "by_contract": [
+      {
+        "contract_id": 3,
+        "contract_name": "Tan Tock Seng Hospital - FY2026 Service Agreement",
+        "client_id": 1,
+        "client_name": "Tan Tock Seng Hospital",
+        "affected_invoices": 3,
+        "missing_surcharge_types": ["jurong_island_min"],
+        "estimated_amount": 450.00
+      }
+    ],
+    "affected_invoices": [
+      {
+        "invoice_id": 12,
+        "client_id": 1,
+        "client_name": "Tan Tock Seng Hospital",
+        "contract_id": 3,
+        "created_at": "2026-06-10T09:30:00.000Z",
+        "unpriced_count": 1,
+        "estimated_amount": 150.00
+      }
+    ],
+    "reference_rates": { "jurong_island_min": { "basis": "median", "unit_rate": 150.00 } },
+    "dismissed": {
+      "count": 1,
+      "estimated_amount": 150.00,
+      "rows": [
+        {
+          "invoice_id": 9,
+          "client_id": 2,
+          "client_name": "Singapore General Hospital",
+          "created_at": "2026-05-02T11:00:00.000Z",
+          "unpriced_count": 1,
+          "estimated_amount": 150.00,
+          "dismissed_at": "2026-08-08T03:12:00.000Z",
+          "dismissed_reason": "Billed separately via a manual adjustment note - contract rate will be added next renewal.",
+          "dismissed_by": { "id": 5, "name": "Sarah Lim" }
+        }
+      ]
+    },
+    "basis_note": "Amounts are estimates. Unpriced surcharges have no contracted rate by definition, so each is valued at the median rate other contracts charge for the same surcharge type. Items with no reference rate anywhere in the system are counted but valued at zero."
+  }
 }
 ```
+
+The top-level `summary`/`by_surcharge_type`/`by_contract`/`affected_invoices`/`reference_rates` figures only ever reflect **open** (non-dismissed) rows, so a dismissed write-off cannot make the headline leakage number look smaller than it should. The `dismissed` block reports closed rows separately rather than folding them into the total, so "we are leaking $X" and "we decided to stop chasing $Y" stay distinguishable.
 
 **Error responses:**
 
@@ -808,69 +961,31 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
 
----
+**Note - the "missing memo" concept is a different endpoint.** A completed booking with no linked service memo at all (nothing to price, because nothing was submitted) is not reported here - it is a separate field, `revenue_risk.completed_without_memo`, on `GET /api/dashboard/fleet-overview`'s response (`fleetOverview()` in `dashboardController.js`, around lines 123-126). That endpoint is owned/documented by a different feature area and is not otherwise covered in this document; it is called out here only so the two "revenue leakage"-sounding concepts are not conflated.
 
-### `PATCH /api/revenue-leakage/:bookingId/resolve`
+### `PATCH /api/dashboard/revenue-leakage/:invoiceId/dismiss`
 
-**Purpose:** Sarah marks a leakage alert as resolved with a reason (UC-09 - e.g. job was cancelled on site).
+**Purpose:** Closes a leakage row that will not be recovered (e.g. billed separately, or written off), with an attributable reason. Deliberately does NOT clear `unpriced_surcharges` on the invoice - the record of what went unbilled is the evidence behind the decision, so erasing it would make the dismissal unauditable and the figure unreproducible. See `dismissLeakage()` in `backend/src/controllers/dashboardController.js`.
 
 **Auth required:** Yes
 
-**Allowed roles:** `ar_specialist`
+**Allowed roles:** `managing_director`, `ar_specialist` - restricted to the two roles accountable for the number; the read access above is wider than this write.
+
+**URL params:** `invoiceId` (integer, required)
 
 **Request body:**
-```json
-{ "reason": "Job cancelled on site - patient refused transport." }
-```
 
-**Success response `200`:**
-```json
-{
-  "data": { "booking_id": 7, "resolved": true, "reason": "Job cancelled on site - patient refused transport." }
-}
-```
-
-**Error responses:**
-
-| Status | Code | Condition |
-|--------|------|-----------|
-| `400` | `VALIDATION_ERROR` | `reason` is missing or empty |
-| `404` | `BOOKING_NOT_FOUND` | No booking with this id |
-| `409` | `MEMO_NOW_EXISTS` | A memo was submitted between the alert being raised and this resolve request - resolve is no longer needed |
-
----
-
-## 8. AR Dashboard
-
-### `GET /api/ar/dashboard`
-
-**Purpose:** Return invoice status counts and totals for the AR Batch Status Tracker and executive dashboard (UC-10).
-
-**Auth required:** Yes
-
-**Allowed roles:** `ar_specialist`, `managing_director`
-
-**Query params:**
-
-| Param | Type | Required | Description |
+| Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `from_date` | date | No | Filter by `created_at` range start |
-| `to_date` | date | No | Filter by `created_at` range end |
+| `reason` | string | Yes | Free-text explanation of why this leakage is being closed. Trimmed before saving. |
 
 **Success response `200`:**
 ```json
 {
   "data": {
-    "summary": [
-      { "status": "matched",        "count": 3, "total_value": 2550.00 },
-      { "status": "adjusted",       "count": 1, "total_value": 1080.00 },
-      { "status": "approved",       "count": 1, "total_value": 1570.00 },
-      { "status": "synced_to_xero", "count": 1, "total_value": 1200.00 },
-      { "status": "failed",         "count": 1, "total_value": 850.00  },
-      { "status": "unmatched",      "count": 1, "total_value": 0.00    }
-    ],
-    "revenue_leakage_alert_count": 2,
-    "period": { "from": "2026-06-01", "to": "2026-06-22" }
+    "invoice_id": 9,
+    "dismissed_at": "2026-08-08T03:12:00.000Z",
+    "dismissed_reason": "Billed separately via a manual adjustment note - contract rate will be added next renewal."
   }
 }
 ```
@@ -881,36 +996,26 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 |--------|------|-----------|
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
+| `404` | `NOT_FOUND` | No invoice with this id |
+| `409` | `NO_LEAKAGE_TO_DISMISS` | Invoice has no unpriced surcharges - nothing to dismiss |
+| `409` | `LEAKAGE_ALREADY_DISMISSED` | This leakage row has already been dismissed |
 
----
+### `DELETE /api/dashboard/revenue-leakage/:invoiceId/dismiss`
 
-## 9. Xero Bank Feed
-
-### `POST /api/xero/bank-feed/pull`
-
-**Purpose:** Trigger a manual bank feed pull from Xero for the configured EFAR bank account (UC-08). Returns the newly imported transactions.
+**Purpose:** Reopens a previously-dismissed leakage row - a write-off decided in error must be reversible, otherwise the safe move is never to dismiss anything and the feature goes unused. Clears `leakage_dismissed_at`/`leakage_dismissed_reason`/`leakage_dismissed_by` back to `null`, returning the row to exactly its pre-dismissal state. See `restoreLeakage()` in `backend/src/controllers/dashboardController.js`.
 
 **Auth required:** Yes
 
-**Allowed roles:** `ar_specialist`
+**Allowed roles:** `managing_director`, `ar_specialist`
 
-**Request body:** None required.
+**URL params:** `invoiceId` (integer, required)
 
 **Success response `200`:**
 ```json
 {
   "data": {
-    "transactions_imported": 4,
-    "last_pull_at": "2026-06-22T10:30:00.000Z",
-    "transactions": [
-      {
-        "xero_transaction_id": "TXN-0001",
-        "date": "2026-06-21",
-        "description": "Payment from Tan Tock Seng Hospital",
-        "amount": 850.00,
-        "type": "credit"
-      }
-    ]
+    "invoice_id": 9,
+    "dismissed_at": null
   }
 }
 ```
@@ -919,9 +1024,25 @@ These endpoints read from `service_memos` (Liang Yi's table). Jasper's routes qu
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| `502` | `XERO_UNAVAILABLE` | Xero API timed out or returned an error |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
+| `404` | `NOT_FOUND` | No invoice with this id |
+
+---
+
+## 8. AR Dashboard - DROPPED
+
+**This screen was never built and the endpoint below does not exist in the codebase.** Per CLAUDE.md's Logic Correction 6 ("No AR or AP dashboard"), the AR Specialist lands directly on the Invoice List (`GET /api/invoices`, section 5) instead of a dashboard. The status-breakdown content this section used to describe is covered by the status filter chips on that list screen; the revenue-leakage content is covered by section 7 above. Section numbering is intentionally left as a tombstone (not renumbered) so any existing code comments or references to "section 8" stay meaningful - see CLAUDE.md's own tombstoning of dropped prototype screens 6 and 15.
+
+~~`GET /api/ar/dashboard`~~ - dropped, never implemented.
+
+---
+
+## 9. Xero Bank Feed - DROPPED
+
+**This feature was never built and the endpoint below does not exist in the codebase.** Per CLAUDE.md's Logic Correction 6, the Xero bank feed is out of scope: `bank_feed` exists only as an unused `entity_type` enum literal on `XeroSyncLog` (see `backend/src/models/XeroSyncLog.js`), with zero producers anywhere in the codebase. There is no bank-feed UI and none is required. Section numbering is intentionally left as a tombstone, matching section 8 above.
+
+~~`POST /api/xero/bank-feed/pull`~~ - dropped, never implemented.
 
 ---
 
@@ -1006,8 +1127,9 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1
 | Pricing contracts (write) | Yes | - | - | - |
 | Memo review queue | Yes | - | - | - |
 | Invoices (read) | Yes | Yes | - | - |
-| Invoices (write / approve) | Yes | - | - | - |
-| Revenue leakage (read) | Yes | Yes | - | - |
-| Revenue leakage (resolve) | Yes | - | - | - |
-| AR dashboard | Yes | Yes | - | - |
-| Xero bank feed pull | Yes | - | - | - |
+| Invoices (write / approve / rematch) | Yes | - | - | - |
+| Revenue leakage report (read-only) | Yes | Yes | - | - |
+| AR dashboard | DROPPED | DROPPED | DROPPED | DROPPED |
+| Xero bank feed pull | DROPPED | DROPPED | DROPPED | DROPPED |
+
+`AR dashboard` and `Xero bank feed pull` are marked `DROPPED` across every role because neither endpoint exists in the codebase - see sections 8 and 9.

@@ -18,11 +18,10 @@
    - Type of service requested (e.g. Types of Ambulance Services: EAS, Non-Emergency Medical Transfers, Medical Coverage: Sports & Industrial Events, Pricing Schedule: Oxygen, Covid 19 Cases, No lift Landing etc.)
    - Preferred service date and time
    - Pickup location and destination
-   - Service tier (Basic, Advanced, or Critical) - selected via the service tier selector (UC-05)
    - Additional notes (optional)
-3. The customer fills in all mandatory fields and clicks "Submit".
+3. The customer fills in all mandatory fields and clicks "Submit". The customer does **not** select a service tier - there is no tier field on the public intake form. Tier classification (Basic, Advanced, or Critical) is a judgment call made by Camilla when she reviews the submission (UC-05), not a self-service choice.
 4. The system validates all mandatory fields are present and correctly formatted.
-5. A new `intake_submissions` record is created with status `pending`.
+5. A new `intake_submissions` record is created with status `pending` and `service_tier` set to `null`.
 6. The system displays a confirmation message to the customer with a reference number.
 7. Camilla receives an in-app notification (UC-09-A) that a new intake query has arrived.
 
@@ -61,8 +60,8 @@
 
 **Main Flow:**
 1. Camilla opens the intake submission detail view.
-2. She reviews all submitted fields - service type, requested date, location, and service tier.
-3. She verifies the service tier is appropriate for the described situation (UC-05).
+2. She reviews all submitted fields - service type, requested date, and location. The submission has no service tier yet (the customer never chose one).
+3. She assigns the service tier appropriate for the described situation (UC-05).
 4. She selects an existing client contract or records a one-off agreed quotation, including transfer type and time category.
 5. She clicks "Confirm Booking".
 6. The system creates a new `bookings` record linked to the intake submission with status `confirmed`, copying the service details and freezing the approved base price for AR.
@@ -73,7 +72,7 @@
 **Edge Cases / Alternative Flows:**
 - **The requested date is in the past:** The system warns Camilla before she confirms: "The requested service date has already passed. Please contact the customer to confirm a new date before creating the booking."
 - **The same customer already has an active booking on the same date and location:** The system flags a potential duplicate and asks Camilla to confirm she intends to create a second booking, in case the customer accidentally submitted twice.
-- **Camilla wants to change the service tier before confirming:** She can edit the service tier on this screen before clicking Confirm. The change is reflected in the created booking record and the original intake submission notes the adjustment.
+- **Camilla is unsure which tier to assign:** She can consult the customer's `additional_notes` and contact them directly before choosing. Since the intake submission never carries a tier of its own, there is nothing to "revert to" - whatever Camilla selects becomes the booking's `service_tier`, with `original_service_tier` left `null`.
 
 ---
 
@@ -100,25 +99,24 @@
 
 ---
 
-## UC-05: Select and Verify Service Tier
+## UC-05: Assign Service Tier at Booking Confirmation
 
-**Actor:** Customer (during intake submission) / Quotations Specialist (Camilla, during booking confirmation)
+**Actor:** Quotations Specialist (Camilla, during booking confirmation)
 
-**Trigger:** The intake form is being filled in by a customer, or Camilla is reviewing a submission and needs to verify or adjust the requested tier.
+**Trigger:** Camilla is confirming an intake submission (UC-03) and must classify the job into a service tier before the booking can be priced.
 
 **Main Flow:**
-1. On the intake form, the service tier field presents three options with plain-language descriptions:
+1. The intake form itself has no service tier field - the customer never selects one at submission time. `intake_submissions.service_tier` is always `null`.
+2. During Camilla's review (UC-03), the confirmation screen presents three tier options with plain-language descriptions, based on the service description and notes the customer submitted:
    - **Basic** - Non-emergency transport, stable patient, standard equipment
    - **Advanced** - Medically supervised transport, monitoring required
    - **Critical** - Active emergency or intensive care transport, full life support
-2. The customer selects the tier that matches their situation.
-3. During Camilla's review (UC-03), the selected tier is displayed alongside the service description submitted by the customer.
-4. If Camilla determines the selected tier is incorrect based on the described situation (e.g. customer selected Basic for an ICU transfer), she adjusts the tier before confirming the booking.
-5. The final confirmed tier is stored on the `bookings` record and drives the pricing match engine's base rate lookup.
+3. Camilla selects the tier that matches the described situation (e.g. Critical for an ICU transfer) and includes it in the confirmation request.
+4. The final confirmed tier is stored on the `bookings` record (`service_tier`) and drives the pricing match engine's base rate lookup.
 
 **Edge Cases / Alternative Flows:**
-- **Customer is unsure which tier applies:** The intake form includes a "Not sure? Select Basic and we will confirm the correct tier when we contact you." tooltip. Camilla can then adjust as part of her review.
-- **Camilla upgrades the tier from what the customer selected:** The system logs both the customer's original selection and Camilla's adjusted tier on the booking record for audit purposes.
+- **Camilla is unsure which tier applies:** She contacts the customer directly by phone or email for clarification before confirming, since there is no customer-facing tier selector to fall back on.
+- **Audit trail:** `bookings.original_service_tier` exists to preserve a prior tier value if one is ever changed after the fact, but for submissions coming through the public intake form it is always `null` on creation - there is no customer-selected tier to diverge from.
 
 ---
 

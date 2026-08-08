@@ -7,6 +7,7 @@
 ## Tables Owned
 
 - `xero_connections`
+- `gmail_connections`
 - `vendor_invoices`
 - `vendor_invoice_items`
 - `xero_sync_logs`
@@ -89,9 +90,67 @@ XeroConnection.init({
 
 ---
 
+## Table: `gmail_connections`
+
+Stores the Gmail inbox connected for automatic AP invoice intake. Like `xero_connections`, only one inbox is expected to be active at a time (`is_connected = true`), but rows for previously-connected addresses are kept (deactivated) rather than deleted, so reconnecting the same or a different address does not lose history. Only the encrypted `refresh_token` is persisted - short-lived Gmail access tokens are requested from Google on demand when an import runs, so nothing beyond the refresh token needs to survive a restart.
+
+| Field | Sequelize Type | Constraints |
+|-------|---------------|-------------|
+| `id` | `DataTypes.INTEGER` | Primary Key, Auto Increment |
+| `gmail_address` | `DataTypes.STRING(320)` | NOT NULL, Unique |
+| `refresh_token` | `DataTypes.TEXT` | NOT NULL (AES-256-GCM encrypted at the application layer) |
+| `is_connected` | `DataTypes.BOOLEAN` | NOT NULL, Default: `true` |
+| `connected_at` | `DataTypes.DATE` | NOT NULL |
+| `connected_by` | `DataTypes.INTEGER` | allowNull: true, Foreign Key → `users.id` |
+| `created_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
+| `updated_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
+
+### Sequelize Model
+
+```js
+GmailConnection.init({
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
+  },
+  gmail_address: {
+    type: DataTypes.STRING(320),
+    allowNull: false,
+    unique: true,
+  },
+  refresh_token: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+  },
+  is_connected: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  },
+  connected_at: {
+    type: DataTypes.DATE,
+    allowNull: false,
+  },
+  connected_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'users', key: 'id' },
+  },
+}, { sequelize, modelName: 'GmailConnection', tableName: 'gmail_connections', underscored: true })
+```
+
+### Associations
+
+```js
+// No declared association to User on connected_by - it is a plain nullable FK column.
+```
+
+---
+
 ## Table: `vendor_invoices`
 
-Stores vendor PDF invoices uploaded by the AP Specialist (Chloe). Each record tracks the full lifecycle from initial upload through OCR extraction, manual review, and Xero sync. The `pdf_url` field holds the Cloudinary-hosted file URL. The `extracted_total`, `rebate_amount`, and `verified_total` fields are populated by the automated OCR and rebate verification pipeline (UC-04, UC-05). A unique composite index on `(vendor_name, invoice_number)` enforces duplicate detection at the database level (UC-06).
+Stores vendor PDF invoices uploaded by the AP Specialist (Chloe), either directly or via the automatic email/Gmail intake path. Each record tracks the full lifecycle from initial upload through OCR extraction, GST/rebate calculation, manual review, and Xero sync. The `pdf_url` field holds the Cloudinary-hosted file URL. The `extracted_total`, `rebate_amount`, and `verified_total` fields are populated by the automated OCR and rebate verification pipeline (UC-04, UC-05); the `gst_*`, `xero_tax_type`/`xero_account_code`, and `subtotal_excluding_gst`/`gst_amount`/`total_including_gst` fields hold the GST treatment resolved for the invoice and the totals split out for Xero bill coding. `extraction_checks`, `extracted_items_sum`, and `reconciliation_delta` are the arithmetic/format reconciliation facts written by `ocrService.reconcile()` so the review screen can show *why* an invoice needs a closer look, not just a bare confidence score. A unique composite index on `(vendor_name, invoice_number)` enforces duplicate detection at the database level (UC-06), and a separate unique index on `inbound_email_id` makes inbound-email/Gmail imports idempotent under provider retries.
 
 | Field | Sequelize Type | Constraints |
 |-------|---------------|-------------|
@@ -101,13 +160,29 @@ Stores vendor PDF invoices uploaded by the AP Specialist (Chloe). Each record tr
 | `vendor_name` | `DataTypes.STRING(255)` | NOT NULL |
 | `invoice_number` | `DataTypes.STRING(100)` | NOT NULL |
 | `invoice_date` | `DataTypes.DATEONLY` | allowNull: true |
+| `due_date` | `DataTypes.DATEONLY` | allowNull: true |
 | `pdf_url` | `DataTypes.STRING(512)` | NOT NULL |
+| `inbound_email_id` | `DataTypes.STRING(512)` | allowNull: true, Unique index (idempotency key for inbound-email/Gmail imports; format `gmail:<messageId>` for Gmail-sourced invoices) |
+| `currency_code` | `DataTypes.STRING(3)` | NOT NULL, Default: `'SGD'` |
+| `supplier_gst_registration_no` | `DataTypes.STRING(50)` | allowNull: true |
+| `gst_treatment` | `DataTypes.STRING(30)` | NOT NULL, Default: `'non_gst'`, must be one of `standard_rated`, `zero_rated`, `exempt`, `non_gst`, `disallowed` |
+| `gst_rate_id` | `DataTypes.INTEGER` | allowNull: true, Foreign Key → `gst_rates.id` |
+| `gst_rate_percent` | `DataTypes.DECIMAL(5, 2)` | allowNull: true |
+| `gst_effective_date` | `DataTypes.DATEONLY` | allowNull: true |
+| `xero_tax_type` | `DataTypes.STRING(50)` | allowNull: true |
+| `xero_account_code` | `DataTypes.STRING(20)` | allowNull: true |
+| `subtotal_excluding_gst` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
+| `gst_amount` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
+| `total_including_gst` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
 | `extracted_total` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
 | `rebate_percentage` | `DataTypes.DECIMAL(5, 2)` | NOT NULL, Default: `1.00` |
 | `rebate_amount` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
 | `verified_total` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
 | `extraction_confidence` | `DataTypes.FLOAT` | allowNull: true |
 | `is_low_confidence` | `DataTypes.BOOLEAN` | NOT NULL, Default: `false` |
+| `extraction_checks` | `DataTypes.JSONB` | NOT NULL, Default: `[]` - array of `{ check, passed, detail }` written by `ocrService.reconcile()` |
+| `extracted_items_sum` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
+| `reconciliation_delta` | `DataTypes.DECIMAL(10, 2)` | allowNull: true |
 | `status` | `DataTypes.ENUM('pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed')` | NOT NULL, Default: `'pending_review'` |
 | `xero_bill_id` | `DataTypes.STRING(255)` | allowNull: true |
 | `rejection_reason` | `DataTypes.TEXT` | allowNull: true |
@@ -146,9 +221,65 @@ VendorInvoice.init({
     type: DataTypes.DATEONLY,
     allowNull: true,
   },
+  due_date: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+  },
   pdf_url: {
     type: DataTypes.STRING(512),
     allowNull: false,
+  },
+  inbound_email_id: {
+    type: DataTypes.STRING(512),
+    allowNull: true,
+  },
+  currency_code: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: 'SGD',
+  },
+  supplier_gst_registration_no: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+  },
+  gst_treatment: {
+    type: DataTypes.STRING(30),
+    allowNull: false,
+    defaultValue: 'non_gst',
+    validate: { isIn: [['standard_rated', 'zero_rated', 'exempt', 'non_gst', 'disallowed']] },
+  },
+  gst_rate_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'gst_rates', key: 'id' },
+  },
+  gst_rate_percent: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: true,
+  },
+  gst_effective_date: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+  },
+  xero_tax_type: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+  },
+  xero_account_code: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+  },
+  subtotal_excluding_gst: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
+  gst_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
+  total_including_gst: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
   },
   extracted_total: {
     type: DataTypes.DECIMAL(10, 2),
@@ -176,6 +307,19 @@ VendorInvoice.init({
     allowNull: false,
     defaultValue: false,
   },
+  extraction_checks: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  },
+  extracted_items_sum: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
+  reconciliation_delta: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+  },
   status: {
     type: DataTypes.ENUM('pending_review', 'extraction_failed', 'approved', 'rejected', 'synced_to_xero', 'failed'),
     allowNull: false,
@@ -200,6 +344,7 @@ VendorInvoice.init({
   underscored: true,
   indexes: [
     { unique: true, fields: ['vendor_name', 'invoice_number'] },
+    { unique: true, fields: ['inbound_email_id'] },
   ],
 })
 ```

@@ -169,3 +169,33 @@
 - **A vendor invoice was rejected after initial approval (data correction):** Rejected invoices are excluded from the aggregation. The summary reflects only currently approved or synced invoices, so the figures always represent the committed expenditure.
 - **Doris notices an unusually high spend from a single vendor:** She clicks the vendor bar to drill down to individual invoices. From there she can see the invoice details but cannot take any AP action - AP actions are restricted to Chloe. Doris's view is read-only.
 - **The date range selected spans more than one financial year:** The system includes all invoices within the range regardless of year boundary. The trend chart adjusts its x-axis to accommodate the extended range.
+
+---
+
+## UC-08: Return a Memo for Correction and Resubmit (Wave 3)
+
+**Actor:** AR Specialist (Sarah) / Field Crew
+
+**Trigger:** Sarah reviews a submitted memo (UC-05's output) and finds a billing-relevant field is wrong, missing context, or inconsistent with the job as recorded, and the memo cannot be approved as-is.
+
+> **Implementation note:** This use case documents the return/resubmit loop added in Wave 3 (`backend/src/controllers/memoReviewController.js`, `PATCH /:id/return` and `PATCH /:id/resubmit`), built by Kwan Hua on top of the `service_memos` fields (`ar_note`, `returned_at`, `resubmitted_at`) this document's data model owns. It supersedes UC-05's edge case list by giving the "AR review" outcome mentioned there (approve or reject) an actual reject path with a documented correction loop, rather than leaving a flagged memo with no route forward.
+
+**Main Flow:**
+1. Sarah opens the AR memo review queue (`GET /pending-review`) and selects a `submitted` memo.
+2. She reviews the pricing-relevant fields (job times, overtime, surcharge toggles, patient/hospital fields, etc.) against the recorded job.
+3. She finds a field that needs correction before the memo can be approved and matched to an invoice.
+4. She clicks "Return" and enters a mandatory correction note describing what needs to be fixed.
+5. The system sets the memo's `status` to `returned`, records the note in `ar_note`, sets `reviewed_by` to Sarah, and sets `returned_at` to now. The memo leaves the AR review queue.
+6. The system queues an in-app notification for the field crew member who submitted the memo, referencing the correction note.
+7. The crew member opens Memo History, sees the returned memo with Sarah's note displayed, and edits the flagged field(s).
+8. The crew member resubmits the memo. The system applies only the corrected fields, sets `status` back to `submitted`, clears `ar_note` to `null`, and sets `resubmitted_at` to now (`returned_at` is kept as a permanent audit record that this memo was bounced at least once).
+9. The system queues an in-app notification for Sarah that the memo is back in her review queue.
+10. The memo reappears in Sarah's review queue (`GET /pending-review`), aged from `resubmitted_at` rather than the original submission time, so the correction turnaround time isn't counted against her SLA.
+11. Sarah reviews the corrected memo and either approves it (UC-03/Jasper's pricing match) or returns it again if it still isn't right.
+
+**Edge Cases / Alternative Flows:**
+- **The crew member resubmits without actually addressing the note:** The system does not validate that a resubmission differs from the previous submission or otherwise satisfies the note - `resubmit` accepts whatever corrected fields are sent. Sarah sees the memo again in her queue (flagged `was_returned: true`) and can return it a second time if the correction still isn't right. This is a process control, not a system-enforced one.
+- **The memo goes through multiple return cycles:** Each return overwrites `ar_note` and `returned_at` with the latest reason and timestamp; there is no history of prior correction notes kept on the memo record itself. `was_returned` and `resubmitted_at` only ever reflect the most recent cycle. If a full audit trail of every return/resubmit round is needed, it is not currently retained beyond the memo's `updated_at` timestamp.
+- **Sarah tries to return a memo that already has an invoice:** The system blocks the return with a `409 MEMO_ALREADY_INVOICED` error, whether or not that invoice has been approved or synced. Sarah must resolve the invoice first (adjust its line items, reject the match, or raise a Xero credit note if already synced) rather than the memo being sent back while its invoice still exists.
+- **The crew member is not the one who submitted the returned memo:** A field crew member can only resubmit their own memos - attempting to resubmit someone else's returned memo returns the same `404` as a nonexistent memo, so a crew member cannot enumerate other crew members' memo IDs. The Managing Director may resubmit on behalf of any crew member so a stuck memo is never permanently blocked if the original crew member is unavailable.
+- **Sarah tries to return a memo that isn't in `submitted` status** (e.g. already `returned`, `reviewed`, or `invoiced`): The system rejects the return with a `409` error naming the memo's actual current status, so Sarah isn't left guessing why the action failed.

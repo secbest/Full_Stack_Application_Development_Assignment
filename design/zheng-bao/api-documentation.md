@@ -15,7 +15,7 @@ Error responses always use the shape:
 
 1. [Intake Submissions](#1-intake-submissions)
 2. [Bookings](#2-bookings)
-3. [Booking Status - Cross-Team Endpoint](#3-booking-status---cross-team-endpoint)
+3. [Job Status Transitions - Cross-Team Endpoints](#3-job-status-transitions---cross-team-endpoints)
 4. [Notifications](#4-notifications)
 5. [Dev Auth Reference](#5-dev-auth-reference)
 
@@ -25,7 +25,7 @@ Error responses always use the shape:
 
 ### `POST /api/intake`
 
-**Purpose:** Customer submits a service request through the public intake portal (UC-01). Creates a new `intake_submissions` record with status `pending` and fires an in-app notification to Camilla (UC-09-A).
+**Purpose:** Customer submits a service request through the public intake portal (UC-01). Creates a new `intake_submissions` record with status `pending` and `service_tier` set to `null`, and fires an in-app notification to Camilla (UC-09-A).
 
 **Auth required:** No - this is a public endpoint. No JWT needed.
 
@@ -37,7 +37,6 @@ Error responses always use the shape:
   "contact_email": "john.tan@cgh.com.sg",
   "contact_phone": "91234567",
   "service_type": "eas",
-  "service_tier": "advanced",
   "preferred_date": "2026-07-05",
   "preferred_time": "14:30",
   "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
@@ -54,13 +53,14 @@ Error responses always use the shape:
 | `contact_email` | Required, valid email format |
 | `contact_phone` | Required, 8-digit Singapore number |
 | `service_type` | Required, one of `eas`, `mts`, `event_standby`, `workplace_standby` |
-| `service_tier` | Required, one of `basic`, `advanced`, `critical` |
 | `preferred_date` | Required, `YYYY-MM-DD`, must not be in the past |
 | `preferred_time` | Required, `HH:MM` format |
 | `pickup_location` | Required, non-empty string |
 | `destination` | Required, non-empty string |
 | `organisation` | Optional |
 | `additional_notes` | Optional |
+
+**Note:** The customer never submits `service_tier`. The backend hardcodes it to `null` on creation - Camilla (Quotations) assigns the tier later when confirming the intake (see `POST /api/intake/:id/confirm` below and UC-05).
 
 **Success response `201`:**
 ```json
@@ -114,7 +114,7 @@ Error responses always use the shape:
       "customer_name": "John Tan",
       "organisation": "Changi General Hospital",
       "service_type": "eas",
-      "service_tier": "advanced",
+      "service_tier": null,
       "preferred_date": "2026-07-05",
       "preferred_time": "14:30",
       "status": "pending",
@@ -155,7 +155,7 @@ Error responses always use the shape:
     "contact_email": "john.tan@cgh.com.sg",
     "contact_phone": "91234567",
     "service_type": "eas",
-    "service_tier": "advanced",
+    "service_tier": null,
     "preferred_date": "2026-07-05",
     "preferred_time": "14:30",
     "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
@@ -183,7 +183,7 @@ Error responses always use the shape:
 
 ### `POST /api/intake/:id/confirm`
 
-**Purpose:** Camilla confirms a valid intake submission, which creates a new `bookings` record linked to it (UC-03). Camilla may adjust `service_tier` before confirming (UC-05). The intake status updates to `confirmed`. A booking confirmation email is sent to the customer.
+**Purpose:** Camilla confirms a valid intake submission, which creates a new `bookings` record linked to it (UC-03). The customer never chose a `service_tier` at submission - Camilla assigns it here for the first time as part of confirmation (UC-05). The intake status updates to `confirmed`.
 
 **Auth required:** Yes
 
@@ -206,7 +206,7 @@ Error responses always use the shape:
 ```
 
 **Field notes:**
-- `service_tier` is required. If Camilla confirms without changing it, send the same value from the intake submission. The backend records the original value in `original_service_tier` when they differ.
+- `service_tier` is required. Since the intake submission itself never has a tier (it is `null` until this point), `service_tier` here is Camilla's first and only assignment of the tier, not an edit of a customer-selected value. `original_service_tier` on the resulting booking is only ever populated if `intake.service_tier` was non-null and differs from the confirmed value - in the current flow that means it stays `null` for submissions created through the public intake form.
 - `pricing_source` is required: `contract` resolves the active client contract rate, while `one_off_quote` freezes the explicitly agreed `quoted_base_amount`.
 - `quoted_transfer_type` and `quoted_time_of_day` are required and become the service combination AR checks against the completed memo.
 - `quoted_base_amount` is required and positive for `one_off_quote`; it is ignored for `contract` because the backend resolves the matching contract rate.
@@ -229,7 +229,7 @@ Error responses always use the shape:
       "client_id": 3,
       "service_type": "eas",
       "service_tier": "critical",
-      "original_service_tier": "advanced",
+      "original_service_tier": null,
       "scheduled_date": "2026-07-05",
       "scheduled_time": "14:30",
       "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
@@ -300,9 +300,9 @@ Error responses always use the shape:
 
 ---
 
-### `POST /api/intake/:id/reopen`
+### `DELETE /api/intake/:id`
 
-**Purpose:** Camilla reopens a rejected submission back to `pending` for re-review (UC-04 alternative flow). Only allowed if no booking has been created from this submission and the rejection is recent (within a configurable time window).
+**Purpose:** Camilla permanently removes a rejected intake submission that is no longer needed (e.g. clearing test data or a duplicate rejected entry). Only rejected submissions can be deleted - a `pending` submission is still awaiting a decision, and a `confirmed` submission already produced a linked `Booking`, so deleting either out from under the Intake Queue would destroy work in progress or leave a booking pointing at nothing.
 
 **Auth required:** Yes
 
@@ -315,11 +315,7 @@ Error responses always use the shape:
 {
   "data": {
     "id": 7,
-    "reference_number": "EFAR-2026-00007",
-    "status": "pending",
-    "rejection_reason": null,
-    "reviewed_by": null,
-    "reviewed_at": null
+    "reference_number": "EFAR-2026-00007"
   }
 }
 ```
@@ -329,9 +325,7 @@ Error responses always use the shape:
 | Status | Code | Condition |
 |--------|------|-----------|
 | `404` | `SUBMISSION_NOT_FOUND` | No intake submission with this id |
-| `409` | `NOT_REJECTED` | Submission is not in `rejected` status |
-| `409` | `REOPEN_WINDOW_EXPIRED` | Too much time has passed since rejection - Camilla must create a new intake manually |
-| `409` | `BOOKING_EXISTS` | A booking was already created from this submission - cannot reopen |
+| `409` | `INTAKE_NOT_REJECTED` | Submission is not in `rejected` status - only rejected submissions can be deleted |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
 | `403` | `FORBIDDEN` | Role not permitted |
 
@@ -400,13 +394,63 @@ Error responses always use the shape:
 
 ---
 
+### `GET /api/bookings/my-jobs`
+
+**Purpose:** Field Crew's "My Jobs" screen - returns only the authenticated crew member's own assigned bookings, with their recorded job milestones, so a crew member never needs to page through the full booking list to find their work.
+
+**Auth required:** Yes
+
+**Allowed roles:** `field_crew`, `managing_director`
+
+**Query params:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `date_filter` | string | No | One of `today`, `tomorrow`, `this_week`. Omit to return all upcoming jobs. |
+
+**Success response `200`:**
+```json
+{
+  "data": [
+    {
+      "id": 8,
+      "reference_number": "BKG-2026-00008",
+      "client": { "id": 3, "name": "Changi General Hospital" },
+      "service_type": "eas",
+      "service_tier": "critical",
+      "scheduled_date": "2026-07-05",
+      "scheduled_time": "14:30",
+      "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
+      "destination": "Singapore General Hospital, Outram Road, Singapore 169608",
+      "status": "confirmed",
+      "milestones": [
+        { "milestone_type": "activated", "recorded_at": "2026-07-05T14:32:00.000Z" }
+      ]
+    }
+  ]
+}
+```
+
+**Notes on response fields:**
+- `milestones` is sorted by the fixed job sequence (`activated` → `arrived_at_location` → `en_route` → `arrived_at_destination` → `job_completed`), not by database insertion order.
+- The query is scoped to `assigned_crew_id = req.user.sub` - there is no way for one crew member to list another's jobs through this endpoint.
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `401` | `UNAUTHORISED` | Missing or invalid JWT |
+| `403` | `FORBIDDEN` | Role not permitted |
+
+---
+
 ### `GET /api/bookings/:id`
 
 **Purpose:** Get the full detail of a single booking including linked intake, memo, and invoice references (UC-08).
 
 **Auth required:** Yes
 
-**Allowed roles:** `quotations_specialist`, `ar_specialist`, `managing_director`
+**Allowed roles:** `field_crew`, `ar_specialist`, `managing_director`. Note: `quotations_specialist` is **not** in this route's role list - Camilla does not have direct access to single-booking detail via this endpoint, only the list view (`GET /api/bookings`). `field_crew` is allowed, but scoped to their own assigned booking only - a crew member requesting another crew's booking id gets `403 FORBIDDEN`.
 
 **Success response `200`:**
 ```json
@@ -420,7 +464,7 @@ Error responses always use the shape:
     "client_name": "Changi General Hospital",
     "service_type": "eas",
     "service_tier": "critical",
-    "original_service_tier": "advanced",
+    "original_service_tier": null,
     "scheduled_date": "2026-07-05",
     "scheduled_time": "14:30",
     "pickup_location": "Changi General Hospital, 2 Simei Street 3, Singapore 529889",
@@ -495,41 +539,22 @@ Send `"assigned_crew_id": null` to remove the current assignment.
 
 ---
 
-## 3. Booking Status - Cross-Team Endpoint
+### `DELETE /api/bookings/:id`
 
-This endpoint is called by **Liang Yi's** field memo service and **Jasper's** invoice service to advance the booking status. Zheng Bao owns the `bookings` table, so all status updates must go through this endpoint rather than each teammate writing directly to the table.
-
-### `PATCH /api/bookings/:id/status`
-
-**Purpose:** Update a booking's `status`. The allowed transitions are enforced server-side to prevent invalid state changes.
+**Purpose:** Camilla removes a completed, fully-invoiced booking to clear it from the operational Bookings table. Only bookings in `invoiced` status can be deleted - by that stage Xero holds the master copy of the invoice, so deleting the local record just clears completed clutter. Deleting cascades to the booking's linked `ServiceMemo`, `Invoice` (and its `InvoiceLineItem`s), and `JobMilestone` rows. `XeroSyncLog` rows are deliberately left untouched, since they're the last local breadcrumb that a sync happened even after the booking/invoice/memo behind it is gone.
 
 **Auth required:** Yes
 
-**Allowed roles:** `quotations_specialist`, `ar_specialist`, `field_crew`
+**Allowed roles:** `quotations_specialist`
 
-**Allowed status transitions:**
-
-| From | To | Who |
-|------|----|-----|
-| `confirmed` | `in_progress` | `field_crew` (crew activates job on site) |
-| `in_progress` | `completed` | `field_crew` (crew submits field memo - Liang Yi's UC-05) |
-| `completed` | `invoiced` | `ar_specialist` (Jasper's system calls this after successful Xero sync - Jasper's UC-07) |
-| `confirmed` | `completed` | `quotations_specialist` (Camilla manually closes a booking e.g. cancelled job) |
-
-**Request body:**
-```json
-{ "status": "in_progress" }
-```
+**Request body:** None required.
 
 **Success response `200`:**
 ```json
 {
   "data": {
     "id": 8,
-    "reference_number": "BKG-2026-00008",
-    "previous_status": "confirmed",
-    "status": "in_progress",
-    "updated_at": "2026-07-05T14:35:00.000Z"
+    "reference_number": "BKG-2026-00008"
   }
 }
 ```
@@ -538,18 +563,122 @@ This endpoint is called by **Liang Yi's** field memo service and **Jasper's** in
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| `400` | `VALIDATION_ERROR` | `status` value is missing or not a valid ENUM |
 | `404` | `BOOKING_NOT_FOUND` | No booking with this id |
-| `409` | `INVALID_TRANSITION` | The requested `status` is not a valid transition from the current status; response includes `current_status` and the list of valid next statuses |
-| `409` | `ALREADY_INVOICED` | Booking is already `invoiced` - terminal state, no further transitions allowed |
+| `409` | `BOOKING_NOT_INVOICED` | Booking is not in `invoiced` status - only invoiced bookings can be deleted |
 | `401` | `UNAUTHORISED` | Missing or invalid JWT |
-| `403` | `FORBIDDEN` | Caller's role is not permitted to make this specific transition (e.g. `field_crew` cannot set `invoiced`) |
+| `403` | `FORBIDDEN` | Role not permitted |
+
+---
+
+## 3. Job Status Transitions - Cross-Team Endpoints
+
+There is no generic `PATCH /api/bookings/:id/status` endpoint. Instead, two purpose-built endpoints drive a booking's status forward or send it back for reassignment. Zheng Bao owns the `bookings` table, but both endpoints are implemented and called by **Jasper's** field ops work (client feedback item 1: live job milestones).
+
+### `POST /api/bookings/:id/milestone`
+
+**Purpose:** Field Crew taps a button as each job stage happens on site, and the server timestamps it server-side (the tap IS the event - no client-supplied timestamp is accepted). Recording the `activated` milestone is also the real "start job" trigger: it moves a `confirmed` booking to `in_progress`. This replaces end-of-day hand-typed times, which were a source of pricing errors and revenue leakage.
+
+**Auth required:** Yes
+
+**Allowed roles:** `field_crew`, `managing_director`. `field_crew` is scoped to their own assigned booking - "booking doesn't exist" and "not this crew member's job" are deliberately returned as the same `404` so booking ids can't be probed.
+
+**Milestone sequence (enforced server-side, in order):** `activated` → `arrived_at_location` → `en_route` → `arrived_at_destination` → `job_completed`
+
+**Request body:**
+```json
+{ "milestone_type": "activated" }
+```
+
+**Success response `201`:**
+```json
+{
+  "data": {
+    "booking_id": 8,
+    "status": "in_progress",
+    "milestones": [
+      { "milestone_type": "activated", "recorded_at": "2026-07-05T14:32:00.000Z" }
+    ]
+  }
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `400` | `VALIDATION_ERROR` | `milestone_type` is missing or not a valid ENUM, or `:id` is not a valid positive integer |
+| `404` | `BOOKING_NOT_FOUND` | No booking with this id, or it is not assigned to the requesting crew member |
+| `409` | `BOOKING_ALREADY_COMPLETED` | The booking is not `confirmed` or `in_progress` - milestones can no longer be recorded |
+| `409` | `MILESTONE_ALREADY_RECORDED` | This `milestone_type` was already recorded for this job |
+| `409` | `MILESTONE_OUT_OF_ORDER` | An earlier milestone in the sequence has not been recorded yet; message names which one to record first |
+| `401` | `UNAUTHORISED` | Missing or invalid JWT |
+| `403` | `FORBIDDEN` | Role not permitted |
+
+---
+
+### `POST /api/bookings/:id/reject`
+
+**Purpose:** Field Crew declines a job (current or upcoming) they were assigned to. Sends it back to Quotations for reassignment rather than leaving it stuck on a crew member who can't do it - unassigns the crew, resets `status` back to `confirmed`, appends a timestamped rejection note, wipes any milestones already recorded (so the next crew starts from a clean slate), and notifies all Quotations Specialists.
+
+**Auth required:** Yes
+
+**Allowed roles:** `field_crew`, `managing_director`. Same own-booking-only scoping and blurred `404` as `POST /api/bookings/:id/milestone`.
+
+**Request body:**
+```json
+{ "reason": "Vehicle broke down en route to pickup." }
+```
+
+**Success response `200`:**
+```json
+{
+  "data": {
+    "id": 8,
+    "reference_number": "BKG-2026-00008",
+    "status": "confirmed",
+    "assigned_crew_id": null
+  }
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `400` | `VALIDATION_ERROR` | `reason` is missing or empty, or `:id` is not a valid positive integer |
+| `404` | `BOOKING_NOT_FOUND` | No booking with this id, or it is not assigned to the requesting crew member |
+| `409` | `BOOKING_ALREADY_COMPLETED` | The booking is not `confirmed` or `in_progress` - it can no longer be rejected |
+| `401` | `UNAUTHORISED` | Missing or invalid JWT |
+| `403` | `FORBIDDEN` | Role not permitted |
 
 ---
 
 ## 4. Notifications
 
 Notifications are created internally by the backend when trigger events occur (new intake submission, memo submitted, etc.). These endpoints allow the frontend to fetch and manage a user's notification list.
+
+### `GET /api/notifications/unread-count`
+
+**Purpose:** Lightweight count-only endpoint for the nav bell badge, so the frontend doesn't need to fetch and count the full notification list just to render a badge number.
+
+**Auth required:** Yes
+
+**Allowed roles:** All authenticated roles. No role check beyond authentication - the count is always scoped to the requesting user's own notifications (`user_id = req.user.sub`), so there is no way to read another user's count.
+
+**Success response `200`:**
+```json
+{
+  "data": { "count": 3 }
+}
+```
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `401` | `UNAUTHORISED` | Missing or invalid JWT |
+
+---
 
 ### `GET /api/notifications`
 
@@ -712,7 +841,7 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjUsIm5hbWUiOiJDYW1pbGxhIE5nIiwiZW1
 
 #### AR Specialist - Sarah Tan (`sub: 1`)
 
-Use this to test `GET /api/bookings` and `GET /api/bookings/:id` (read-only access for AR), and to test the `PATCH /api/bookings/:id/status` `completed → invoiced` transition.
+Use this to test `GET /api/bookings` and `GET /api/bookings/:id` (read-only access for AR).
 
 ```
 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsIm5hbWUiOiJTYXJhaCBUYW4iLCJlbWFpbCI6InNhcmFoQGVmYXIuc2ciLCJyb2xlIjoiYXJfc3BlY2lhbGlzdCIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.ESzmUh8-f6nRvC0MH0c3t13hSEfeapsAYD4ResqL4pM
@@ -736,7 +865,7 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQsIm5hbWUiOiJDaGxvZSBMaW0iLCJlbWF
 
 #### Field Crew - Ravi Kumar (`sub: 3`)
 
-Use this to test the `PATCH /api/bookings/:id/status` transitions (`confirmed → in_progress`, `in_progress → completed`) and the `GET /api/notifications` endpoint.
+Use this to test `GET /api/bookings/my-jobs`, `POST /api/bookings/:id/milestone` (crew-recorded job stage transitions, including the `activated` milestone that moves a booking from `confirmed` to `in_progress`), `POST /api/bookings/:id/reject`, and the `GET /api/notifications` endpoint.
 
 ```
 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsIm5hbWUiOiJSYXZpIEt1bWFyIiwiZW1haWwiOiJyYXZpQGVmYXIuc2ciLCJyb2xlIjoiZmllbGRfY3JldyIsImlhdCI6MTc4MjExNDQyNSwiZXhwIjoxODEzNjUwNDI1fQ.9Ot7uSJ_sLL-pGT_yaVkQwBGyVZkhmVjAQr7o6Nqx7g
@@ -746,18 +875,22 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsIm5hbWUiOiJSYXZpIEt1bWFyIiwiZW1
 
 ### Role Access Matrix
 
-| Endpoint | `quotations_specialist` | `ar_specialist` | `managing_director` | `ap_specialist` | No auth |
-|----------|:-:|:-:|:-:|:-:|:-:|
-| `POST /api/intake` | - | - | - | - | Yes (public) |
-| `GET /api/intake` | Yes | - | - | - | - |
-| `GET /api/intake/:id` | Yes | - | - | - | - |
-| `POST /api/intake/:id/confirm` | Yes | - | - | - | - |
-| `POST /api/intake/:id/reject` | Yes | - | - | - | - |
-| `POST /api/intake/:id/reopen` | Yes | - | - | - | - |
-| `GET /api/bookings` | Yes | Yes | Yes | - | - |
-| `GET /api/bookings/:id` | Yes | Yes | Yes | - | - |
-| `PATCH /api/bookings/:id/crew` | Yes | - | - | - | - |
-| `PATCH /api/bookings/:id/status` | Yes | Yes | - | - | - |
-| `GET /api/notifications` | Yes | Yes | Yes | Yes | - |
-| `PATCH /api/notifications/:id/read` | Yes | Yes | Yes | Yes | - |
-| `PATCH /api/notifications/read-all` | Yes | Yes | Yes | Yes | - |
+| Endpoint | `quotations_specialist` | `ar_specialist` | `managing_director` | `ap_specialist` | `field_crew` | No auth |
+|----------|:-:|:-:|:-:|:-:|:-:|:-:|
+| `POST /api/intake` | - | - | - | - | - | Yes (public) |
+| `GET /api/intake` | Yes | - | - | - | - | - |
+| `GET /api/intake/:id` | Yes | - | - | - | - | - |
+| `POST /api/intake/:id/confirm` | Yes | - | - | - | - | - |
+| `POST /api/intake/:id/reject` | Yes | - | - | - | - | - |
+| `DELETE /api/intake/:id` | Yes | - | - | - | - | - |
+| `GET /api/bookings` | Yes | Yes | Yes | - | - | - |
+| `GET /api/bookings/my-jobs` | - | - | Yes | - | Yes | - |
+| `GET /api/bookings/:id` | - | Yes | Yes | - | Yes (own booking only) | - |
+| `PATCH /api/bookings/:id/crew` | Yes | - | - | - | - | - |
+| `DELETE /api/bookings/:id` | Yes | - | - | - | - | - |
+| `POST /api/bookings/:id/milestone` | - | - | Yes | - | Yes (own booking only) | - |
+| `POST /api/bookings/:id/reject` | - | - | Yes | - | Yes (own booking only) | - |
+| `GET /api/notifications/unread-count` | Yes | Yes | Yes | Yes | Yes | - |
+| `GET /api/notifications` | Yes | Yes | Yes | Yes | Yes | - |
+| `PATCH /api/notifications/:id/read` | Yes | Yes | Yes | Yes | Yes | - |
+| `PATCH /api/notifications/read-all` | Yes | Yes | Yes | Yes | Yes | - |

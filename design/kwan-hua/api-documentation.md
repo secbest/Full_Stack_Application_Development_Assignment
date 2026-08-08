@@ -34,6 +34,12 @@ Authorization: Bearer <token>
 | 13 | GET | `/api/xero/sync-logs` | UC-08 | Yes |
 | 14 | POST | `/api/xero/sync-logs/:id/retry` | UC-08 | Yes |
 | 15 | GET | `/api/dashboard/revenue-leakage` | UC-09 | Yes |
+| 16 | GET | `/api/gmail/status` | AP automatic intake | Yes |
+| 17 | GET | `/api/gmail/connect` | AP automatic intake | Yes |
+| 18 | GET | `/api/gmail/callback` | AP automatic intake | No |
+| 19 | POST | `/api/gmail/import` | AP automatic intake | Yes |
+
+> Endpoints 5A/5B accept a PDF pushed by a mail-forwarding rule directly. In practice, automatic AP intake runs through Gmail OAuth instead (endpoints 16-19 below): the platform polls a connected Gmail inbox for labelled messages and calls the same `receiveInboundEmail` handler internally for each PDF attachment it finds, so 5A/5B remain available as a generic webhook path but are not the mechanism actually wired up for AP intake.
 
 ---
 
@@ -885,6 +891,133 @@ The default seeded contract prices every surcharge, so the report is correctly e
 `npm run db:seed:leakage` creates a client on a contract deliberately missing three
 surcharge rates, plus three booking -> memo -> invoice chains that recorded exactly those
 charges. Included in `npm run db:setup`.
+
+---
+
+## 16. GET `/api/gmail/status`
+
+**Purpose:** Returns whether a Gmail inbox is currently connected for automatic AP invoice intake, which inbox it is, the label names the import job reads/writes, and whether the OAuth client is configured in the environment at all. Used to render the Gmail connection card on the Xero Integration Settings screen.
+
+**Auth required:** Yes - roles: `ap_specialist`, `managing_director`
+
+**Query params:** None
+
+**Success response `200 OK`:**
+```json
+{
+  "is_connected": true,
+  "gmail_address": "efar.ap.intake@gmail.com",
+  "intake_label": "EFAR AP Invoices",
+  "processed_label": "EFAR AP Processed",
+  "configured": true
+}
+```
+
+When no inbox has been connected yet, `is_connected` is `false` and `gmail_address` falls back to `process.env.GOOGLE_GMAIL_INBOX` (or `null` if that is also unset).
+
+**Error responses:**
+
+| Status | Code | Message |
+|--------|------|---------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role not permitted to view Gmail connection status |
+| 500 | `INTERNAL_ERROR` | Unexpected server error while reading the Gmail connection |
+
+---
+
+## 17. GET `/api/gmail/connect`
+
+**Purpose:** Initiates the Gmail OAuth2 authorisation flow. Returns the Google authorisation URL (requesting the `gmail.modify` scope, `access_type=offline`, `prompt=consent` so a refresh token is always issued) for the frontend to redirect the user to. A single-use CSRF `state` token is generated and held in memory for 10 minutes.
+
+**Auth required:** Yes - roles: `managing_director`
+
+**Query params:** None
+
+**Success response `200 OK`:**
+```json
+{
+  "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Flocalhost%3A5000%2Fapi%2Fgmail%2Fcallback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.modify&access_type=offline&prompt=consent&state=6f1c...a92e"
+}
+```
+
+**Error responses:**
+
+| Status | Code | Message |
+|--------|------|---------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Only the Managing Director can connect the Gmail inbox |
+| 500 | `GMAIL_CONFIG_MISSING` | Google Gmail OAuth is not configured (missing `GOOGLE_GMAIL_CLIENT_ID`, `GOOGLE_GMAIL_CLIENT_SECRET`, or `GOOGLE_GMAIL_REDIRECT_URI`) |
+| 500 | `INTERNAL_ERROR` | Unexpected server error while building the authorisation URL |
+
+---
+
+## 18. GET `/api/gmail/callback`
+
+**Purpose:** Handles the Google OAuth2 redirect after the admin approves Gmail access. Exchanges the authorisation code for tokens, reads the connected Gmail profile, deactivates any previously-connected inbox, and creates or updates the `gmail_connections` row with the encrypted refresh token. Always responds with a redirect back to the frontend - never a JSON body.
+
+**Auth required:** No - this endpoint is called by Google's redirect, not by a logged-in session. CSRF protection is provided by the one-time `state` token issued in `GET /api/gmail/connect`.
+
+**Query params:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | Yes (unless `error` is present) | Authorisation code from Google |
+| `state` | string | Yes | CSRF state token issued by `GET /api/gmail/connect` |
+| `error` | string | No | Present if the admin denied permissions |
+
+**Success response `302 Found`:**
+Redirects to `${FRONTEND_URL}/vendor-invoices?gmail_connected=true`
+
+**Error responses (all redirect to `${FRONTEND_URL}/vendor-invoices?...`):**
+
+| Scenario | Redirect target |
+|----------|----------------|
+| Admin denied permissions (`error` query param present) | `?gmail_error=access_denied` |
+| `state` missing, unknown, or expired (10-minute window) | `?gmail_error=invalid_state` |
+| `code` missing from the query string | `?gmail_error=missing_code` |
+| Token exchange failed, Google did not return a refresh token (app needs to be removed from the Google Account and reconnected), or any other unexpected error | `?gmail_error=token_exchange_failed` |
+
+---
+
+## 19. POST `/api/gmail/import`
+
+**Purpose:** Manually triggers the same import used by the background Gmail poll. For the currently-connected inbox, it finds (or creates) the `EFAR AP Invoices` and `EFAR AP Processed` Gmail labels, lists messages under the intake label with a PDF attachment that are not yet marked processed, and for each candidate message internally calls the `POST /api/vendor-invoices/inbound-email` handler with the message's PDF attachments (using `gmail:<messageId>` as the idempotency key stored in `vendor_invoices.inbound_email_id`). Messages that import without a failed attachment are then tagged with the processed label so they are not imported twice.
+
+**Auth required:** Yes - roles: `ap_specialist`, `managing_director`
+
+**Request body:** None
+
+**Success response `200 OK` - Gmail connected:**
+```json
+{
+  "connected": true,
+  "inbox": "efar.ap.intake@gmail.com",
+  "imported": [
+    {
+      "gmail_message_id": "18f2a9c0b3d4e5f6",
+      "imported": true,
+      "result": { "received": [{ "status": "created", "vendor_invoice_id": 51 }] }
+    }
+  ]
+}
+```
+
+**Success response `200 OK` - Gmail not connected:**
+```json
+{
+  "connected": false,
+  "imported": [],
+  "message": "Gmail is not connected."
+}
+```
+
+**Error responses:**
+
+| Status | Code | Message |
+|--------|------|---------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role not permitted to trigger a Gmail import |
+| 502 | `GMAIL_IMPORT_FAILED` | The Gmail API request failed (token refresh, label lookup, message fetch, or attachment download) |
 
 ---
 

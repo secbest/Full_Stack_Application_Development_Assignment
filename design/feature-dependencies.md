@@ -174,3 +174,16 @@ Liang Yi and Jasper will both call this endpoint. Zheng Bao must have it working
 
 **4. JWT dev secret**
 All members use `DEV_JWT_SECRET=dev-secret-efar-2026` in their local `.env` file. Pre-signed tokens for all roles are in `design/jasper/api-documentation.md` - use those for all Postman/curl testing so tokens work across everyone's local setup without re-running `jwt.sign`.
+
+---
+
+## Wave 5 Additions (post-2026-07-09)
+
+Two features landed after this map was frozen. Neither changes the build order above; both slot in as extensions of already-mapped dependencies.
+
+| Feature | Depends On | Type | Notes |
+|---------|-----------|------|-------|
+| Gmail automatic AP invoice intake (`gmailService.js`, `GmailConnection` model) | Existing vendor-invoice upload + OCR pipeline (`vendor_invoices`, `ocrService.js`, Gemini extraction) | Service | Polls a connected Gmail inbox on an interval and feeds attachments into the same OCR path manual uploads already use - no new pipeline, just a second entry point into it. |
+| Live Fleet Tracker (`FleetMap.jsx`, `FleetTrackerPage.jsx`, `geocodingService.js`, `GeocodedLocation` model) | Existing `bookings` table and the executive dashboard's fleet-overview data | Feature | Reuses booking pickup/destination + status data already aggregated for the dashboard; adds a geocoding cache layer so repeated addresses aren't re-queried against the Google Geocoding API. |
+
+Both were added as read/service extensions on top of already-frozen tables (`vendor_invoices`, `bookings`) rather than new cross-team contracts, so no new "Flags for Team Discussion" entries were required.

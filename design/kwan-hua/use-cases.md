@@ -173,3 +173,28 @@
 - **The same invoice has failed 3 or more times:** The system disables the individual retry button and shows a "Contact Support" message alongside the Xero error detail, indicating a likely configuration issue rather than a transient error.
 - **User attempts to retry a sync while Xero authentication is invalid:** The system detects the invalid token before attempting the retry and redirects the admin to re-authenticate (UC-01) rather than logging another failed attempt.
 - **All failed entries belong to the same root cause (e.g. expired token):** The system groups them and displays a single "Reconnect Xero" prompt rather than surfacing individual retries, preventing Chloe from retrying 20 invoices one by one before realising the token is the problem.
+
+---
+
+## UC-10: Automatic Vendor Invoice Intake via Gmail
+
+**Actor:** System (background/manual poll), Managing Director (Doris, one-time connect), AP Specialist (Chloe, reviews the resulting drafts)
+
+**Trigger:** A vendor emails a PDF invoice to the EFAR AP intake inbox instead of it being uploaded by hand, and the Gmail connection has already been established.
+
+**Main Flow:**
+1. (One-time setup) Doris opens the Xero Integration Settings screen and clicks "Connect Gmail". The system calls `GET /api/gmail/connect`, which returns a Google OAuth2 authorisation URL requesting the `gmail.modify` scope with `access_type=offline` and `prompt=consent` so a refresh token is always issued, and generates a short-lived CSRF `state` token.
+2. Doris signs in to the Gmail account used for AP intake and approves access. Google redirects to `GET /api/gmail/callback` with an authorisation code and the `state` token.
+3. The system validates `state`, exchanges the code for tokens, reads the connected mailbox's address, deactivates any previously-connected inbox, and stores the encrypted refresh token in `gmail_connections` with `is_connected = true`. The browser is redirected back to `/vendor-invoices?gmail_connected=true`.
+4. Whenever an import runs - either an operator clicking "Import now" (`POST /api/gmail/import`) or a scheduled poll calling the same code path - the system finds (or creates) the `EFAR AP Invoices` and `EFAR AP Processed` Gmail labels, then lists messages under the intake label that have a PDF attachment and are not yet tagged with the processed label.
+5. For each candidate message, the system fetches the full message, extracts every PDF attachment, and internally invokes the same handler used by `POST /api/vendor-invoices/inbound-email`, passing `gmail:<messageId>` as the idempotency key stored on `vendor_invoices.inbound_email_id`.
+6. For each PDF that creates a new `vendor_invoices` row, the normal OCR pipeline (UC-04) and rebate/GST calculation (UC-05) run exactly as for a manual upload, leaving the invoice at `pending_review` in Chloe's AP review queue.
+7. If none of the attachments from a message failed to import, the system labels that Gmail message as processed so it is not imported again on the next poll.
+
+**Edge Cases / Alternative Flows:**
+- **Gmail is not connected when an import is triggered:** `POST /api/gmail/import` returns `{ connected: false, imported: [], message: "Gmail is not connected." }` without error; the AP review queue is simply not updated until Doris completes UC-10 step 1-3.
+- **Google denies the OAuth request, the CSRF `state` is missing/expired, or no authorisation code is returned:** `GET /api/gmail/callback` redirects to `/vendor-invoices` with `gmail_error=access_denied`, `gmail_error=invalid_state`, or `gmail_error=missing_code` respectively, and no `gmail_connections` row is written or changed.
+- **Google approves the connection but does not return a refresh token (the app was already authorised once before):** The callback treats this as a failure and redirects with `gmail_error=token_exchange_failed`; Doris must remove EFAR's access from her Google Account's third-party app list and reconnect so Google issues a fresh refresh token.
+- **A labelled email has no PDF attachment:** The message is skipped (not imported, not marked processed) so it can still be inspected manually; it is not treated as an error.
+- **The inbound handler fails for one attachment in a message with several:** The message is not marked processed, so the next import re-attempts all of its attachments; `vendor_invoices.inbound_email_id`'s unique index means any attachment that already succeeded is not re-created, only the failed one is retried.
+- **The Gmail API call itself fails (expired refresh token, network error, Gmail quota):** `POST /api/gmail/import` returns `502 GMAIL_IMPORT_FAILED` and no messages are marked processed, so the next successful poll retries the same batch.

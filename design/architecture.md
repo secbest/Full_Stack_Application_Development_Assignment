@@ -52,6 +52,10 @@
 | Cloudinary | Image and file storage (service memo hospital stamp photos, vendor PDF uploads) |
 | Google Gemini API | OCR and structured data extraction from vendor PDF invoices |
 | Xero API | Master financial ledger - draft invoice push, bank feed ingestion, GL mapping |
+| Gmail API (Google OAuth) | Automatic AP invoice intake - polls a connected Gmail inbox for vendor emails and imports PDF attachments for OCR |
+| Google Geocoding / Maps API | Resolves booking pickup/destination addresses to coordinates for the live Fleet Tracker map |
+
+Gmail-based AP invoice intake is a real integrated feature, not a stub: once an AP Specialist connects an inbox (OAuth2, `gmailService.js`, `GmailConnection` model), the backend polls it on an interval (`GMAIL_INTAKE_POLL_MS`) and automatically pulls PDF attachments from labeled vendor emails into the same OCR/Gemini extraction pipeline used for manual uploads, removing the need to forward or manually attach vendor invoices.
 
 ---
 
@@ -72,13 +76,18 @@ src/
 │   ├── memos/       # Digital field memo form, signature capture, stamp upload (Field Crew)
 │   ├── invoices/    # Matched invoice review, surcharge adjustment, batch approval (AR Specialist)
 │   ├── vendor/      # Vendor PDF upload, OCR review, rebate check, AP approval (AP Specialist)
-│   └── dashboard/   # Fleet overview, AR batch status, overhead cost summary (Managing Director)
+│   ├── jobs/        # Field crew My Jobs list and memo wizard steps (memo-wizard/ subfolder)
+│   ├── settings/    # Account/integration settings page (Xero, Gmail connection status)
+│   └── dashboard/   # Fleet overview + live Fleet Tracker map, AR batch status, overhead cost summary (Managing Director)
 ├── api/             # Axios instance config and per-resource API call functions
 ├── context/         # React context providers - AuthContext for session and current user
 ├── hooks/           # Custom React hooks - useAuth, data-fetching hooks per resource
 ├── schemas/         # Yup validation schemas shared across Formik forms
-└── lib/             # Utility functions - cn() helper for shadcn/ui, date and currency formatters
+├── validation/      # Additional Yup validation schemas (contract, intake, service memo, user forms)
+└── lib/             # Utility functions - cn() helper for shadcn/ui, date/currency formatters, googleMaps.js (Google Maps JS API loader for the fleet tracker)
 ```
+
+Fleet tracker components: `src/components/FleetMap.jsx` (Google Map render of active job locations) and `src/pages/dashboard/FleetTrackerPage.jsx` (Managing Director route wrapping the map) work together with `src/lib/googleMaps.js` and the backend's `geocodingService.js`/`GeocodedLocation` cache to plot bookings in progress in near real time.
 
 ### backend/src
 
@@ -91,10 +100,20 @@ src/
 ├── routes/          # Express routers - maps URL paths to controller functions only
 ├── controllers/     # Request handlers - parse req, call services, return res
 ├── services/        # Pure business logic with no req/res dependency
-│   │                #   pricingService.js  - pricing match engine
-│   │                #   ocrService.js      - Gemini API extraction
-│   │                #   xeroService.js     - Xero OAuth and sync
-│   │                #   cloudinaryService.js - file upload and URL handling
+│   │                #   activeContractService.js    - resolves the active pricing contract for a client on a given date
+│   │                #   apInvoiceService.js          - AP vendor-invoice review/approve/reject workflow logic
+│   │                #   clientResolutionService.js   - matches intake/booking data to an existing client or creates one
+│   │                #   cloudinaryService.js         - file upload and URL handling
+│   │                #   geocodingService.js          - Google Geocoding API lookups, backed by the geocoded_locations cache
+│   │                #   gmailService.js              - Gmail OAuth connection and automatic vendor-invoice email intake
+│   │                #   gstService.js                - resolves the effective Singapore GST rate for a given date
+│   │                #   leakageService.js            - revenue leakage detection/aggregation for the executive dashboard
+│   │                #   notificationService.js       - creates in-app notifications for users
+│   │                #   ocrService.js                - Gemini API extraction
+│   │                #   pricingService.js            - pricing match engine
+│   │                #   surchargeScheduleService.js  - surcharge schedule lookups for a pricing contract
+│   │                #   vendorInvoiceAuditService.js - writes append-only audit trail rows for vendor invoice changes
+│   │                #   xeroService.js               - Xero OAuth and sync
 ├── middleware/      # authenticate.js (JWT verify), requireRole.js (RBAC guard), errorHandler.js
 ├── validators/      # Yup schemas for validating incoming request bodies
 └── utils/           # Shared helpers - apiResponse.js (standard response shape), tokenUtils.js
@@ -150,7 +169,8 @@ Used in the AP vendor invoice processing workflow to eliminate manual data entry
 ```
 VITE_API_BASE_URL=        # Deployed Render backend URL
 VITE_CLOUDINARY_CLOUD_NAME=
-VITE_GOOGLE_MAPS_API_KEY= # Browser-restricted key for customer location autocomplete
+VITE_GEMINI_API_KEY=      # Present in the frontend env template; not currently referenced by frontend code
+VITE_GOOGLE_MAPS_API_KEY= # Browser-restricted key for customer location autocomplete and the fleet tracker map
 ```
 
 **Backend (`backend/.env`)**
@@ -162,10 +182,16 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 GEMINI_API_KEY=
+GOOGLE_GEOCODING_API_KEY= # Server-side Geocoding API key for the fleet tracker (separate from the browser-restricted Maps key)
 XERO_CLIENT_ID=
 XERO_CLIENT_SECRET=
 XERO_REDIRECT_URI=        # OAuth2 callback URL (e.g. http://localhost:5000/api/xero/callback)
 XERO_ENCRYPTION_KEY=      # 32-byte hex key for AES-256-GCM encryption of stored Xero tokens
+GOOGLE_GMAIL_CLIENT_ID=          # Google Cloud OAuth web-client ID used to connect an AP inbox
+GOOGLE_GMAIL_CLIENT_SECRET=      # Google Cloud OAuth web-client secret paired with the above
+GOOGLE_GMAIL_REDIRECT_URI=       # OAuth callback URL, e.g. http://localhost:3000/api/gmail/callback
+GOOGLE_GMAIL_INBOX=              # Display-only expected inbox address shown in the UI
+GMAIL_INTAKE_POLL_MS=            # How often the server polls the connected Gmail inbox (default 5 min, min 1 min)
 JWT_SECRET=               # Production JWT signing secret
 DEV_JWT_SECRET=dev-secret-efar-2026  # Shared dev secret - all teammates use this value
 PORT=

@@ -48,8 +48,8 @@ The pricing engine fields (`service_type` through `is_jurong_island`) are requir
 | `job_end_time` | `DataTypes.DATE` | NOT NULL |
 | `overtime_hours` | `DataTypes.DECIMAL(5, 2)` | NOT NULL, Default: `0.00` |
 | `evacuation_floors` | `DataTypes.INTEGER` | NOT NULL, Default: `0` |
-| `patient_name` | `DataTypes.STRING(255)` | NOT NULL |
-| `hospital_destination` | `DataTypes.STRING(255)` | NOT NULL |
+| `patient_name` | `DataTypes.STRING(255)` | allowNull: true (see note below) |
+| `hospital_destination` | `DataTypes.STRING(255)` | allowNull: true (see note below) |
 | `additional_charges_notes` | `DataTypes.TEXT` | allowNull: true |
 | `hospital_stamp_image_url` | `DataTypes.STRING(512)` | allowNull: true |
 | `service_type` | `DataTypes.ENUM('eas', 'mts', 'event_standby', 'workplace_standby')` | NOT NULL |
@@ -63,9 +63,16 @@ The pricing engine fields (`service_type` through `is_jurong_island`) are requir
 | `waiting_time_minutes` | `DataTypes.INTEGER` | NOT NULL, Default: `0` |
 | `patient_weight_kg` | `DataTypes.DECIMAL(5, 1)` | allowNull: true |
 | `is_jurong_island` | `DataTypes.BOOLEAN` | NOT NULL, Default: `false` |
-| `status` | `DataTypes.ENUM('submitted', 'reviewed', 'invoiced')` | NOT NULL, Default: `'submitted'` |
+| `status` | `DataTypes.ENUM('submitted', 'returned', 'reviewed', 'invoiced')` | NOT NULL, Default: `'submitted'` |
+| `returned_at` | `DataTypes.DATE` | allowNull: true |
+| `resubmitted_at` | `DataTypes.DATE` | allowNull: true |
+| `ar_note` | `DataTypes.TEXT` | allowNull: true |
 | `created_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
 | `updated_at` | `DataTypes.DATE` | Auto-managed by Sequelize |
+
+> **Nullability note (client feedback item 4, 2026-07-17):** `patient_name` and `hospital_destination` were originally always-required, but manpower-only `event_standby`/`workplace_standby` jobs have no ambulance run and no patient. Both columns are `allowNull: true` at the database layer; the conditional requirement (mandatory only when `service_type` is `eas` or `mts`) is enforced at the application layer in `backend/src/validators/serviceMemoValidators.js` (`requiredForAmbulanceOnly`), not via a DB constraint. A standby job that does have a patient (e.g. an event casualty) may still supply a value - the fields are optional for standby types, not disallowed.
+>
+> **AR review loop fields (Wave 3 - UC-08):** `returned_at`, `resubmitted_at`, and `ar_note` are written only by the AR review endpoints (`PATCH /:id/return`, `PATCH /:id/resubmit` in `memoReviewController.js`, owned by Kwan Hua). `ar_note` holds the correction note while a memo's `status` is `returned`, and is cleared back to `null` on resubmission. `returned_at` is retained permanently once set, as the audit record that the memo was bounced at least once, even after resubmission.
 
 ### Pricing Engine Field Notes (Cross-Team Dependency - Jasper)
 
@@ -130,11 +137,11 @@ ServiceMemo.init({
   },
   patient_name: {
     type: DataTypes.STRING(255),
-    allowNull: false,
+    allowNull: true, // required only for eas/mts - enforced in validators, not the DB column
   },
   hospital_destination: {
     type: DataTypes.STRING(255),
-    allowNull: false,
+    allowNull: true, // required only for eas/mts - enforced in validators, not the DB column
   },
   additional_charges_notes: {
     type: DataTypes.TEXT,
@@ -199,9 +206,21 @@ ServiceMemo.init({
     defaultValue: false,
   },
   status: {
-    type: DataTypes.ENUM('submitted', 'reviewed', 'invoiced'),
+    type: DataTypes.ENUM('submitted', 'returned', 'reviewed', 'invoiced'),
     allowNull: false,
     defaultValue: 'submitted',
+  },
+  returned_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  resubmitted_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  ar_note: {
+    type: DataTypes.TEXT,
+    allowNull: true,
   },
 }, { sequelize, modelName: 'ServiceMemo', tableName: 'service_memos', underscored: true })
 ```
@@ -287,11 +306,15 @@ MemoSignature.belongsTo(ServiceMemo, { foreignKey: 'memo_id' })
 
 ```
 submitted ──► reviewed ──► invoiced
+    ▲  │
+    │  ▼ (AR returns for correction)
+ returned ── (crew resubmits) ──► submitted
 ```
 
-- `submitted` - set by the field crew on UC-05 final submission
-- `reviewed` - set by Sarah (AR Specialist) after validating the memo (Jasper's AR feature)
-- `invoiced` - set by Jasper's pricing engine after a matching invoice record is created
+- `submitted` - set by the field crew on UC-05 final submission, and again when a `returned` memo is corrected and resubmitted (UC-08)
+- `returned` - set by Sarah (AR Specialist) when a submitted memo needs correction before it can be reviewed (Wave 3, `PATCH /:id/return`). Deliberately a distinct state rather than a bounce straight back to `submitted`: a memo the AR Specialist sent back must leave her review queue until the crew has actually corrected it, otherwise it reappears indistinguishable from a fresh submission and gets reviewed again in a loop. `ar_note` holds the correction note while in this state; the crew's `PATCH /:id/resubmit` (Wave 3) clears it and returns the memo to `submitted`.
+- `reviewed` - set by Sarah (AR Specialist) after approving the memo and generating its invoice (`PATCH /:id/approve`, Wave 3)
+- `invoiced` - set once the generated invoice completes the AR pipeline (Kwan Hua's `invoices` feature)
 
 ### `bookings.status` (Zheng Bao's table - referenced by UC-05)
 
@@ -309,7 +332,7 @@ These rules are enforced at the application layer on the memo submission form be
 | `job_end_time` | Required; must be after `job_start_time` |
 | `overtime_hours` | Must be ≥ 0; cannot be 0 if `job_end_time` exceeds scheduled duration by more than 30 minutes without a reason in `additional_charges_notes` |
 | `evacuation_floors` | Must be ≥ 0; cannot be null (crew must explicitly enter 0 if none occurred) |
-| `patient_name` | Required |
-| `hospital_destination` | Required |
+| `patient_name` | Required only when `service_type` is `eas` or `mts` (ambulance jobs). Optional for `event_standby`/`workplace_standby` (manpower-only jobs with no ambulance run) - an empty string is coerced to `null`. See the nullability note above. |
+| `hospital_destination` | Required only when `service_type` is `eas` or `mts`. Same conditional rule as `patient_name` above. |
 | `service_type` | Required; must match a valid ENUM value |
 | `transfer_type` | Required; must match a valid ENUM value |
