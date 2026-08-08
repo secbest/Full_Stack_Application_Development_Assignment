@@ -201,3 +201,8 @@ ul.bullet-list li::before {
   align-items: center;
   justify-content: center;
 }
+
+.solution-impact {
+  color: var(--text-muted);
+  margin-top: 16px;
+}

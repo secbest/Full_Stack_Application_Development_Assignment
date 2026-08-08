@@ -1,6 +1,7 @@
 import Hero from './sections/Hero.jsx'
 import Problem from './sections/Problem.jsx'
 import WorkflowComparison from './sections/WorkflowComparison.jsx'
+import Solution from './sections/Solution.jsx'
 
 export default function App() {
   return (
@@ -8,6 +9,7 @@ export default function App() {
       <Hero />
       <Problem />
       <WorkflowComparison />
+      <Solution />
     </main>
   )
 }
