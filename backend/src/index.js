@@ -10,8 +10,20 @@ const { importPendingGmailInvoices } = require('./controllers/gmailController')
 
 const app = express()
 
+// Vercel gives every branch/commit its own preview URL (e.g.
+// full-stack-application-development-git-<branch>-<team>.vercel.app) in addition to the
+// fixed production alias in FRONTEND_URL. Match any of this project's Vercel subdomains
+// so preview deployments aren't CORS-blocked, on top of the exact configured origin.
+const configuredOrigin = process.env.FRONTEND_URL || 'http://localhost:5173'
+const vercelPreviewPattern = /^https:\/\/full-stack-application-development[a-z0-9-]*\.vercel\.app$/
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    if (!origin || origin === configuredOrigin || vercelPreviewPattern.test(origin)) {
+      return callback(null, true)
+    }
+    return callback(new Error('Not allowed by CORS'))
+  },
   credentials: true,
 }))
 app.use(express.json())
