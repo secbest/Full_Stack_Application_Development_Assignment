@@ -217,3 +217,37 @@ ul.bullet-list li::before {
   font-size: 14px;
   color: var(--text-muted);
 }
+
+.chart-card {
+  margin-bottom: 24px;
+}
+
+.chart-tooltip {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  max-width: 240px;
+}
+
+.chart-tooltip p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chart-tooltip-value {
+  color: #ffffff;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.metric-range {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.metric-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}

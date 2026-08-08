@@ -3,6 +3,7 @@ import Problem from './sections/Problem.jsx'
 import WorkflowComparison from './sections/WorkflowComparison.jsx'
 import Solution from './sections/Solution.jsx'
 import StakeholderRoles from './sections/StakeholderRoles.jsx'
+import SuccessMetrics from './sections/SuccessMetrics.jsx'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
       <WorkflowComparison />
       <Solution />
       <StakeholderRoles />
+      <SuccessMetrics />
     </main>
   )
 }
