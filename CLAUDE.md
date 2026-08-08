@@ -111,6 +111,30 @@ Never commit `.env` files. Both `frontend/.env.example` and `backend/.env.exampl
 
 ---
 
+## Deployment (Vercel + Render + Supabase)
+
+**Live URLs**
+- Frontend (Vercel): `https://full-stack-application-development-pi.vercel.app` (production alias). Every branch/commit also gets its own preview URL matching the pattern `full-stack-application-development<suffix>.vercel.app` (e.g. `...-git-<branch>-secbest-hq.vercel.app`).
+- Backend (Render): `https://full-stack-application-development.onrender.com`
+- Database: Supabase PostgreSQL, project `arorhvtvepwimqwhrzps`, region `ap-southeast-1` - the same instance is used for local dev and production (no separate prod DB), so seeded demo users/data are shared across environments.
+
+Full env var reference (all variables, per service, with descriptions) lives in `deployment.md` - keep that file in sync with `backend/.env.example` / `frontend/.env.example` whenever a variable is added or removed.
+
+**Deploy-time configuration that must be set correctly**
+- `VITE_API_BASE_URL` (Vercel) must include the `/api` suffix, e.g. `https://full-stack-application-development.onrender.com/api`. All frontend API calls are relative paths (`/auth/login`, etc. - see `frontend/src/api/index.js`) that assume the base already ends in `/api`. Omitting the suffix makes every request 404 against the backend's `/api` mount.
+- `FRONTEND_URL` (Render) is the CORS-allowed origin. `backend/src/index.js` also matches any `https://full-stack-application-development*.vercel.app` origin via regex, so Vercel's per-branch preview deployments work without updating this var per-preview. Only a custom domain or a differently-named Vercel project would need `FRONTEND_URL`/the regex updated.
+- `NODE_ENV=production` must be set on Render - it gates which JWT secret is used (`JWT_SECRET` vs. the committed `DEV_JWT_SECRET`) in `backend/src/middleware/index.js` and `backend/src/utils/token.js`.
+- `frontend/vercel.json` contains a catch-all rewrite to `/index.html` so refreshing a deep link (e.g. `/invoices/5`) doesn't 404 on Vercel's static hosting - required for any client-side-routed React Router app on Vercel. Do not remove it.
+- `XERO_SIMULATION` defaults to simulated (no real Xero calls). The server logs its actual mode (`[xero] MODE: ...`) on every boot specifically so a deploy that forgot to flip this to `false` isn't silently faking every Xero sync.
+- Backend startup logs `Health check: <url>/health` using Render's auto-populated `RENDER_EXTERNAL_URL` when present, else falls back to `localhost` - this is a cosmetic log line only, not the health check itself.
+
+**Known deploy gotchas** (each has already surfaced and been fixed once - check these first if they resurface)
+- Frontend 404s on refresh of any non-root route -> missing/broken `frontend/vercel.json` rewrite.
+- Login fails with `"Route POST /auth/login not found"` -> `VITE_API_BASE_URL` is missing the `/api` suffix.
+- Login fails with `"Invalid email or password"` despite correct credentials -> almost always a CORS or network-level failure being mis-displayed by `LoginPage.jsx`'s generic error fallback (`err.response?.data?.message || 'Invalid email or password.'`), not an actual credentials mismatch. Check the browser Network tab for a CORS error or a non-JSON/failed response before assuming the DB or password is wrong. Test the backend directly with `curl` first to rule out DB/auth-logic issues.
+
+---
+
 ## Writing Style
 
 Use a hyphen (`-`) instead of an em dash (`—`) in all generated documents (markdown files, comments, README, etc.).
