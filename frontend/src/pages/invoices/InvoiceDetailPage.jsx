@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatusBadge } from '@/components/StatusBadge'
 import { NumberStepper } from '@/components/NumberStepper'
 import { useToast } from '@/context/ToastContext'
+import { useAuth } from '@/hooks'
 import { getInvoice, rematchInvoice, addLineItem, deleteLineItem, batchApprove, retryXero } from '@/api/ar'
 import { SURCHARGE_TYPES } from '@/validation/contractValidation'
 import {
@@ -33,6 +34,12 @@ export default function InvoiceDetailPage() {
   const { id } = useParams()
   const toast = useToast()
   const navigate = useNavigate()
+  // The Managing Director reaches this screen read-only, by drilling into a row on the
+  // Revenue Leakage report to see WHICH charges went unbilled. The backend already allows
+  // her the GET (invoiceRoutes.js) but every mutation is ar_specialist-only, so the
+  // controls that call them are hidden rather than left to 403 on click.
+  const { user } = useAuth()
+  const canEdit = user?.role === 'ar_specialist'
   const [invoice, setInvoice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -182,8 +189,13 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="p-6 space-y-4 font-sans">
-      <button onClick={() => navigate('/invoices')} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={14} /> Back to Invoices
+      {/* The MD arrives here from the Revenue Leakage report, not the Invoice List, so
+          send her back where she came from rather than to a queue she does not work. */}
+      <button
+        onClick={() => navigate(canEdit ? '/invoices' : '/reports/revenue-leakage')}
+        className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+      >
+        <ArrowLeft size={14} /> {canEdit ? 'Back to Invoices' : 'Back to Revenue Leakage'}
       </button>
 
       <div className="flex items-center justify-between">
@@ -193,12 +205,17 @@ export default function InvoiceDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={invoice.status} />
-          {invoice.status === 'unmatched' && (
+          {!canEdit && (
+            <span className="text-xs font-medium text-slate-500 border border-slate-200 rounded-md px-2 py-1">
+              View only
+            </span>
+          )}
+          {canEdit && invoice.status === 'unmatched' && (
             <button onClick={handleRematch} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-40">
               <RefreshCw size={16} /> Retry Match
             </button>
           )}
-          {['matched', 'adjusted'].includes(invoice.status) && (
+          {canEdit && ['matched', 'adjusted'].includes(invoice.status) && (
             <button
               onClick={handleApprove}
               disabled={busy || !hasBase}
@@ -208,7 +225,7 @@ export default function InvoiceDetailPage() {
               <UploadCloud size={16} /> Approve &amp; Sync
             </button>
           )}
-          {invoice.status === 'failed' && (
+          {canEdit && invoice.status === 'failed' && (
             <button onClick={handleRetry} disabled={busy} className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-500 disabled:opacity-40">
               <RefreshCw size={16} /> Retry Xero Sync
             </button>
@@ -249,19 +266,23 @@ export default function InvoiceDetailPage() {
               )}
             </p>
           </div>
-          <button
-            onClick={() => {
-              if (match?.reason === 'quote_mismatch') setAdding(true)
-              else navigate(invoice.contract_id
-                ? `/pricing-contracts/${invoice.contract_id}`
-                : `/pricing-contracts/new?client_id=${invoice.client_id}`)
-            }}
-            className="mt-3 shrink-0 rounded-md border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:mt-0"
-          >
-            {match?.reason === 'quote_mismatch'
-              ? 'Price Manually'
-              : (invoice.contract_id ? 'Open Contract Rates' : 'Create Pricing Contract')}
-          </button>
+          {/* Both destinations are ar_specialist-only routes, so this stays hidden for the
+              MD - the explanation above is the part she needs, not the repair action. */}
+          {canEdit && (
+            <button
+              onClick={() => {
+                if (match?.reason === 'quote_mismatch') setAdding(true)
+                else navigate(invoice.contract_id
+                  ? `/pricing-contracts/${invoice.contract_id}`
+                  : `/pricing-contracts/new?client_id=${invoice.client_id}`)
+              }}
+              className="mt-3 shrink-0 rounded-md border border-amber-400 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:mt-0"
+            >
+              {match?.reason === 'quote_mismatch'
+                ? 'Price Manually'
+                : (invoice.contract_id ? 'Open Contract Rates' : 'Create Pricing Contract')}
+            </button>
+          )}
         </div>
       )}
 
@@ -335,7 +356,7 @@ export default function InvoiceDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Line Items</CardTitle>
-            {!locked && (
+            {canEdit && !locked && (
               <div className="flex items-center gap-2">
                 <button onClick={() => setAdding((v) => !v)} className="inline-flex items-center gap-1 h-8 px-3 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-800 hover:text-white text-xs font-medium">
                   <Plus size={12} /> Add Adjustment
@@ -410,7 +431,7 @@ export default function InvoiceDetailPage() {
                       </td>
                       <td className="px-3 py-2 text-sm font-medium text-slate-900">{money(li.amount)}</td>
                       <td className="px-3 py-2 text-right">
-                        {li.is_manual_adjustment && !locked && (
+                        {canEdit && li.is_manual_adjustment && !locked && (
                           <button onClick={() => handleDelete(li.id)} disabled={busy} className="text-slate-400 hover:text-rose-600"><Trash2 size={14} /></button>
                         )}
                       </td>

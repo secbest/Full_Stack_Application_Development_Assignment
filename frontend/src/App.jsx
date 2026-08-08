@@ -99,9 +99,18 @@ export default function App() {
           </Route>
 
           {/* ── AR Specialist (design Jasper; Wave 3 by Kwan Hua) ──────────── */}
-          <Route element={<RoleRoute roles={['ar_specialist']} />}>
+          {/* Invoices are read-only for the MD, mirroring the AP block below and the
+              backend role matrix (invoiceRoutes.js allows managing_director on both GETs
+              and no mutation). Without this the Revenue Leakage report - which is
+              deliberately shared with the MD - dead-ends on /403 the moment she clicks a
+              leakage row, because RevenueLeakagePage links straight to /invoices/:id.
+              InvoiceListPage and InvoiceDetailPage hide their AR write controls when the
+              viewer is not an ar_specialist. */}
+          <Route element={<RoleRoute roles={['ar_specialist', 'managing_director']} />}>
             <Route path="/invoices"           element={<InvoiceListPage />} />
             <Route path="/invoices/:id"       element={<InvoiceDetailPage />} />
+          </Route>
+          <Route element={<RoleRoute roles={['ar_specialist']} />}>
             <Route path="/service-memos"      element={<ServiceMemoListPage />} />
             <Route path="/pricing-contracts"           element={<PricingContractPage />} />
             <Route path="/pricing-contracts/new"       element={<ContractFormPage />} />
