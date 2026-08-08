@@ -2,6 +2,7 @@ import Hero from './sections/Hero.jsx'
 import Problem from './sections/Problem.jsx'
 import WorkflowComparison from './sections/WorkflowComparison.jsx'
 import Solution from './sections/Solution.jsx'
+import StakeholderRoles from './sections/StakeholderRoles.jsx'
 
 export default function App() {
   return (
@@ -10,6 +11,7 @@ export default function App() {
       <Problem />
       <WorkflowComparison />
       <Solution />
+      <StakeholderRoles />
     </main>
   )
 }

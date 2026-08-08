@@ -206,3 +206,14 @@ ul.bullet-list li::before {
   color: var(--text-muted);
   margin-top: 16px;
 }
+
+.stakeholder-card h3 {
+  font-size: 16px;
+  color: #ffffff;
+  margin-bottom: 12px;
+}
+
+.stakeholder-card p {
+  font-size: 14px;
+  color: var(--text-muted);
+}
