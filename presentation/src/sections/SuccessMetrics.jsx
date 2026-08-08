@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import content from '../data/content.js'
 
-const BAR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444']
+const BAR_COLORS = ['#3b82f6', '#22c55e', 'var(--warning)', '#ef4444']
 
 function ChartTooltip({ active, payload }) {
   if (!active || !payload || !payload.length) return null
@@ -32,14 +32,14 @@ export default function SuccessMetrics() {
           transition={{ duration: 0.6 }}
         >
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={data} layout="vertical" margin={{ left: 24, right: 24 }}>
+            <BarChart data={data} layout="vertical" margin={{ left: 32, right: 24 }}>
               <XAxis type="number" domain={[0, 100]} stroke="#94a3b8" tickFormatter={(v) => `${v}%`} />
               <YAxis
                 type="category"
                 dataKey="metric"
-                width={260}
+                width={320}
                 stroke="#94a3b8"
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 11 }}
               />
               <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
               <Bar dataKey="chartValue" radius={[0, 6, 6, 0]}>

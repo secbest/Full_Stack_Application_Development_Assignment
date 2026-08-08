@@ -19,7 +19,7 @@ export default function LiveAppCTA() {
         >
           <div className="browser-chrome-bar">
             <span className="browser-dot" style={{ background: '#ef4444' }} />
-            <span className="browser-dot" style={{ background: '#f59e0b' }} />
+            <span className="browser-dot" style={{ background: 'var(--warning)' }} />
             <span className="browser-dot" style={{ background: '#22c55e' }} />
             <span className="browser-address">{url}</span>
           </div>
