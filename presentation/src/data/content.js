@@ -1,33 +1,33 @@
 const content = {
   hero: {
     eyebrow: 'EFAR Digital Operations-to-Billing Platform',
-    title: 'Standardizing Financial Operations & Workflow Automation through Lean Digital Processes',
+    title: 'From Intake to Xero, Automatically',
     subtitle:
-      'A full-stack proof of concept for Emergencies First Aid & Rescue (EFAR) - replacing manual transcription with a connected digital operations loop, from intake to Xero.',
+      'A digital operations loop for Emergencies First Aid & Rescue (EFAR) - cutting manual workload across the entire billing process.',
   },
 
   problem: {
-    title: 'Over-Reliance on Manpower for Financial Operations Despite Existing Systems',
-    who: 'Managing Director (Doris Ching), Accounts Receivable (AR) Specialist (Sarah), Accounts Payable (AP) Specialist (Chloe), and Quotations Specialist (Camilla) at EFAR.',
-    what: 'EFAR struggles with an unsustainable over-reliance on manpower for financial operations despite having enterprise accounting software (Xero). Manual intervention is excessively high for quotation management, matching bank statements to invoices, and processing ad-hoc expenses. The volume of manual transcription creates significant operational drag and increases the risk of unrecorded field charges and revenue leakage.',
+    title: 'Over-Reliance on Manpower for Financial Operations',
+    who: 'Managing Director, AR Specialist, AP Specialist, and Quotations Specialist at EFAR.',
+    what: 'Manual data entry everywhere - even with Xero already in place.',
     barriers: [
-      'Unstructured customer queries across WhatsApp, email, and calls creating 5-day clarification delays.',
-      'Handwritten paper service memos causing severe billing bottlenecks and lost paperwork.',
-      'Inconsistent hospital standards requiring physical, ink-based stamps on service memos.',
-      'Duplication of effort due to AR and AP functions being handled separately.',
+      'WhatsApp/email/call chaos - 5-day delays',
+      'Handwritten paper memos, lost paperwork',
+      'Ink stamps required from hospitals',
+      'AR and AP duplicate the same work',
     ],
     cause: [
-      'Underutilization of Xero, treating it as a passive digital filing cabinet rather than leveraging its active automation features.',
-      'Processes designed around manual human support rather than lean digital operations.',
-      'Absence of an integrated digital operations loop connecting field ambulance crews directly to the finance team.',
-      'Crucial business knowledge (client rules, debt statuses) trapped in staff "mental notes" or personal email threads.',
+      'Xero used as a filing cabinet, not automated',
+      'Processes built for manual support',
+      'No digital link from field crew to finance',
+      'Client rules trapped in staff\'s heads',
     ],
     emotion:
-      'The management feels highly anxious over staff turnover disrupting financial backlogs and causing critical data loss, while the finance staff feel overwhelmed by matching fatigue and the frustration of acting as "human copy-paste machines".',
+      'Management fears data loss from staff turnover; finance staff feel like "human copy-paste machines".',
     outcome: [
-      'Inflated operational costs requiring 2-3 personnel locked into routine, manual financial tasks.',
-      'Severe revenue leakage from unrecorded field surcharges (e.g., multi-floor evacuations, crew overtime) left off late paper slips.',
-      'Artificial caps on company scalability because processing invoices one-by-one requires hiring more staff as the fleet grows.',
+      '2-3 staff locked into manual tasks',
+      'Revenue leaks from missed overtime/evacuations',
+      'Growth capped - more bookings need more staff',
     ],
   },
 
@@ -35,21 +35,21 @@ const content = {
     before: {
       title: 'Before: Manual & Paper-Based',
       steps: [
-        'Customer queries scattered across WhatsApp, email, and calls - 5-day clarification delays.',
-        'Field crews fill handwritten paper service memos.',
-        'Physical ink stamps required from hospitals for verification.',
-        'AR and AP teams separately re-key the same job data by hand.',
-        'Overtime and evacuation charges routinely missed on late paper slips.',
+        'Queries scattered across WhatsApp, email, calls',
+        'Paper service memos, filled by hand',
+        'Physical ink stamps from hospitals',
+        'AR and AP re-key the same data',
+        'Overtime and evacuation charges missed',
       ],
     },
     after: {
       title: 'After: Digital Operations Loop',
       steps: [
-        'Unified digital intake portal captures every mandatory field upfront.',
-        'Mobile digital field logger captures job details, overtime, and evacuation charges instantly.',
-        'Automated pricing engine matches field memos against client-specific contracts.',
-        'Draft invoices sync automatically to Xero for AR review.',
-        'AP invoices are OCR-extracted and rebate-verified without hand-keying.',
+        'One digital intake portal, every field upfront',
+        'Mobile field logger captures charges instantly',
+        'Pricing engine auto-matches contracts',
+        'Draft invoices sync straight to Xero',
+        'Vendor bills OCR-extracted, rebate-verified',
       ],
     },
   },
@@ -57,34 +57,36 @@ const content = {
   solution: [
     {
       capability: 'Unified Digital Intake Portal',
-      impact: 'Eliminate 5-day communication loops; ensure all mandatory event parameters are collected upfront.',
+      impact: 'No more 5-day back-and-forth - everything captured upfront.',
     },
     {
       capability: 'Mobile Digital Field Logger',
-      impact: 'Stop revenue leakage by mandatorily capturing overtime and evacuation charges instantly upon job completion.',
+      impact: 'Overtime and evacuation charges captured the moment the job ends.',
     },
     {
       capability: 'Automated Booking & Pricing Matching',
-      impact: 'Reduce AR workload; instantly cross-reference field memos against client-specific pricing tables.',
+      impact: 'Field memos auto-matched to client pricing - no manual lookup.',
     },
     {
       capability: 'Intelligent Document Ingestion (OCR)',
-      impact: 'Eliminate AP hand-keying; auto-extract vendor bills and verify corporate 1% rebates automatically.',
+      impact: 'Vendor bills auto-extracted, rebates auto-verified.',
     },
   ],
 
   stakeholders: [
-    { role: 'Managing Director', responsibility: 'Executive oversight, margin protection, and macro expense analytics.' },
-    { role: 'Accounts Receivable (AR)', responsibility: 'Validates automated booking matches, adjusts surcharges, and syncs batches to Xero.' },
-    { role: 'Accounts Payable (AP)', responsibility: 'Reviews AI-extracted vendor invoices and reconciles statement feeds.' },
-    { role: 'Quotations Specialist', responsibility: 'Manages the structured intake queue and verifies service tiers.' },
+    { role: 'Customer', responsibility: 'Submits job requests through the digital intake portal - no more WhatsApp/email/call back-and-forth.' },
+    { role: 'Field Crew', responsibility: 'Logs job details, overtime, and evacuation charges on-site via the mobile field logger - the moment the job happens, not on a late paper slip.' },
+    { role: 'Managing Director', responsibility: 'Executive oversight and margin protection.' },
+    { role: 'Accounts Receivable (AR)', responsibility: 'Validates booking matches and syncs invoices to Xero.' },
+    { role: 'Accounts Payable (AP)', responsibility: 'Reviews vendor invoices and reconciles statements.' },
+    { role: 'Quotations Specialist', responsibility: 'Manages the intake queue and service tiers.' },
   ],
 
   successMetrics: [
-    { metric: 'Reduction in manpower required for routine AR/AP tasks', rangeLabel: '30% - 50%', chartValue: 40 },
-    { metric: 'Improvement in turnaround time for financial workflows', rangeLabel: '40% - 60%', chartValue: 50 },
-    { metric: 'Transition of repetitive clerical workload to an automated system', rangeLabel: '30% - 50% increase', chartValue: 40 },
-    { metric: 'Prevention of revenue leakage (unrecorded overtime/evacuations)', rangeLabel: '100% captured', chartValue: 100 },
+    { metric: 'Less manpower on routine AR/AP tasks', rangeLabel: '30% - 50%', chartValue: 40 },
+    { metric: 'Faster financial workflow turnaround', rangeLabel: '40% - 60%', chartValue: 50 },
+    { metric: 'Clerical work shifted to automation', rangeLabel: '30% - 50% increase', chartValue: 40 },
+    { metric: 'Revenue leakage prevented', rangeLabel: '100% captured', chartValue: 100 },
   ],
 
   liveApp: {

@@ -11,8 +11,8 @@ export default function StakeholderRoles() {
     <section className="section" id="stakeholders">
       <div className="container">
         <h2 className="section-title">Who It's For</h2>
-        <p className="section-subtitle">Four roles, one connected operations loop.</p>
-        <div className="grid-4">
+        <p className="section-subtitle">Six roles, one connected operations loop.</p>
+        <div className="grid-3">
           {content.stakeholders.map((person, index) => (
             <motion.div
               key={person.role}

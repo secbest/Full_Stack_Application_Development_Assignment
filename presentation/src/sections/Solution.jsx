@@ -11,10 +11,7 @@ export default function Solution() {
     <section className="section" id="solution">
       <div className="container">
         <h2 className="section-title">The Solution</h2>
-        <p className="section-subtitle">
-          A custom full-stack digital operations-to-billing system that automates pre-accounting workflows,
-          standardizes intake, and replaces manual data transcription.
-        </p>
+        <p className="section-subtitle">Four capabilities that close the loop.</p>
         <div className="grid-2">
           {content.solution.map((item, index) => (
             <motion.div
