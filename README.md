@@ -54,9 +54,9 @@ Interim prototype walkthrough presented to **Geraldine (EFAR)** and **Doris Tan 
 | 1 | Live job milestone timestamps - crew taps a button at each stage (activated, arrived at location, en route, arrived at destination, job complete) instead of typing times at end of day | `job_milestones` table, `POST /api/bookings/:id/milestone`, My Jobs hero card, memo wizard Step 1 | **Jasper** (Wave 2 field ops) | **Delivered** |
 | 2 | Derive `is_office_hours` from the real activation timestamp instead of trusting the crew's manual toggle | `backend/src/services/pricingService.js`, memo approval flow | **Kwan Hua** (Wave 3 pricing engine) | **Unblocked** - #1 is delivered, so the `activated` milestone timestamp is now available to read |
 | 3 | Show the crew only the job happening now, not the whole queue - the call centre posts a case about one hour before its start time | `frontend/src/pages/jobs/MyJobsPage.jsx` | **Jasper** (Wave 2 field ops) | **Delivered** |
-| 4 | Support jobs with no ambulance and no patient (manpower-only event coverage) | `backend/src/models/ServiceMemo.js`, memo wizard validation, pricing engine null-tolerance | **Jasper** (model + wizard), **Kwan Hua** (engine) | **Jasper's half delivered** - memo now submits with no patient; engine null-tolerance still open for Kwan Hua |
-| 5 | Vendor invoices should arrive in the system automatically rather than always being uploaded by hand | AP intake, `vendor_invoices`, Xero Integration Settings screen | **Kwan Hua** (Wave 3 AP) | Deferred - manual upload ships, ingestion path documented |
-| 6 | Restate the Xero-stays-master and crew-collects-signature positioning up front, and open with the problem statement | Final presentation script and slides | **Group** | Not started |
+| 4 | Support jobs with no ambulance and no patient (manpower-only event coverage) | `backend/src/models/ServiceMemo.js`, memo wizard validation, pricing engine null-tolerance | **Jasper** (model + wizard), **Kwan Hua** (engine) | **Delivered** |
+| 5 | Vendor invoices should arrive in the system automatically rather than always being uploaded by hand | AP intake, `vendor_invoices`, Xero Integration Settings screen | **Kwan Hua** (Wave 3 AP) | **Delivered** |
+| 6 | Restate the Xero-stays-master and crew-collects-signature positioning up front, and open with the problem statement | Final presentation script and slides | **Group** | **Delivered** |
 
 ### Detail on each item
 
@@ -74,11 +74,15 @@ Interim prototype walkthrough presented to **Geraldine (EFAR)** and **Doris Tan 
 
 **Jasper's half delivered as:** both columns are now nullable and conditionally required on `service_type` - mandatory for `eas`/`mts`, optional for the two standby types (a standby job can still record a casualty, so the fields remain available rather than hidden). The rule is enforced in the backend validator and mirrored in the wizard via `buildStep1Schema(serviceType)`, which relabels both fields "(optional)" for a standby booking. If the crew switches a standby memo to an ambulance service type on Step 2 with the patient fields blank, the final submit stops and returns them to Step 1 rather than letting a 400 land after the signature and stamp are already captured. `BKG-TEST-00005` is seeded as a manpower-only demo case.
 
-**Still open for Kwan Hua:** pricing-engine null-tolerance. `pricingService.js` reads `memo.patient_weight_kg` and builds a base-rate description from `service_type`/`transfer_type`; confirm a memo with null patient fields prices correctly, and that standby rate rows exist on the contract.
+**Kwan Hua's half delivered as:** a new `'standby'` value on the `transfer_type` ENUM (`service_memos` and `pricing_rates`, migrated via `npm run db:migrate:standby-transfer-type`, folded into `db:setup`), since a manpower-only job has no hospital transfer to describe. `seed-pricing.js` now publishes `event_standby`/`workplace_standby` rate rows keyed on `standby`, and `pricingService.js` was already null-safe on `patient_weight_kg` (the heavy-lifting surcharge simply doesn't fire when weight is null) - confirmed and locked in by two new engine tests in `backend/tests/kwan-hua/pricing.test.js`: a manpower-only memo with `patient_name`/`hospital_destination`/`patient_weight_kg` all null produces a correctly priced, matched invoice when the contract has a `standby` rate, and produces a clean `unmatched` result (not a crash) when it doesn't - matching the Raffles no-contract case.
 
-**5. Automatic vendor invoice intake.** At 00:20:27: *"does it mean when the client sends us the invoice, we will also receive it inside the system, or we have to manually upload the vendor's invoice?"* We offered a Gmail-based ingestion path (deferred on privacy grounds) or manual PDF upload, and EFAR accepted the manual route. Options in ascending effort: a forwarding inbox address that drops PDFs into the vendor invoice queue, or keep manual upload but add multi-file drop plus a visible email-ingestion placeholder in AP settings so the roadmap is legible.
+**5. Automatic vendor invoice intake.** At 00:20:27: *"does it mean when the client sends us the invoice, we will also receive it inside the system, or we have to manually upload the vendor's invoice?"* We offered a Gmail-based ingestion path (deferred on privacy grounds) or manual PDF upload, and EFAR accepted the manual route as the interim answer.
+
+**Delivered as:** a forwarding-inbox intake path - `POST /api/vendor-invoices/inbound-email` accepts PDF attachments from an inbound-email provider (multipart, secret-authenticated), de-duplicates on `inbound_email_id`, and drops each attachment straight into the AP review queue exactly like a manual upload would. Manual upload still ships alongside it. See `docs/AP_INBOUND_EMAIL_INTAKE.md` for the provider configuration contract and `npm run db:migrate:ap-inbound-email`; covered by `backend/tests/kwan-hua/vendor-invoices.test.js`.
 
 **6. Delivery notes for the final.** The demo relied on live typing and was cut short twice (00:13:18, 00:15:02), leaving the Managing Director dashboard about 90 seconds. Pre-seed every record to be opened, script the click path, and open with the 30-second problem statement - EFAR asked for the problem statement up front at 00:01:44 and it had to be looked up on the call.
+
+**Delivered as:** a standalone pitch deck (`presentation/`, React + Vite) with `Hero -> Problem -> WorkflowComparison -> Solution -> StakeholderRoles -> SuccessMetrics -> LiveAppCTA` sections, so the deck opens with the problem statement by structure. The two client-endorsed positioning lines are now in the slide copy (`presentation/src/data/content.js`): the "After" workflow step reads "Draft invoices sync to Xero - Xero stays the master ledger, we assist it, never replace it", and the Field Crew stakeholder card states crew "collects the customer signature and hospital stamp on the spot, no app required from the customer."
 
 ## How to Run Locally
 
@@ -268,6 +272,3 @@ Configuration -> Authorisation -> Scopes**.
 |---|---|
 | Xero API (OAuth 2.0) | Draft invoice creation, bank feed ingestion |
 | Google Gemini API | OCR extraction from vendor invoice PDFs |
-
-## Session Logs
-C:\Users\<your-username>\.claude\projects\<code-folder>\

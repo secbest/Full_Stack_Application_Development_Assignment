@@ -22,6 +22,7 @@ const TRANSFER_TYPE_LABELS = {
   airport_with_tarmac: 'Airport Transfer (With Tarmac)',
   sg_jb_ground: 'SG-JB Ground Transfer',
   air_evacuation: 'Air Evacuation',
+  standby: 'Manpower Standby (No Transfer)',
 }
 
 const TIME_OF_DAY_LABELS = {

@@ -17,7 +17,7 @@ const SERVICE_TYPE_LABELS = {
 const TRANSFER_TYPE_LABELS = {
   one_way_hospital: 'One-Way Hospital', two_way_hospital: 'Two-Way Hospital', covid_19: 'COVID-19',
   imh_psychiatric: 'IMH Psychiatric', airport_no_tarmac: 'Airport (No Tarmac)', airport_with_tarmac: 'Airport (With Tarmac)',
-  sg_jb_ground: 'SG-JB Ground', air_evacuation: 'Air Evacuation',
+  sg_jb_ground: 'SG-JB Ground', air_evacuation: 'Air Evacuation', standby: 'Manpower Standby (No Transfer)',
 }
 
 // The whole row is the label, so tapping anywhere toggles - important with gloves on.

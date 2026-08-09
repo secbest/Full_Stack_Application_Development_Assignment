@@ -31,10 +31,12 @@ const ServiceMemo = sequelize.define('ServiceMemo', {
     type: DataTypes.ENUM('eas', 'mts', 'event_standby', 'workplace_standby'),
     allowNull: false,
   },
+  // 'standby' (added for client feedback item 4): manpower-only event/workplace standby
+  // jobs have no ambulance transfer at all, so they need a non-hospital value here too.
   transfer_type: {
     type: DataTypes.ENUM(
       'one_way_hospital', 'two_way_hospital', 'covid_19', 'imh_psychiatric',
-      'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation'
+      'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation', 'standby'
     ),
     allowNull: false,
   },

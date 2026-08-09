@@ -6,7 +6,7 @@ import * as Yup from 'yup'
 export const SERVICE_TYPES = ['eas', 'mts', 'event_standby', 'workplace_standby']
 export const TRANSFER_TYPES = [
   'one_way_hospital', 'two_way_hospital', 'covid_19', 'imh_psychiatric',
-  'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation',
+  'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation', 'standby',
 ]
 export const TIME_OF_DAY = ['office_hours', 'non_office_hours', 'all_hours']
 

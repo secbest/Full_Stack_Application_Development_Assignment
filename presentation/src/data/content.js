@@ -48,7 +48,7 @@ const content = {
         'One digital intake portal, every field upfront',
         'Mobile field logger captures charges instantly',
         'Pricing engine auto-matches contracts',
-        'Draft invoices sync straight to Xero',
+        'Draft invoices sync to Xero - Xero stays the master ledger, we assist it, never replace it',
         'Vendor bills OCR-extracted, rebate-verified',
       ],
     },
@@ -75,7 +75,7 @@ const content = {
 
   stakeholders: [
     { role: 'Customer', responsibility: 'Submits job requests through the digital intake portal - no more WhatsApp/email/call back-and-forth.' },
-    { role: 'Field Crew', responsibility: 'Logs job details, overtime, and evacuation charges on-site via the mobile field logger - the moment the job happens, not on a late paper slip.' },
+    { role: 'Field Crew', responsibility: 'Logs job details, overtime, and evacuation charges on-site via the mobile field logger - the moment the job happens, not on a late paper slip. Collects the customer signature and hospital stamp on the spot, no app required from the customer.' },
     { role: 'Managing Director', responsibility: 'Executive oversight and margin protection.' },
     { role: 'Accounts Receivable (AR)', responsibility: 'Validates booking matches and syncs invoices to Xero.' },
     { role: 'Accounts Payable (AP)', responsibility: 'Reviews vendor invoices and reconciles statements.' },

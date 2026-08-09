@@ -140,6 +140,48 @@ describe('pricingService.computeInvoiceLineItems (UC-04)', () => {
     expect(r.lineItems.some((li) => li.description.startsWith('Overtime'))).toBe(false)
     expect(r.unpriced).toEqual([])
   })
+
+  // Client feedback item 4: manpower-only event/workplace standby jobs have no ambulance
+  // and no patient, so patient_name, hospital_destination, patient_weight_kg, and
+  // transfer_type (hospital-specific values) are all absent or replaced with 'standby'.
+  // The engine must still produce a correctly priced, matched invoice rather than crash
+  // or silently drop the base charge.
+  test('computes a matched invoice for a manpower-only standby memo with no patient', () => {
+    const standbyRates = [
+      { service_type: 'event_standby', transfer_type: 'standby', time_of_day: 'all_hours', base_amount: '400.00' },
+    ]
+    const memo = baseMemo({
+      service_type: 'event_standby',
+      transfer_type: 'standby',
+      patient_name: null,
+      hospital_destination: null,
+      patient_weight_kg: null,
+    })
+    const r = computeInvoiceLineItems(memo, standbyRates, SURCHARGE_ROWS)
+    expect(r.matched).toBe(true)
+    expect(r.lineItems).toHaveLength(1)
+    expect(r.lineItems[0].amount).toBe(400)
+    expect(r.lineItems[0].description).toContain('Manpower Standby (No Transfer)')
+    expect(r.subtotal).toBe(400)
+    expect(r.unpriced).toEqual([])
+  })
+
+  test('standby memo with no matching contract rate reports unmatched, not a crash', () => {
+    const memo = baseMemo({
+      service_type: 'event_standby',
+      transfer_type: 'standby',
+      patient_name: null,
+      hospital_destination: null,
+      patient_weight_kg: null,
+    })
+    // The real caller (memoReviewController) queries PricingRate scoped to the memo's
+    // exact service_type + transfer_type, so a client with no standby rate row on their
+    // contract - e.g. Raffles in the seed data - passes an empty array here, not a
+    // mismatched one.
+    const r = computeInvoiceLineItems(memo, [], SURCHARGE_ROWS)
+    expect(r.matched).toBe(false)
+    expect(r.lineItems).toEqual([])
+  })
 })
 
 // A charge the crew recorded that the contract cannot price must be reported, not dropped.

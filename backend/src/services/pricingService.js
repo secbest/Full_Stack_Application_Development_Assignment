@@ -26,6 +26,7 @@ const TRANSFER_TYPE_LABELS = {
   airport_with_tarmac: 'Airport Transfer (With Tarmac)',
   sg_jb_ground: 'SG-JB Ground Transfer',
   air_evacuation: 'Air Evacuation',
+  standby: 'Manpower Standby (No Transfer)',
 }
 
 // Human-readable names for the surcharge types, used when reporting a chargeable

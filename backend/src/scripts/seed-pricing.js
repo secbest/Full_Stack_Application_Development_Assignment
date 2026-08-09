@@ -50,6 +50,10 @@ const RATES = [
   { service_type: 'eas', transfer_type: 'airport_with_tarmac', time_of_day: 'all_hours', base_amount: 1500.00 },
   { service_type: 'mts', transfer_type: 'one_way_hospital', time_of_day: 'office_hours', base_amount: 450.00 },
   { service_type: 'mts', transfer_type: 'sg_jb_ground', time_of_day: 'all_hours', base_amount: 1800.00 },
+  // Manpower-only standby (client feedback item 4) - no ambulance transfer, so these are
+  // the only rate rows keyed on the 'standby' transfer_type.
+  { service_type: 'event_standby', transfer_type: 'standby', time_of_day: 'all_hours', base_amount: 400.00 },
+  { service_type: 'workplace_standby', transfer_type: 'standby', time_of_day: 'all_hours', base_amount: 350.00 },
 ]
 
 async function seedContract(client, sarah) {
@@ -110,8 +114,10 @@ async function seedMemo(referenceNumber, ravi, memoFields) {
     job_end_time: new Date(start.getTime() + jobHours * 60 * 60 * 1000),
     overtime_hours: overtimeHours,
     evacuation_floors: memoFields.evacuation_floors || 0,
-    patient_name: memoFields.patient_name,
-    hospital_destination: booking.destination,
+    // Manpower-only standby jobs (client feedback item 4) have no patient, so
+    // patient_name/hospital_destination stay null unless the memo fields say otherwise.
+    patient_name: memoFields.patient_name || null,
+    hospital_destination: memoFields.patient_name ? booking.destination : null,
     service_type: memoFields.service_type,
     transfer_type: memoFields.transfer_type,
     is_office_hours: memoFields.is_office_hours,
@@ -127,7 +133,8 @@ async function seedMemo(referenceNumber, ravi, memoFields) {
   })
   await MemoSignature.create({
     memo_id: memo.id,
-    signer_name: memoFields.patient_name,
+    // Standby jobs have no patient to sign, so the crew lead signs instead.
+    signer_name: memoFields.patient_name || memoFields.signer_name || 'Duty Crew Lead',
     signature_image_url: null,
     signed_at: new Date(`${day}T10:05:00.000Z`),
     is_waived: true,
@@ -174,6 +181,18 @@ async function main() {
       patient_name: 'Demo Unmatched Patient', service_type: 'eas', transfer_type: 'one_way_hospital',
       is_office_hours: true, oxygen_litres_used: 15, resuscitation_performed: true,
       waiting_time_minutes: 45, overtime_hours: 3,
+    })
+
+    // Manpower-only standby (client feedback item 4): no patient_name, no
+    // hospital_destination, no patient_weight_kg. Raffles has no pricing contract, so
+    // this exercises the engine's null-tolerant 'unmatched' path (no crash, surcharges
+    // still computed) exactly like BKG-TEST-00003 above. A contract WITH a 'standby' rate
+    // row (see the TTSH RATES entries above) produces a real matched invoice for this same
+    // memo shape - covered by the 'computes a matched invoice for a manpower-only standby
+    // memo' case in backend/tests/kwan-hua/pricing.test.js.
+    await seedMemo('BKG-TEST-00005', ravi, {
+      service_type: 'event_standby', transfer_type: 'standby',
+      is_office_hours: true, signer_name: 'Ravi Kumar (Duty Crew Lead)',
     })
 
     console.log('\n[seed-pricing] Done.')

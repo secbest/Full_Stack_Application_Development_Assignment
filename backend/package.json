@@ -16,6 +16,7 @@
     "db:migrate:gmail-intake": "node src/scripts/migrate-gmail-intake.js",
     "db:migrate:booking-quotations": "node src/scripts/migrate-booking-quotations.js",
     "db:migrate:leakage-dismissal": "node src/scripts/migrate-leakage-dismissal.js",
+    "db:migrate:standby-transfer-type": "node src/scripts/migrate-standby-transfer-type.js",
     "db:seed": "node src/scripts/seed-users.js",
     "db:seed:clients": "node src/scripts/seed-clients.js",
     "db:seed:intakes": "node src/scripts/seed-intakes.js",
@@ -27,7 +28,7 @@
     "db:seed:vendor-invoice": "node src/scripts/seed-sample-vendor-invoice.js",
     "db:seed:leakage": "node src/scripts/seed-leakage-demo.js",
     "db:reset:vendor-invoice-sync": "node src/scripts/reset-demo-vendor-invoice-sync.js",
-    "db:setup": "npm run db:sync && npm run db:migrate:gst && npm run db:migrate:ap-controls && npm run db:migrate:ap-inbound-email && npm run db:migrate:gmail-intake && npm run db:migrate:booking-quotations && npm run db:migrate:leakage-dismissal && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing && npm run db:seed:revenue && npm run db:seed:vendor-invoice && npm run db:reset:vendor-invoice-sync && npm run db:seed:leakage",
+    "db:setup": "npm run db:sync && npm run db:migrate:gst && npm run db:migrate:ap-controls && npm run db:migrate:ap-inbound-email && npm run db:migrate:gmail-intake && npm run db:migrate:booking-quotations && npm run db:migrate:leakage-dismissal && npm run db:migrate:standby-transfer-type && npm run db:seed && npm run db:seed:clients && npm run db:seed:intakes && npm run db:seed:bookings && npm run db:seed:xero && npm run db:seed:pricing && npm run db:seed:revenue && npm run db:seed:vendor-invoice && npm run db:reset:vendor-invoice-sync && npm run db:seed:leakage",
     "db:reset": "node src/scripts/reset-all.js",
     "db:purge-seed": "node src/scripts/purge-seed-data.js",
     "db:purge-seed:field-crew-jobs": "node src/scripts/purge-field-crew-test-jobs.js"

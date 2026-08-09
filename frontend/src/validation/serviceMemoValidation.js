@@ -6,7 +6,7 @@ import * as Yup from 'yup'
 export const SERVICE_TYPES = ['eas', 'mts', 'event_standby', 'workplace_standby']
 export const TRANSFER_TYPES = [
   'one_way_hospital', 'two_way_hospital', 'covid_19', 'imh_psychiatric',
-  'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation',
+  'airport_no_tarmac', 'airport_with_tarmac', 'sg_jb_ground', 'air_evacuation', 'standby',
 ]
 
 // Matches backend/src/validators/serviceMemoValidators.js's STANDARD_SHIFT_HOURS assumption
