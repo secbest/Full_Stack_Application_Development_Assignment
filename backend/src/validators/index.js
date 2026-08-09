@@ -117,6 +117,26 @@ const vendorInvoiceListQuerySchema = Yup.object({
   limit: Yup.number().integer().min(1).max(100).default(20),
 })
 
+// Shared numeric path-param guards.
+//
+// Without one of these, a non-numeric id (`/api/invoices/abc`) travels straight into
+// findByPk(), Postgres rejects the cast, and the SequelizeDatabaseError surfaces as a
+// 500 with a stack trace in the log. The id is client-supplied and malformed, so the
+// honest answer is 400. Routes that already validate their params (contracts, memos,
+// leakage) were unaffected and keep their own more specific schemas.
+const idParamSchema = Yup.object({
+  id: Yup.number().integer().positive().required('A valid id is required'),
+})
+
+const invoiceIdOnlyParamSchema = Yup.object({
+  invoiceId: Yup.number().integer().positive().required('A valid invoice id is required'),
+})
+
+const invoiceLineItemParamSchema = Yup.object({
+  invoiceId: Yup.number().integer().positive().required('A valid invoice id is required'),
+  itemId: Yup.number().integer().positive().required('A valid line item id is required'),
+})
+
 // GET /api/xero/sync-logs - list query (shared by AP + AR).
 const syncLogListQuerySchema = Yup.object({
   status: Yup.string().oneOf(['pending', 'success', 'failed'], 'Invalid status filter').nullable(),
@@ -222,6 +242,9 @@ module.exports = {
   vendorInvoiceItemCreateSchema,
   vendorInvoiceItemUpdateSchema,
   vendorInvoiceListQuerySchema,
+  idParamSchema,
+  invoiceIdOnlyParamSchema,
+  invoiceLineItemParamSchema,
   syncLogListQuerySchema,
   intakeCreateSchema,
   intakeConfirmSchema,

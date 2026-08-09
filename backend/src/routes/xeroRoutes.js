@@ -1,6 +1,6 @@
 const router = require('express').Router()
 const { authenticate, authorise, validate } = require('../middleware')
-const { syncLogListQuerySchema } = require('../validators')
+const { syncLogListQuerySchema, idParamSchema } = require('../validators')
 const { status, connect, callback, disconnect, expenseAccounts, listSyncLogs, retrySync } = require('../controllers/xeroController')
 
 // UC-01: connection lifecycle
@@ -12,6 +12,6 @@ router.get('/expense-accounts', authenticate, authorise('ap_specialist', 'managi
 
 // UC-08: sync status panel (shared AP + AR)
 router.get('/sync-logs', authenticate, authorise('ap_specialist', 'ar_specialist', 'managing_director'), validate(syncLogListQuerySchema, 'query'), listSyncLogs)
-router.post('/sync-logs/:id/retry', authenticate, authorise('ap_specialist', 'ar_specialist'), retrySync)
+router.post('/sync-logs/:id/retry', authenticate, authorise('ap_specialist', 'ar_specialist'), validate(idParamSchema, 'params'), retrySync)
 
 module.exports = router

@@ -53,12 +53,12 @@ router.get(
 // ─── AR Review (Wave 3 - implemented by Kwan Hua; AR design by Jasper) ────────
 // Registered before '/:id' so the literal path is not swallowed by the id param.
 router.get('/pending-review', authenticate, authorise('ar_specialist', 'managing_director'), listPendingReview)
-router.patch('/:id/approve', authenticate, authorise('ar_specialist'), approveMemo)
-router.patch('/:id/return', authenticate, authorise('ar_specialist'), returnMemo)
+router.patch('/:id/approve', authenticate, authorise('ar_specialist'), validate(memoIdParamSchema, 'params'), approveMemo)
+router.patch('/:id/return', authenticate, authorise('ar_specialist'), validate(memoIdParamSchema, 'params'), returnMemo)
 
 // The crew's half of the return loop - corrects a returned memo and puts it back in the
 // review queue. Managing Director included so a stuck memo can be unblocked without Ravi.
-router.patch('/:id/resubmit', authenticate, authorise('field_crew', 'managing_director'), resubmitMemo)
+router.patch('/:id/resubmit', authenticate, authorise('field_crew', 'managing_director'), validate(memoIdParamSchema, 'params'), resubmitMemo)
 
 router.get(
   '/:id',
