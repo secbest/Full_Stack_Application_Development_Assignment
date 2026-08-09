@@ -234,6 +234,20 @@ async function extractVendorInvoice(pdfBuffer) {
         { text: EXTRACTION_PROMPT },
       ] }],
       config: {
+        // Temperature 0: removes sampling variance, so re-extracting the same PDF gives
+        // the same numbers. Restored here after the @google/generative-ai -> @google/genai
+        // migration (e8917a0) rewrote generationConfig as config and dropped it.
+        //
+        // It does NOT make a hosted model bit-deterministic - server-side batching still
+        // moves the low-order output. Measured against the Central Medical fixture: every
+        // transcribed amount, date and line item was identical across runs, while the
+        // model's self-reported `confidence` moved between 0.99 and 1.00 with temperature
+        // 0 set. So treat this as "no sampling noise", not "reproducible to the digit".
+        //
+        // That residual drift is tolerable only because confidence is advisory here:
+        // reconcile() gates on arithmetic that can be checked, and the model's own number
+        // can lower the result but never vouch for an invoice that fails those checks.
+        temperature: 0,
         responseMimeType: 'application/json',
         responseJsonSchema: RESPONSE_SCHEMA,
       },
