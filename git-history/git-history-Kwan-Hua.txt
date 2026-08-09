@@ -1,3 +1,1145 @@
+================================================================================
+GIT HISTORY - KWAN HUA (Tow Kwan Hwa / Neutropils)
+================================================================================
+
+Author email: 168397485+Neutropils@users.noreply.github.com
+(Commits appear under two display names, "Neutropils" and "Tow Kwan Hwa";
+both use the email above, so this file is filtered on the email.)
+
+Generated with:
+    git log --author=168397485+Neutropils@users.noreply.github.com
+
+PART 1 below is the branch record. PART 2 is the raw commit log.
+
+
+================================================================================
+PART 1 - BRANCH RECORD
+================================================================================
+
+Branches are deleted once they are merged into main, so the ref disappears and
+the commit log alone no longer shows which branch a commit belonged to. This
+section reconstructs that from the merge commits: for each merge, the second
+parent is the tip of the branch that was merged, so the range
+merge^1..merge^2 is exactly the set of commits that branch contributed.
+
+Listed below is every branch containing at least one commit authored by Kwan
+Hua. A "*" marks Kwan Hua's own commits; unmarked commits are teammates' work
+that shared the same branch.
+
+testing/data-cleaning  (still exists)
+    merged 2026-08-08 by Neutropils - merge commit 22d279e
+    7 commit(s) brought in, 7 by Kwan Hua (marked *)
+    * 193a751  2026-08-08  Neutropils   docs(ai): backfill Claude Code session logs for June-August
+    * 2938266  2026-08-08  Neutropils   chore(demo): add dry-run purge for a crew member's finished jobs
+    * 20226aa  2026-08-08  Neutropils   feat(leakage): let a leakage row be reviewed, closed and reopened
+    * e708167  2026-08-08  Neutropils   fix(ar): give the MD read-only access to invoices
+    * 7501074  2026-08-08  Neutropils   fix(field-ops): correct My Jobs date tabs, share one date helper
+    * 32f1cc5  2026-08-08  Neutropils   chore(demo): add reviewable demo-data cleanup script
+    * b97f3fe  2026-08-08  Neutropils   fix(dashboard): anchor MD date ranges to the local calendar day
+
+fix/ar-pricing-and-client-identity  (deleted after merge)
+    merged 2026-08-08 by Neutropils - merge commit 5d62e5c
+    4 commit(s) brought in, 4 by Kwan Hua (marked *)
+    * 004d132  2026-08-08  Neutropils   test(ar): cover the four untested AR screens and document every case
+    * 547e82d  2026-08-08  Neutropils   fix(intake): identify clients by organisation and show the published rate
+    * 6230779  2026-08-08  Neutropils   fix(ar): price surcharges from a published rate card, not per contract
+    * 3e3a830  2026-08-08  Neutropils   docs: drop AR and AP dashboards from the screen spec
+
+feature/ap-workflow-improvements  (still exists)
+    merged 2026-08-07 by Neutropils - merge commit 1d333ea
+    11 commit(s) brought in, 11 by Kwan Hua (marked *)
+    * e8917a0  2026-08-07  Neutropils   fix(ap): migrate OCR to current Gemini SDK
+    * b8f5f7c  2026-08-07  Neutropils   fix(ap): allow managing director to connect Gmail intake
+    * 998de43  2026-08-07  Neutropils   fix(ap): show Gmail intake status errors
+    * eb33b44  2026-08-07  Neutropils   feat(ap): import labelled Gmail invoices automatically
+    * edb49d1  2026-08-07  Neutropils   fix(ap): migrate inbound email schema safely
+    * 7e1f561  2026-08-07  Neutropils   feat(ap): add automatic email invoice intake
+    * ed9b449  2026-08-07  Neutropils   fix(ap): recover failed Xero bill syncs
+    * 3d57b8f  2026-08-07  Neutropils   fix(ap): validate Xero coding and supplier matching
+    * dfd70c4  2026-08-07  Neutropils   fix(ap): protect invoice data during OCR retry
+    * 13369e2  2026-08-07  Neutropils   fix(ap): open saved invoice after OCR failure
+    * 81c89ed  2026-08-07  Neutropils   feat(ap): recover invoices with manual line items
+
+feature/live-fleet-tracker  (still exists)
+    merged 2026-08-07 by secbest - merge commit 49fb1b3
+    3 commit(s) brought in, 1 by Kwan Hua (marked *)
+      1805bd8  2026-08-07  secbest      polish(fleet-tracker): label crew pins, add roster panel, enlarge map
+    * 69e84e9  2026-08-07  Neutropils   fix(billing): carry quotations into invoices and harden Xero tax sync
+      991fd79  2026-08-07  secbest      feat(fleet-tracker): add Live Fleet Tracker for Managing Director
+
+fix/ar-memo-unmatched-workflow  (still exists)
+    merged 2026-08-06 by Neutropils - merge commit 0db8ebd
+    1 commit(s) brought in, 1 by Kwan Hua (marked *)
+    * 3518bce  2026-08-06  Neutropils   fix(accounting): harden AR and AP workflows
+
+feature/live-data-customer-quotations-field-crew  (still exists)
+    merged 2026-08-06 by secbest - merge commit f4a5b14
+    23 commit(s) brought in, 5 by Kwan Hua (marked *)
+      f6362aa  2026-08-06  secbest      docs: add session handoff for My Jobs activation fixes and cleanup
+      fe704cf  2026-08-06  secbest      fix(field-ops): let crew start any due job, not just the hero
+      a59e908  2026-08-06  Mi-dev2      Updated git history
+      3ddeaf3  2026-08-06  Mi-dev2      Create handoff-2026-08-06.md
+      6b0f84e  2026-08-06  Mi-dev2      feat(quotations): add delete action to intake/bookings tables
+      d405831  2026-08-05  secbest      docs: add session handoff for notification bell bug fixes
+      73b6f6e  2026-08-05  secbest      fix(notifications): stop stale responses from resurrecting the bell
+      3340d12  2026-08-05  secbest      docs: add session handoff for the live handoff notifications work
+    * 5613966  2026-08-05  Neutropils   feat(workflow): refine customer-to-crew handoff
+    * ef200af  2026-08-05  Neutropils   fix(notifications): harden the integrated workflow
+    * 782d422  2026-08-05  Neutropils   Merge remote-tracking branch 'origin/main' into feature/live-data-customer-quotations-field-crew
+    * d7753c8  2026-08-05  Neutropils   chore: remove unreferenced intake seed data file
+    * 4442f18  2026-08-05  Neutropils   feat(notifications): mount the notification bell in AppLayout
+      36ce130  2026-08-05  secbest      fix(notifications): guard NotificationBell setState calls against unmount
+      2cce4e0  2026-08-05  secbest      feat(notifications): add the notification bell component
+      f562187  2026-08-05  secbest      fix(notifications): correct dead links, a mistyped notification, and a silently-dropped Xero alert
+      9d6f373  2026-08-05  secbest      fix(bookings): notify assigned crew and stop assignment from starting the job
+      3e4357f  2026-08-05  secbest      feat(notifications): notify Quotations Specialists on new intake submissions
+      87b30cd  2026-08-05  secbest      feat(notifications): add the notification read API
+      dcc566c  2026-08-05  secbest      feat(notifications): add job_assigned and memo_returned enum values
+      8627155  2026-08-05  secbest      plan(notifications): implementation plan for the live handoff notification feature
+      590399f  2026-08-05  secbest      design(notifications): clarify AR-specialist fallback consistency in spec
+      6ed338c  2026-08-05  secbest      design(notifications): spec the live customer -> quotations -> field crew handoff
+
+fix/wave3-major-issues  (still exists)
+    merged 2026-08-05 by Jasper Teo Kheng Cher - merge commit c2c97e2
+    2 commit(s) brought in, 2 by Kwan Hua (marked *)
+    * f83d443  2026-08-04  Neutropils   Request Xero's granular scopes instead of the retired broad ones
+    * 812adab  2026-08-04  Neutropils   Fix nine Wave 3 correctness issues across the AR and AP flows
+
+feature/font-size-large-screen-tuning  (deleted after merge)
+    merged 2026-07-15 by Neutropils - merge commit 6a6025a
+    1 commit(s) brought in, 1 by Kwan Hua (marked *)
+    * 51c929c  2026-07-15  Neutropils   Tune base font scale to 16-18px floor/cap
+
+feature/sidebar-two-line-nav-and-font-sizing  (deleted after merge)
+    merged 2026-07-15 by Neutropils - merge commit 7441677
+    1 commit(s) brought in, 1 by Kwan Hua (marked *)
+    * da8864b  2026-07-15  Neutropils   Add collapsible sidebar, two-line nav items, and fluid font sizing
+
+hotfix-wave-3  (deleted after merge)
+    merged 2026-07-11 by Neutropils - merge commit f3c0c7b
+    2 commit(s) brought in, 2 by Kwan Hua (marked *)
+    * 5852c4f  2026-07-11  Neutropils   Fix updateLineItem to also flip unmatched invoices to adjusted
+    * 9e587a8  2026-07-11  Neutropils   Fix unmatched-invoice manual adjustment flow and add predev port check
+
+wave-3-ap-sync  (deleted after merge)
+    merged 2026-07-09 by Neutropils - merge commit fe2361a
+    3 commit(s) brought in, 2 by Kwan Hua (marked *)
+    * 52a5f33  2026-07-09  Neutropils   Fix invoices.contract_id NOT NULL blocking unmatched invoices
+      75caed4  2026-07-08  secbest      Add Wave 2B: Pricing Contracts feature (backend CRUD + frontend UI)
+    * 06a771b  2026-07-08  Neutropils   Add Wave 3: AP invoice sync + AR billing/pricing engine, with real Xero API
+
+wave-1-1b-xero-api  (deleted after merge)
+    merged 2026-07-08 by Neutropils - merge commit e90a7cf
+    3 commit(s) brought in, 3 by Kwan Hua (marked *)
+    * c06fce1  2026-07-08  Neutropils   Pin Vite dev server to strict port 5173
+    * eb6ae8a  2026-07-08  Neutropils   Merge main into wave-1-1b-xero-api
+    * 1efb131  2026-07-03  Neutropils   Add Wave 1B Xero connect + vendor invoice upload endpoints
+
+wave-0-login  (deleted after merge)
+    merged 2026-06-30 by Neutropils - merge commit bcb0f84
+    2 commit(s) brought in, 2 by Kwan Hua (marked *)
+    * 0dad513  2026-06-30  Neutropils   Fix login error persistence and 401 intercept loop
+    * c8f8e45  2026-06-30  Neutropils   Login page + Readme
+
+
+================================================================================
+PART 2 - COMMIT LOG
+================================================================================
+
+commit 22d279e8a9a19b929df721d515e2102f270a1761
+Merge: 87de1a3 193a751
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:45:51 2026 +0800
+
+    merge: MD dashboard date fix, invoice read-access, leakage dismissal
+    
+    Brings in the testing/data-cleaning branch:
+    
+    - fix(dashboard): the Executive Dashboard reported every figure one
+      calendar day behind, including when an explicit date was supplied.
+    - fix(field-ops): the same defect in a second copy of the helper, which
+      put My Jobs' Today/Tomorrow/This Week tabs a day behind. Both now
+      share utils/date.js.
+    - fix(ar): the MD could open the Revenue Leakage report but got 403 on
+      every row she clicked. Invoices are now read-only for her, matching
+      what the backend already allowed.
+    - feat(leakage): a leakage row can be reviewed, closed with an
+      attributable reason, and reopened - so the report stops accumulating
+      gaps that were already dealt with.
+    - chore(demo): two dry-run-by-default cleanup scripts.
+    - docs(ai): backfilled Section C session logs.
+    
+    Requires one migration on existing environments:
+      npm run db:migrate:leakage-dismissal
+    (already included in db:setup and db:reset)
+
+commit 193a751120640c155216006164fda6105ff1ab9f
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:45:11 2026 +0800
+
+    docs(ai): backfill Claude Code session logs for June-August
+    
+    Section C requires ai-logs/ to show AI usage across all phases, kept
+    current rather than assembled at the end. Only three logs existed
+    (2026-06-19, 07-02, and the Codex AP session on 08-07), leaving every
+    Claude Code session from Wave 1B onward unrecorded.
+    
+    Ten session logs reconstructed from the actual transcripts in
+    ~/.claude/projects plus the matching commits, so the quoted prompts are
+    verbatim rather than remembered. Each records the phase, what the AI
+    produced, and whether I accepted, edited or rejected it - including the
+    cases where I rejected it: deferring the Wave 1B review findings to keep
+    the branch reviewable, requiring a recovery instruction on the memo
+    error rather than accepting "working as intended" (which is what exposed
+    the real stuck-invoice bug), and overriding the stepper back to decimals
+    for unit price.
+    
+    Adds a README index so phase coverage is visible at a glance.
+    
+    Raw .jsonl is deliberately not included. The transcripts contain reads
+    of backend/.env from sessions where it was open in the IDE, so they
+    almost certainly carry Supabase, Cloudinary, Gemini, Xero and Gmail
+    credentials. They need a scrub pass before they can be submitted.
+    
+    ai-reflection.md remains unwritten and un-AI-assisted, per
+    submission-guide.md.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 293826604e05f0fe81432f26df6587ea14d7d7c1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:37:26 2026 +0800
+
+    chore(demo): add dry-run purge for a crew member's finished jobs
+    
+    Requested to clear the backlog out of My Jobs. Written dry-run-first
+    because the impact is far wider than it sounds: Ravi is assigned to 24
+    of 27 bookings and every invoice in the system hangs off one of them, so
+    "remove Ravi's finished jobs" is in practice "delete the entire billing
+    dataset" - the report prints exactly that before it will write anything.
+    
+    Excludes BKG-TEST-* by default. Two of that set (00003 completed, 00004
+    invoiced) match the finished filter, so without the exclusion the script
+    would delete the demo bookings seed-bookings.js had just created. There
+    is already a dedicated script for that set if it is really wanted:
+    purge-field-crew-test-jobs.js.
+    
+    Counts invoices already pushed to Xero separately, because deleting the
+    local row does not retract the Xero draft.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 20226aa4b32f596cb40f8bb581cd013fd45c493a
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:37:14 2026 +0800
+
+    feat(leakage): let a leakage row be reviewed, closed and reopened
+    
+    The revenue-leakage report could only ever accumulate. Prevention
+    (surcharges price from a published rate card, so a booking with no
+    contract still gets priced) and detection (the report) were both in
+    place, but a gap that had genuinely been dealt with had no way to leave
+    the total.
+    
+    That matters most for the case the report cannot fix itself. Once an
+    invoice has been pushed to Xero the bill is issued, and EFAR is
+    pre-accounting - Xero is the master ledger, so silently re-pricing an
+    issued document is exactly what this system must not do. The only honest
+    resolutions are "billed the difference separately" or "written off", and
+    neither could be recorded. So the figure drifted further from reality
+    every month and the report became easy to ignore, which is the worst
+    outcome for a report whose only job is to be acted on.
+    
+    Adds PATCH/DELETE /api/dashboard/revenue-leakage/:invoiceId/dismiss,
+    restricted to the AR Specialist and the MD - the wider read access on
+    the report deliberately does not extend to writing off revenue.
+    
+    Design decisions worth stating:
+    
+    - The reason is mandatory, min 10 chars. A blank or one-word note
+      ("ok", "n/a") records that a decision happened without recording why,
+      which is the same as not recording it.
+    - An actor column is stored alongside the timestamp and reason. A
+      write-off with no attributable author is not an audit trail, and this
+      is the one action in the report that decides money will not be
+      collected.
+    - Dismissing does NOT clear unpriced_surcharges. That column is the
+      evidence behind the decision; erasing it would make the dismissal
+      unauditable and the figure unreproducible.
+    - Closed rows are reported separately with their own total, never merged
+      into the open figure and never hidden. Folding them in would let a
+      write-off look like a fix; dropping them would erase the decision.
+    - Dismissal is reversible. A write-off that cannot be undone is one
+      nobody dares make, and the feature would go unused.
+    - Re-dismissing an already-closed row is refused rather than silently
+      overwriting the first reason and author.
+    
+    Stored on invoices, not bookings. Booking already carries an unused
+    leakage_dismissed_at/reason pair, added speculatively and read by
+    nothing - but leakage is an invoice-level fact (unpriced_surcharges
+    lives on invoices, and the report is keyed by invoice_id), so the
+    dismissal belongs beside the data it closes out. The dead Booking
+    columns are left alone; removing them is a separate cleanup.
+    
+    Migration is idempotent and re-reads information_schema to confirm each
+    ALTER actually took effect, and is wired into db:setup and db:reset.
+    There is no backfill: every existing row is undismissed, which is what
+    NULL already means - writing a value would invent a decision nobody made.
+    
+    Also fixes todayISO() on the report page, which had the same
+    toISOString() day-shift as the backend helper and would have sent
+    yesterday as the range end before 08:00 Singapore time.
+    
+    Backend 47 suites / 503 tests, frontend 38 suites / 308 tests, build clean.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit e708167c5e86c20a6ef3076bd4675a4fb24e2e63
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:36:51 2026 +0800
+
+    fix(ar): give the MD read-only access to invoices
+    
+    The Revenue Leakage report is deliberately shared with the Managing
+    Director (dashboardRoutes.js says why: she reads the number, Sarah fixes
+    the contract behind it). But RevenueLeakagePage links each leakage row
+    straight to /invoices/:id, and App.jsx gated both /invoices routes to
+    ar_specialist - so Doris clicked a row on her own report and got the
+    Forbidden page. The report named the problem to someone it then refused
+    to show it to.
+    
+    The backend had allowed her all along: invoiceRoutes.js authorises
+    managing_director on GET / and GET /:id, matching the role matrix in
+    design/jasper/api-documentation.md ("reads are ar_specialist +
+    managing_director"). Frontend and backend simply disagreed.
+    
+    Opening the route alone would have been worse than the 403. Neither
+    invoice page had any role awareness, so she would have been shown
+    Approve & Sync, Retry Match, Add Adjustment, row delete, and the amber
+    banner's "Open Contract Rates" - every one of which either 403s on the
+    backend or navigates to another ar_specialist-only route. So both pages
+    now hide their write controls for non-AR viewers and say "View only",
+    and her back link returns to Revenue Leakage rather than an AR queue she
+    still cannot open.
+    
+    Selection checkboxes go too, not just the batch button: a checkbox that
+    leads nowhere is worse than no checkbox.
+    
+    The pricing-contract and service-memo routes stay ar_specialist-only -
+    this widens read access to invoices, nothing else.
+    
+    InvoiceDetailPage.test.jsx needed the auth mock InvoiceListPage.test.jsx
+    already had (12 tests were failing on the missing context), and
+    InvoiceMdReadOnly.test.jsx pins both halves: she can read the figures,
+    and cannot see a control she would be refused. It deliberately uses a
+    `matched` invoice - the status that WOULD render Approve & Sync for AR -
+    so the assertion tests the role gate rather than the status gate.
+    
+    Frontend: 37 suites, 302 tests passing, production build clean.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 75010744bbe75436dbe406d6c6f0cb068ffe4462
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 23:36:27 2026 +0800
+
+    fix(field-ops): correct My Jobs date tabs, share one date helper
+    
+    bookingController carried its own copy of toDateOnly with the identical
+    toISOString() defect fixed in b97f3fe for the dashboard, so listMyJobs
+    was still a day behind: the Today, Tomorrow and This Week tabs bounded
+    scheduled_date with startOfDay()'s LOCAL midnight formatted as UTC,
+    which in Singapore (UTC+8) is 16:00 the previous day. Ravi's "Today"
+    listed yesterday's jobs.
+    
+    The same two-line helper had been written twice, independently, and
+    shipped broken both times - so it now lives in utils/date.js and both
+    controllers import it. A date helper that looks obviously right is
+    exactly the kind that gets copy-pasted with its bug intact.
+    
+    Also adds today(), so callers have a correct spelling of the common
+    case to reach for instead of rediscovering that
+    `new Date().toISOString().slice(0, 10)` is wrong here.
+    
+    Seven other copies of that expression remain in the tree. Checked each:
+    activeContractService and gstService are safe as actually called (every
+    caller passes either a UTC-parsed Date or a plain YYYY-MM-DD string,
+    both of which take a correct path), and the rest are seed scripts. They
+    are left alone rather than changed speculatively.
+    
+    Backend suite: 46 suites, 494 tests passing.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 32f1cc5cd9015bb5fd0e3012a2096ccaf02bd458
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 22:56:21 2026 +0800
+
+    chore(demo): add reviewable demo-data cleanup script
+    
+    Testing left rows in the shared database that read badly on a projector:
+    "Testing 1", org "Test", a Codex E2E automated-test fixture carrying a
+    $620 Xero-synced invoice, patient names ASD/TR/Chud/Jas, signer "gh",
+    contract "TR", and four $0 unmatched invoices.
+    
+    db:reset would clear all of it, but it drops every table. That destroys
+    what a seed cannot rebuild - invoices holding real Xero record IDs from
+    live syncs, the vendor invoice genuinely OCR'd by Gemini, and the
+    leakage case the report actually cites - and wipes the rest of the
+    team's in-flight work on the same Supabase instance. So this removes
+    named rows instead.
+    
+    Dry run by default; --apply writes inside a single transaction and rolls
+    back as a unit. Idempotent.
+    
+    Deliberately keeps:
+      - The last remaining invoice of each status. The only adjusted and
+        only failed invoice are renamed, not deleted, because the Invoice
+        List has to show the full status range during the demo.
+      - One $0 unmatched invoice, for the Retry Match path.
+      - Invoice #20 and its $390 of unpriced surcharges, which is what the
+        revenue-leakage report reports.
+      - Unread notifications. A read one is noise; an unread one is still
+        someone's to-do, and this database is shared.
+    
+    Renaming is preferred to deleting wherever the row sits on a chain that
+    carries real demo value, so a placeholder patient name does not cost the
+    returned-memo or failed-sync example attached to it.
+    
+    Two defects the first dry run exposed in this script, both fixed here:
+    the contract check counted an invoice that the same run was about to
+    delete, reporting a contract as kept that --apply would have removed;
+    and the notification purge executed without appearing in the report at
+    all. On a destructive script the dry-run report is the review artifact,
+    so it has to match what apply does.
+    
+    Note: deleting a local invoice row does not retract its Xero draft. The
+    report names each Xero record it is leaving behind.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit b97f3fe1ceebd2db3b425301df7f6eb2b9747fb3
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 22:53:53 2026 +0800
+
+    fix(dashboard): anchor MD date ranges to the local calendar day
+    
+    Every figure on Doris's Executive Dashboard read one day behind. Even an
+    explicit date_from=2026-08-08&date_to=2026-08-08 came back as 2026-08-07,
+    so "Today" showed yesterday's bookings and no filter could reach today.
+    
+    toDateOnly() formatted via .toISOString(), which converts to UTC first.
+    Every Date reaching it is anchored to LOCAL midnight, from one of two
+    places:
+    
+      - resolvePeriodRange() builds it with startOfDay(new Date()).
+      - Yup.date() in fleetOverviewQuerySchema/vendorExpensesQuerySchema
+        coerces a bare "2026-08-08" param to local midnight. Yup parses
+        date-only strings as local; native new Date() parses them as UTC,
+        which is why the two behave differently and this is easy to miss.
+    
+    In Singapore (UTC+8) local midnight is 16:00 the previous day in UTC, so
+    slicing the ISO string moved the calendar day back by one. Reading the
+    local date components instead keeps it intact.
+    
+    One function, so all 12 call sites are corrected: fleet-overview (both
+    ends, including caller-supplied dates), vendor-expenses' default end of
+    range, and revenue-trend's week bucket labels. The five sibling schemas
+    already validated dates as YYYY-MM-DD strings and were never affected -
+    this is the same Singapore-timezone class of bug fixed for TIMESTAMP
+    columns in c9ecc49, on the path that fix did not cover.
+    
+    Visible effect: the Reports page disagreed with itself. Its Revenue,
+    Billing Cycle and Leakage History tabs were correct while Vendor
+    Expenditure on the same screen was a day behind.
+    
+    Tests pin literal expected dates rather than recomputing them the way
+    the controller does - an expectation derived from the same helper would
+    have passed against the bug. Includes the 00:30-local worst case, where
+    the UTC date differs from the local one by a full day.
+    
+    Backend suite: 46 suites, 494 tests passing.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 6307651b38ee6ed60d84cd93d69affeb3fc748d2
+Merge: 3a755b5 c232977
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 02:13:38 2026 +0800
+
+    Merge remote-tracking branch 'origin/main'
+
+commit 3a755b56a1f4fae3280932d53c4b09a230708e15
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 02:12:38 2026 +0800
+
+    fix(ar): auto-price recorded surcharges and block base-less approval
+    
+    Reported as "the AR amount doesn't tally". The chain had three links.
+    
+    1. The memo wizard defaulted is_office_hours to `true` regardless of the
+       quoted time category, so a job sold as non-office-hours arrived at AR
+       claiming office hours over a toggle nobody had touched.
+    2. That fails quotationMatchesMemo, and the mismatch path created a
+       COMPLETELY EMPTY invoice - subtotal 0, no line items - with every charge
+       the crew recorded dumped into unpriced_surcharges to be re-keyed by hand.
+       That is the tally: the invoice showed none of the crew's work.
+    3. Adding any manual adjustment moves an `unmatched` invoice to `adjusted`,
+       and batchApprove only checked status. Nothing verified the invoice
+       actually contained a base transport charge.
+    
+    Four invoices reached Xero this way, billed $21.80-$54.50 for jobs quoted at
+    $50-$190, with the transport charge silently absent.
+    
+    Fixes:
+    
+    - All three no-base paths (quotation mismatch, no contract, no matching rate)
+      now price the crew's recorded surcharges from the published card and write
+      them as line items. Only the base is left for a human, because only the base
+      genuinely needs a decision. Verified on a real memo: $390 of surcharge lines
+      where the invoice previously showed nothing.
+    - The wizard defaults the office-hours toggle from booking.quoted_time_of_day.
+      The crew still records reality; this only changes which way it starts.
+    - New invoice_line_items.line_type (base | surcharge | adjustment).
+      is_manual_adjustment separates engine from human, which cannot express
+      "priced except for the transport charge".
+    - batchApprove refuses an invoice with no base row and returns skipped_reasons
+      so "wrong status" and "no base charge" are distinguishable. The UI disables
+      Approve, explains why, and offers a "this is the base transport charge"
+      option on the adjustment form - pricing the base by hand stays possible, it
+      just has to be declared.
+    - rematch previously refused any invoice with line items, which would now be
+      all of them; it refuses only on manual adjustments and clears the engine's
+      prior rows before regenerating so surcharges cannot double.
+    
+    The backfill classifies by description and self-checks for invoices left with
+    more than one base row - the first run promoted three legacy seed surcharges
+    ("Resuscitation Performed" etc.) to base, which the check caught.
+    
+    Backend 488 passing (6 new), frontend 297 passing (4 new), build clean.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 5d62e5cef48638d2f4f5eace8d3b404f392f057e
+Merge: 6ab0055 004d132
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 01:11:43 2026 +0800
+
+    Merge branch 'fix/ar-pricing-and-client-identity'
+    
+    Fixes three defects in the intake -> booking -> invoice chain, and brings the
+    AR screens up to the same test coverage as the AP screens.
+    
+    - Surcharges now resolve from a published global rate card, so one-off-quote
+      bookings stop reporting every recorded charge as unpriced. Verified on a
+      representative memo: subtotal 190.00 -> 445.00, unpriced 7 -> 0.
+    - Intake identifies a corporate client by organisation name rather than email,
+      so a reused email no longer bills the booking to the wrong client.
+    - The intake review panel shows the published rate band for the agreed base
+      price, which was previously an unreferenced "0.00" field.
+    - AR screen coverage 33 -> 103 frontend tests; four screens that had no test
+      file at all are now covered. test-cases.md records every case in both folders.
+    
+    Includes a schema migration already applied to the shared database:
+    surcharge_schedules.contract_id now allows NULL to mark a global default row.
+    
+    Backend 482 passing, frontend 293 passing, production build clean.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 004d13284d1c1359125a65ccd362b6b98f262bc0
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 01:05:58 2026 +0800
+
+    test(ar): cover the four untested AR screens and document every case
+    
+    The AP/Xero screens were well covered but the AR side was not: four screens
+    Kwan Hua owns had no test file at all, and the memo review queue had a single
+    test for two screens.
+    
+    New suites (58 tests):
+      InvoiceListPage      14 - status filters, selection rules, batch approve
+      PricingContractPage  15 - four-state derived status, inactive visibility
+      ContractDetailPage   18 - rate CRUD, surcharge batch edit, read-only states
+      ContractFormPage     11 - create/edit split, duplicate guard, acknowledgment
+    
+    ServiceMemoListPage expanded 1 -> 13, covering the SLA colouring bands, the
+    nine-surcharge pricing panel required by CLAUDE.md logic correction 1, and
+    evacuation_floors staying out of it per logic correction 4.
+    
+    Concentrated on the paths that carry billing risk rather than rendering:
+      - batch approve must never report a partial Xero failure as a clean success,
+        and must never select an unmatched invoice (which would issue a $0 document)
+      - the surcharge save is N independent PUTs with no transaction, so a partial
+        failure must name the failed rows and keep the successful ones
+      - the HAS_MATCHED_INVOICES round-trip must re-send with the acknowledgment,
+        and a declined confirm must not be reported as an error
+      - expired and deactivated contracts are read-only and must stay distinguishable
+    
+    test-cases.md updated in both folders. The frontend table was six rows against
+    33 tests and is now a 1:1 record of all 103; the backend gains rows 111-123 for
+    the two services added in this branch.
+    
+    The duplicate-rate test carries an explicit 20s timeout: it drives nine Radix
+    Select open/close cycles and flaked once against the default when the full
+    suite ran all workers in parallel. Verified stable over three consecutive runs.
+    
+    Backend 482 passing, frontend 293 passing, production build clean.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 547e82df8deff9602870d190f70efc4ec1fd80f1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 00:47:02 2026 +0800
+
+    fix(intake): identify clients by organisation and show the published rate
+    
+    Two defects in confirming an intake.
+    
+    1. Wrong client on the booking. confirmIntake used
+       Client.findOrCreate({ where: { contact_email } }), making email the
+       client's identity. findOrCreate returns the existing row untouched when
+       the where-clause matches, so `defaults` - including the organisation the
+       specialist typed - was silently discarded. Confirming for "NUS" while
+       reusing an email on file for "Nanyang Poly" produced a booking billed to
+       Nanyang Poly, with no warning. The same bug in reverse split one real
+       organisation across two client rows.
+    
+       For a B2B booking the organisation is the customer, so it is now the
+       identity key; email remains the key for individuals, where it is correct.
+       Matching stays exact (case- and whitespace-insensitive) rather than fuzzy:
+       silently merging two genuinely different customers is worse than creating
+       a duplicate a human can merge.
+    
+    2. No pricing reference. The Agreed Base Price field was a bare numeric
+       input with a "0.00" placeholder, and was hidden entirely on the contract
+       path - so the specialist froze a price she never saw. Bookings were
+       quoted at 50 and 100 against a published one-way rate of 160-210.
+    
+       The review panel now shows the published band for the selected transfer
+       type and time category, flags an out-of-band amount, and explains where
+       the contract path's price comes from. Guidance only, never a block: a
+       negotiated price outside the band is legitimate.
+    
+    Adds cleanup-client-data.js to repair rows already written. Dry run by
+    default; --apply is required to write. It reports under-quoted bookings
+    without rewriting them, because a quoted price is a commercial commitment,
+    and refuses a merge whose source owns a contract, which would leave the
+    survivor with overlapping contracts and make pricing order-dependent.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 62307791fbda68d12bd18de9eb1134fa6f15ad49
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 00:46:46 2026 +0800
+
+    fix(ar): price surcharges from a published rate card, not per contract
+    
+    Every one-off-quote invoice warned that its recorded charges were unpriced.
+    The engine loaded surcharges as WHERE contract_id = <id>, so a booking with
+    no contract got an empty schedule and each charge the crew recorded fell
+    through to unpriced_surcharges.
+    
+    Surcharges are published rates, not negotiated ones - EFAR's pricing table
+    lists one card for oxygen, inconvenience, disposables, resuscitation,
+    suction, waiting time, heavy lifting and Jurong Island. Only the base
+    transport rates vary per contract.
+    
+    surcharge_schedules.contract_id now allows NULL to mark a global default,
+    and resolveSurchargeRows() resolves contract row -> published default ->
+    unpriced. Contract rows become overrides, which is what a negotiated
+    schedule actually is. This also fixes contracts with partial schedules,
+    which previously dropped every surcharge they did not list.
+    
+    Verified against a memo carrying oxygen/inconvenience/disposables/suction/
+    waiting/heavy-lifting: subtotal 190.00 -> 445.00, unpriced 7 -> 0.
+    
+    overtime_per_hour and cancellation are deliberately not defaulted - neither
+    has a flat published amount ("100% upon activation" is a rule, not a figure).
+    
+    The migration uses raw DDL and re-reads information_schema to confirm the
+    constraint was dropped: queryInterface.changeColumn resolves successfully
+    here without actually dropping NOT NULL, which reports a false success.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 3e3a830693857e4e5e4fe388f7ae59b32c5bb825
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 00:46:14 2026 +0800
+
+    docs: drop AR and AP dashboards from the screen spec
+    
+    Screens 6 (AR Dashboard) and 15 (AP Dashboard) are not being built. Both
+    specialists land directly on their work queue instead.
+    
+    Recorded as Logic Correction 6 (the section that overrides the use case
+    docs) and reflected in the role routing table, navigation map and prototype
+    file map so the spec agrees with ROLE_HOMES in frontend/src/router/routes.js.
+    
+    Screen numbering is deliberately not re-sequenced: code comments cite screens
+    by number ("Invoice List (screen 9)"), so 6 and 15 remain as tombstones.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 823e995a8ad4f39316a931feb3d1098c81859723
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Sat Aug 8 00:01:03 2026 +0800
+
+    docs(ap): add workflow handoff and AI session log
+
+commit 07d283b939973a773c5a7ffd2a9ae71016ac15ec
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 17:56:37 2026 +0800
+
+    fix(ap): lock only invoice during approval
+
+commit e47f26bdb0fe285ed167430b86548249c6e969eb
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 17:51:21 2026 +0800
+
+    fix(ap): recover missing GST from printed totals
+
+commit 7d8549ac819535dbfc30436e392640f356298a61
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 16:26:23 2026 +0800
+
+    Update .gitignore
+
+commit 87918fc6ac238e56f87e52162ccf92de8431d1a5
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 16:25:31 2026 +0800
+
+    test(ap): provide auth context for invoice list
+
+commit 1d333eae8edf630202c5c01a1ce3b763a4db4fd1
+Merge: 45cbaa7 e8917a0
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 16:23:14 2026 +0800
+
+    merge: integrate AP workflow improvements
+
+commit e8917a06fa417a2050c8e4fd02ce6d93a294f10d
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 16:18:37 2026 +0800
+
+    fix(ap): migrate OCR to current Gemini SDK
+
+commit b8f5f7c50ea92c7e62523d3b09f989afb0c1d564
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 16:03:11 2026 +0800
+
+    fix(ap): allow managing director to connect Gmail intake
+
+commit 998de4331fc70b7b3d40df914795544d42883071
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 15:56:19 2026 +0800
+
+    fix(ap): show Gmail intake status errors
+
+commit eb33b44dbb35c85639c8ef37dc4047519c77ae2c
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 15:08:46 2026 +0800
+
+    feat(ap): import labelled Gmail invoices automatically
+
+commit edb49d193c9bff89eb88c68ebc68ad706907e6bd
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 14:19:04 2026 +0800
+
+    fix(ap): migrate inbound email schema safely
+
+commit 7e1f561daedb2ec1be3ed134bee6528a89baee49
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 14:16:07 2026 +0800
+
+    feat(ap): add automatic email invoice intake
+
+commit ed9b4496434f5a8aac19e74077d86423513957bf
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 14:06:08 2026 +0800
+
+    fix(ap): recover failed Xero bill syncs
+
+commit 3d57b8fbcc7106c724240bc09163dfc769eb4b76
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 13:45:53 2026 +0800
+
+    fix(ap): validate Xero coding and supplier matching
+
+commit dfd70c4c75e47e794357ece5cccf10607ea8afab
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 13:17:32 2026 +0800
+
+    fix(ap): protect invoice data during OCR retry
+
+commit 13369e2dc862bc4cfb8b99dfb8de164945be7603
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 12:59:54 2026 +0800
+
+    fix(ap): open saved invoice after OCR failure
+
+commit 81c89ed4b6a7f96accd83046e1231746e7f92b9a
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 12:49:58 2026 +0800
+
+    feat(ap): recover invoices with manual line items
+
+commit 69e84e9c89d15d2afa76004e18d9ff05096681cc
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Aug 7 11:13:53 2026 +0800
+
+    fix(billing): carry quotations into invoices and harden Xero tax sync
+
+commit d5bd18c90519afcb0d9925b34043ad648bfdc068
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Aug 6 16:53:16 2026 +0800
+
+    docs: add Kwan Hwa accounting workflow handoff
+
+commit 0db8ebd09d5f157cfbb74b905926ce429d7ea240
+Merge: f4a5b14 3518bce
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Aug 6 16:48:02 2026 +0800
+
+    Merge fix/ar-memo-unmatched-workflow into main
+
+commit 3518bcef770ea89f34e61fa9e02906abf66141ba
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Aug 6 16:46:34 2026 +0800
+
+    fix(accounting): harden AR and AP workflows
+    
+    Add dynamic GST snapshots and AP accounting controls, correct rebate and reporting totals, validate invoice approvals before Xero sync, and expose an auditable review trail. Improve AR unmatched memo handling and surface actionable Xero sync failures across the accounting UI.
+
+commit 5613966203439b2df2376f5082a6931f777a8322
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 16:56:38 2026 +0800
+
+    feat(workflow): refine customer-to-crew handoff
+    
+    Customer intake now supports browser contact autofill, full service labels, and Singapore Google Places autocomplete styled consistently with the form.
+    
+    Move service-tier ownership to quotations, require an explicit tier at confirmation, and add the nullable intake-tier database migration.
+    
+    Keep field-crew schedules live while the page is open and expose the real activation milestone as Start Job instead of auto-reporting work in progress.
+
+commit ef200afc609d6a409b6cf794f9fbcce4248e0d46
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 15:05:38 2026 +0800
+
+    fix(notifications): harden the integrated workflow
+
+commit 782d42246c7dbe9f9eaf321e64521023594cd4f7
+Merge: d7753c8 18f26c8
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 14:57:40 2026 +0800
+
+    Merge remote-tracking branch 'origin/main' into feature/live-data-customer-quotations-field-crew
+    
+    # Conflicts:
+    #       backend/src/controllers/invoiceController.js
+
+commit d7753c8f5747f4d0407af1de9c0a0fe4ce326869
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 14:53:32 2026 +0800
+
+    chore: remove unreferenced intake seed data file
+
+commit 4442f1831621e04e23ac49abc76bb63842e6932e
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 14:52:50 2026 +0800
+
+    feat(notifications): mount the notification bell in AppLayout
+
+commit 18f26c82a309750aef27dec4176fe0d120e9c727
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 14:44:45 2026 +0800
+
+    Polish Xero sync status errors
+
+commit dc9f6917f4d7c3ec5c549501e6f538ad5048e675
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 14:05:17 2026 +0800
+
+    Fix white screen on the revenue leakage report
+    
+    api/leakage.js returned the raw axios response instead of res.data.data. The
+    shared interceptor in api/index.js only handles 401 redirects and passes the full
+    response through, so each api module unwraps itself (see api/xero.js). The page
+    therefore read `summary` off an axios object, got undefined, and threw on the
+    first field access - blanking the whole route.
+    
+    - Unwrap res.data.data in getRevenueLeakage, matching the convention.
+    - Validate the payload shape on load and render a retryable error card instead of
+      letting a bad shape throw during render. A malformed response should degrade to a
+      message, never a blank page.
+    - Regression tests mock the axios instance rather than the api module, so they run
+      through the real unwrapping code: mocking '@/api/leakage' would have passed
+      against the broken build. Verified by reintroducing the bug - 5 of 8 fail.
+    
+    Confirmed rendering in Chromium against the live stack: no page errors, no failed
+    requests, report shows $909.00 across 3 invoices.
+    
+    Frontend 144 tests pass (17 suites), production build succeeds.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 99f7018ec596f2ed8ee3c3625f6c3a38006cce69
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Aug 5 13:53:21 2026 +0800
+
+    Fix AP/Xero money and idempotency defects, add revenue leakage report
+    
+    Money correctness:
+    - PATCH /vendor-invoices/:id had no schema; a negative rebate_percentage made
+      verified_total LARGER than the invoice (1000 at -50% became 1500), which the
+      existing 'reject negative verified_total' guard could never catch.
+    - Line item amount was persisted verbatim from the request, so qty 2 x $10 could
+      be stored as $999 and become the invoice total. Now derived server-side.
+    - Parent total recompute was gated on 'amount !== undefined', so editing unit_price
+      alone left both the line amount and the invoice total stale.
+    - round2 moved to utils/money.js and made cents-safe: Math.round(n*100)/100
+      returned $1.00 for 1.005 because 1.005*100 is 100.49999999999999.
+    
+    OCR trustworthiness:
+    - Nothing checked that extracted line items summed to the extracted total. Added
+      reconcile(): arithmetic and format checks that can be verified.
+    - is_low_confidence rested solely on a confidence score the model reported about
+      itself; it is now computed from those checks, and the model's number can only
+      lower the result, never vouch for an invoice that fails arithmetic.
+    - Gemini now uses responseSchema + temperature 0 so re-extraction is deterministic.
+    - OCR-failure response now returns the id of the row it created.
+    
+    Xero robustness:
+    - approve and retry now claim their row under a lock inside a transaction, and
+      short-circuit when a Xero record already exists. Xero does not deduplicate, so
+      concurrent approvals previously created two bills for one PDF.
+    - Simulation is the default and only 'false' disables it, so a live deployment
+      missing the flag reported success while nothing reached Xero. Mode is now logged
+      at startup and returned by GET /api/xero/status.
+    - AR pushes now send Reference and Date; they previously arrived auto-numbered and
+      dated the day of the sync, with nothing linking them back to an EFAR invoice.
+    - Multi-org logins are warned about instead of silently taking tenants[0].
+    - OAuth CSRF states now expire instead of leaking for the process lifetime.
+    
+    Revenue leakage report:
+    - unpriced_surcharges was persisted on every invoice and read by nothing. New
+      GET /api/dashboard/revenue-leakage aggregates it by surcharge type and contract,
+      valuing each gap at the median rate other contracts charge, and counting what it
+      cannot value rather than rounding it to zero.
+    - Unpriced entries now carry a numeric quantity so the report does not parse
+      '6 h recorded' to find a 6.
+    - New screen at /reports/revenue-leakage for the MD and the AR Specialist.
+    - npm run db:seed:leakage seeds a demonstrable gap.
+    
+    Backend 306 tests pass, frontend 136 pass, production build succeeds.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 7ae60d5bc03a9b97b8a42eebee017d2fd56fca0a
+Merge: 7d09ff4 9d8bb59
+Author: Tow Kwan Hwa <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Aug 4 15:46:18 2026 +0800
+
+    Merge pull request #3 from secbest/feature/client-feedback-and-features
+    
+    Feature/client feedback and features
+
+commit f83d443a570cddfde7c67ce50be87478e41c9aaa
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Aug 4 14:48:55 2026 +0800
+
+    Request Xero's granular scopes instead of the retired broad ones
+    
+    Xero is replacing broad OAuth scopes with granular ones. Apps registered after
+    2 March 2026 are only granted the new set; apps registered before it keep the
+    broad set until September 2027. The hardcoded scope string asked for
+    `accounting.transactions`, which no longer exists for a newly registered app.
+    
+    Because Xero rejects the ENTIRE authorize request with `invalid_scope` when any
+    single requested scope is unavailable, this failed before the consent screen
+    rendered - presenting as a dead authorize link rather than a scope problem. It
+    would have hit any teammate or marker registering their own Xero app today, not
+    just one machine.
+    
+    - Default scopes are now the granular set:
+      openid profile email accounting.invoices accounting.contacts offline_access
+      accounting.invoices covers both the ACCREC sales invoices and ACCPAY bills the
+      platform creates; accounting.contacts is needed because both pushes identify the
+      client/vendor by Contact name.
+    - Added an XERO_SCOPES env override for an app still on the legacy broad scopes,
+      so the choice is no longer baked into the source.
+    - README documents the migration, the cutoff date, where to find an app's actual
+      granted scopes in the developer portal, and the two local-flow gotchas: nodemon
+      reloads invalidate the in-memory CSRF state, and the seeded demo connection's
+      placeholder tokens can't be decrypted if a sync runs before consent completes.
+    - README also notes preferring db:sync over db:reset once a real organisation is
+      connected, since a reset drops xero_connections and forces re-consent.
+    
+    Verified against a live Xero Demo Company: authorization-code exchange, tenant and
+    org lookup, AES-256-GCM token storage (access token decrypts to a valid JWT), and
+    both sync directions. A draft ACCPAY bill and a draft ACCREC invoice were created
+    in Xero and read back through the API to confirm type, contact, totals and line
+    items survived the round trip - including a manual adjustment line.
+    
+    Tests: 220 pass. The scope assertion now pins the granular name and asserts the
+    retired one is absent, plus a new case covering the XERO_SCOPES override.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 812adab1cb770155c88ed50539e0463a9b79b8e1
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Aug 4 13:57:15 2026 +0800
+
+    Fix nine Wave 3 correctness issues across the AR and AP flows
+    
+    Revenue leakage
+    - Bill overtime. overtime_hours was captured on the memo, cross-checked by the
+      submission validator, then never read by the pricing engine, and there was no
+      overtime entry in the surcharge_type enum for a contract to price. Adds
+      overtime_per_hour and an engine line item, so recorded overtime reaches the
+      invoice instead of being dropped.
+    - Stop discarding unpriced surcharges. The engine skipped any surcharge the
+      matched contract had no rate for, silently and invisibly. It now returns an
+      `unpriced` list, persisted on the invoice and shown to the AR Specialist as a
+      prominent warning with the recorded values, so the charge can be added by hand.
+    
+    Workflow dead ends
+    - Add a 'returned' memo status. Returning a memo used to set its status back to
+      'submitted', so it stayed in the AR review queue looking identical to a fresh
+      submission and was reviewed again in a loop. Returned memos now leave the queue,
+      and ar_note is exposed so the crew can read what to fix.
+    - Close the approve-then-return dead end. A memo whose invoice was merely
+      'matched' could be returned, stranding both records: the memo went back to the
+      crew while its invoice lived on, and re-approving then failed because an invoice
+      already existed. Any existing invoice now blocks the return with a message
+      naming the resolution.
+    - Add PATCH /api/service-memos/:id/resubmit so the crew can correct a returned
+      memo and requeue it. Memos are created once per booking and there was no update
+      endpoint, so a returned memo previously had no route forward at all. Queue age
+      is measured from resubmission, so a correction is not instantly branded overdue.
+    
+    Audit trail
+    - Distinguish an edited engine line from an engine-derived one. Editing an
+      engine-generated line item left is_manual_adjustment false, so the invoice
+      displayed a hand-typed figure under an "Auto" badge, asserting the pricing
+      engine had calculated a number a person had entered. Adds was_manually_edited
+      plus the retained engine figures, surfaced as "Auto - edited" with the original
+      price struck through.
+    
+    Xero sync
+    - One sync log per entity instead of one per attempt. Retrying from the invoice
+      screen created a fresh log at attempt_count 1 every time, so UC-08's
+      three-attempt ceiling was unreachable on that path and the Sync Status screen
+      accumulated stale failed rows for invoices that had since synced. The invoice
+      retry route now honours the same cap as the sync-log route.
+    
+    Smaller fixes
+    - to_date on GET /api/invoices compared a bare date against a timestamp, so
+      "invoices up to today" excluded everything created today.
+    - Return extraction_confidence from the vendor invoice list. The AP queue's
+      colour-coded confidence column read a field the API never sent, leaving it
+      permanently blank despite the value being stored and shown on the detail screen.
+    - Point seeded vendor invoices at a real uploaded PDF. The hard-coded URLs
+      referenced a Cloudinary cloud that does not exist (verified 404), so the AP
+      review screen's source-document pane was blank on every seeded invoice - the
+      one screen whose purpose is comparing the PDF against the extraction.
+    - Cap ?limit on the invoice and pending-review lists.
+    - Show queue age as days and hours; 433.8h left the reader dividing by 24.
+    
+    Tests: 219 pass (146 in tests/kwan-hua, up from 121). The 25 new cases cover the
+    cross-endpoint invariants the previous suite missed - return-then-requeue,
+    edit-then-provenance, and retry-then-attempt-count.
+    
+    Note: adds two PostgreSQL enum values, which sequelize.sync({ alter: true })
+    cannot apply. Existing databases need `npm run db:reset -- --yes`; see README.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 71d520dc72f1c3afb06631e456869d8f117ba572
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Tue Aug 4 12:58:48 2026 +0800
+
+    Record EFAR interim review feedback and assign owners in README
+    
+    Adds a Client Feedback section capturing the 17 Jul 2026 interim review
+    with Geraldine and Doris Tan (EFAR): what they endorsed, six action items
+    with named owners, and detail notes citing the affected files.
+    
+    Owner split follows current implementation ownership - Jasper for field
+    operations (milestone timestamps, single-job crew view, non-ambulance
+    event memos), Kwan Hua for the pricing engine and AP intake, Group for
+    the final presentation framing.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit c21c1d69be05df0f40a9914805adef8d94d94f19
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Fri Jul 17 11:26:00 2026 +0800
+
+    Seed AR invoices in db:reset and db:setup
+    
+    Wire seed-more-revenue-invoices.js into both the master reset (reset-all.js)
+    and db:setup (new db:seed:revenue alias) so the AR Invoice List and MD
+    revenue reports are populated on first load instead of empty.
+    
+    Give each seeded invoice line items whose amounts derive the subtotal/total,
+    so Invoice Detail reconciles with the summary; the 'adjusted' invoice carries
+    a manual-adjustment line so its status is self-explanatory.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 58268bc974fa9bd369641c5c9abc4cb11314ad61
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 16 17:16:07 2026 +0800
+
+    Add master demo reset script (db:reset)
+    
+    reset-all.js drops every table (force sync) and re-runs the full db:setup
+    seed chain so the demo returns to a pristine, repeatable state - unlike
+    db:setup, which leaves prior demo actions in place via idempotent seeds.
+    
+    Destructive, so it's guarded: requires --yes / -y / CONFIRM_RESET=1 or it
+    prints instructions and exits without touching the database.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 3aae0249825f47b41939b62b176333c1fa27fa2c
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 16 17:15:54 2026 +0800
+
+    Color intake queue status filter pills by their reference status
+    
+    The active Pending/Confirmed/Rejected filter pills now use the status
+    reference colors (amber/blue/red) instead of a neutral slate fill, matching
+    the table row tints. All stays neutral since it isn't a status.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b8a729522c5501091c9b47a908a30acd7aa3ef30
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Thu Jul 16 17:15:43 2026 +0800
+
+    Add stepper amount fields with realistic caps for AR pricing/invoices
+    
+    Replace the raw number inputs on the contract rate/surcharge and invoice
+    adjustment screens with a NumberStepper: arrows change the value by ones,
+    and holding an arrow accelerates to tens. Unit price keeps two decimals.
+    
+    Add realistic maximum caps (rate/unit price $50,000, surcharge $10,000,
+    quantity 999) enforced in both the frontend Yup schemas and the backend
+    validators/controller so a fat-finger entry can't be saved.
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b716377c5e7533ed15cbdec8c7b921127713fbcb
+Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
+Date:   Wed Jul 15 11:58:58 2026 +0800
+
+    Refresh git-history exports after font-scale merge
+    
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
 commit 6a6025ad021eecc5cfc932cad9fa346e66d6beac
 Merge: b2064b9 51c929c
 Author: Neutropils <168397485+Neutropils@users.noreply.github.com>
