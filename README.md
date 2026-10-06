@@ -231,6 +231,75 @@ Configuration -> Authorisation -> Scopes**.
   plaintext tokens that can't be decrypted, so a sync attempt fails confusingly. Completing the real
   OAuth flow retires that row automatically.
 
+## Restarting the Live Website (Paused Database / Sleeping Server)
+
+The deployed app runs on three free-tier services, and each one can go idle on its own:
+
+| Service | Live URL | What happens when idle |
+|---|---|---|
+| Frontend (Vercel) | https://full-stack-application-development-pi.vercel.app | Nothing - static hosting, always up |
+| Backend (Render) | https://full-stack-application-development.onrender.com | Sleeps after ~15 min idle; the next request takes ~50 s to wake it |
+| Database (Supabase) | project `arorhvtvepwimqwhrzps` (ap-southeast-1) | **Pauses after ~7 days with no activity**; every login then fails |
+
+### Keep-alive (so the database should not pause)
+
+`.github/workflows/keep-alive.yml` runs every 2 days and calls `GET /health/db` on the Render backend,
+which runs `SELECT 1` against Supabase. That counts as database activity and resets the 7-day timer.
+The workflow can also be run by hand from the repo's **Actions** tab -> **Keep Supabase awake** ->
+**Run workflow**.
+
+GitHub disables scheduled workflows after 60 days of no repository activity. If the repo has been
+untouched for a long time, re-enable it in the Actions tab (or push any commit).
+
+### Step-by-step: bring the website back up
+
+Follow these in order if the login page loads but login fails, or the site seems dead.
+
+1. **Check the backend.** Open https://full-stack-application-development.onrender.com/health
+   - If it returns `{"status":"ok", ...}`, the server is up. Go to step 2.
+   - If it hangs for up to a minute and then responds, Render was just waking up. Wait, then reload.
+   - If it never responds, open the Render dashboard -> the backend service -> **Manual Deploy** ->
+     **Deploy latest commit**, and wait for the deploy to finish.
+2. **Check the database.** Open https://full-stack-application-development.onrender.com/health/db
+   - `{"status":"ok","db":"reachable"}` means everything is fine. Go to step 5.
+   - A `503` with `"db":"unreachable"` means Supabase is paused (or its credentials changed). Go to step 3.
+3. **Restore the Supabase project.** Sign in at https://supabase.com/dashboard, open the project
+   `arorhvtvepwimqwhrzps`, and click **Restore project** (shown on the paused banner). Restoring takes a
+   few minutes. Projects stay restorable for about 90 days after pausing; after that the data must be
+   recovered from a backup or rebuilt (see "Rebuilding an empty database" below).
+4. **Re-check the database.** Reload `/health/db` until it reports `reachable`. The Render backend
+   reconnects on its own once Supabase is back; if it does not, use **Manual Deploy -> Clear build cache
+   & deploy** on Render.
+5. **Open the frontend** at https://full-stack-application-development-pi.vercel.app and sign in with a
+   demo account (see the table under "Database setup"; password `Efar@2026`).
+6. **Re-run the keep-alive** from the GitHub Actions tab to confirm it can reach the backend, so the
+   database does not pause again.
+
+### Rebuilding an empty database
+
+Only needed if the Supabase project was deleted or its data is gone (not for a simple pause). With
+`backend/.env` pointing at the (new) database:
+
+```bash
+cd backend
+npm install
+npm run db:reset -- --yes   # drops, recreates and reseeds every table
+```
+
+Then update `DATABASE_URL` on Render and redeploy. If the Xero organisation was connected, the OAuth
+consent has to be repeated because the `xero_connections` row is wiped.
+
+### Running everything locally instead
+
+If the hosted services are unavailable, the whole stack runs on a laptop:
+
+1. Create `backend/.env` and `frontend/.env` from their `.env.example` files (see "How to Run Locally").
+2. Make sure the Supabase database is restored (step 3 above) or point `DATABASE_URL` at another
+   PostgreSQL instance and run `npm run db:reset -- --yes`.
+3. Start the backend: `cd backend && npm install && node src/index.js` (port 3000).
+4. Start the frontend in a second terminal: `cd frontend && npm install && npm run dev` (port 5173).
+5. Open http://localhost:5173 and sign in with a demo account.
+
 ## Tech Stack
 
 ### Frontend

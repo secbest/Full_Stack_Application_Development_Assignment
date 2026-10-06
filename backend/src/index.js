@@ -2,7 +2,8 @@ const express = require('express')
 const cors = require('cors')
 require('dotenv').config()
 
-const { testConnection } = require('./config')
+const sequelize = require('./config')
+const { testConnection } = sequelize
 require('./models')   // initialise all models and associations
 const routes = require('./routes')
 const { xeroService } = require('./services')
@@ -31,6 +32,18 @@ app.use(express.json())
 // Health check - verify the server is reachable before wiring up features
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'EFAR API', env: process.env.NODE_ENV || 'development' })
+})
+
+// DB keep-alive - Supabase free tier pauses a project after ~7 days of inactivity.
+// A scheduled ping (.github/workflows/keep-alive.yml) hits this so the DB sees a real query.
+app.get('/health/db', async (req, res) => {
+  try {
+    await sequelize.query('SELECT 1')
+    res.json({ status: 'ok', db: 'reachable' })
+  } catch (err) {
+    console.error('[DB] Keep-alive query failed:', err.message)
+    res.status(503).json({ status: 'error', db: 'unreachable' })
+  }
 })
 
 // All feature routes mounted under /api
