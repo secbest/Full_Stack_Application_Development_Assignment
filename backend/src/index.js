@@ -16,7 +16,7 @@ const app = express()
 // fixed production alias in FRONTEND_URL. Match any of this project's Vercel subdomains
 // so preview deployments aren't CORS-blocked, on top of the exact configured origin.
 const configuredOrigin = process.env.FRONTEND_URL || 'http://localhost:5173'
-const vercelPreviewPattern = /^https:\/\/full-stack-application-development[a-z0-9-]*\.vercel\.app$/
+const vercelPreviewPattern = /^https:\/\/(full-stack-application-development|efar-platform)[a-z0-9-]*\.vercel\.app$/
 
 app.use(cors({
   origin(origin, callback) {
